@@ -1405,3 +1405,20 @@ com `/rest/v1` sobrando. App está no ar e o fluxo de autenticação funciona.
 Próximo passo (retomando a lista de teste ponta a ponta): confirmar se a seção **Administração**
 aparece no menu pro e-mail dele (depende do `UPDATE "AllowedUser" SET tipo = 'adm' ...` já ter
 sido rodado) e, se sim, testar o botão "Executar agora" em Administração → JOB de captura.
+
+## 2026-09-22 (cont.) — Teste ponta a ponta completo: sucesso
+
+Após corrigir AZURE_DEVOPS_ORG/AZURE_DEVOPS_PAT na Vercel, "Executar agora" (JOB de captura) rodou
+com sucesso em produção: 1833 itens capturados, status Sucesso. Login, seção Administração e
+captura do Azure DevOps confirmados funcionando ponta a ponta em produção
+(`https://produto-hub-sigma.vercel.app`).
+
+Pendências que restam, todas não-bloqueantes (app já está operacional):
+- Conferir em Vercel → Settings → Cron Jobs se os 2 crons do `vercel.json` aparecem ativos
+  (captura diária 08:00 BRT + alerta 09:00 BRT seg-sex).
+- Confirmar se `DIRECT_URL` foi mesmo adicionada (só é usada por `prisma migrate`, não afeta o
+  app rodando — só importa se precisar rodar uma migração nova direto contra produção).
+- `RESEND_API_KEY` segue sem conta real — e-mails de alerta não vão disparar até isso existir,
+  mas não quebra mais nada (fix do 2026-09-21 já cobre isso).
+- Conferir se os 3 painéis do dashboard (Fluxo de Demandas, Agging e Backlog de Viabilidade)
+  mostram os números certos agora que os 1833 itens foram gravados.

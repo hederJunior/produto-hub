@@ -1,0 +1,247 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Produto {
+  KMM4
+  KMM5
+}
+
+enum FonteAlerta {
+  PAINEL_MANUAL /// lê de PainelEstado — indicadores digitados pelos PMs/POs no painel (aging por categoria, backlog viabilidade/execução/delivery, lead time, etc.)
+  DEVOPS_AUTO   /// lê do agregado calculado automaticamente via WIQL no Azure DevOps (aging de work items ativos, backlog ativo)
+}
+
+enum SeveridadeAlerta {
+  CRITICO
+  ATENCAO
+  INFORMATIVO
+}
+
+enum SituacaoCliente {
+  EM_DIA
+  ACOMPANHAR
+  CRITICO
+}
+
+/// Os 3 painéis do dashboard automático (PRD F01.01), usado como discriminador na tabela de
+/// valores mensais digitados manualmente (IndicadorManual).
+enum PainelIndicador {
+  FLUXO_DEMANDAS
+  AGGING_VIABILIDADE
+  BACKLOG_VIABILIDADE
+}
+
+/// Carteira de clientes do time de Produto (tela "Gestão de clientes"). Entrada manual, com
+/// importação em lote via planilha Excel (ver /api/clientes/import).
+model Cliente {
+  id            String          @id @default(uuid())
+  nome          String
+  produto       Produto
+  responsavel   String?
+  ultimoContato DateTime?
+  situacao      SituacaoCliente @default(EM_DIA)
+  criadoEm      DateTime        @default(now())
+  atualizadoEm  DateTime        @updatedAt
+
+  @@unique([nome, produto])
+}
+
+/// Usuários com acesso liberado (fase 1 = allowlist manual; fase 2 = espelha grupo do Entra ID)
+model AllowedUser {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  nome      String?
+  papel     String? // PM, Product Ops, PO, GPM...
+  tipo      String   @default("user") // "adm" | "user" — "adm" libera a seção Administração (pedido por Heder em 2026-09-20)
+  criadoEm  DateTime @default(now())
+}
+
+/// Foto periódica dos indicadores de backlog/aging por produto, para histórico e comparação entre ritos
+model IndicadorSnapshot {
+  id          String   @id @default(uuid())
+  produto     Produto
+  capturadoEm DateTime @default(now())
+  metricas    Json // payload flexível: aging médio, WIP, itens por status, etc.
+  origem      String   @default("azure-devops")
+}
+
+/// Regras de alerta configuradas (ex.: aging acima de X dias, WIP estourado)
+model AlertaConfig {
+  id          String   @id @default(uuid())
+  nome        String
+  produto     Produto
+  fonte       FonteAlerta @default(DEVOPS_AUTO)
+  severidade  SeveridadeAlerta @default(ATENCAO)
+  /// condicao.metrica é um path relativo à fonte:
+  /// - DEVOPS_AUTO: "backlogAtivo" | "aging.media" | "aging.maximo" (payload de /api/indicadores)
+  /// - PAINEL_MANUAL: path dentro de data.<produto> do PainelEstado, ex.: "aging" (kmm4),
+  ///   "agingViab.customizacoes" (kmm5), "backlog.execucao", "fluxo.abertas", "incidentes"
+  condicao    Json
+  destinatarios String[] // e-mails
+  ativo       Boolean  @default(true)
+  criadoEm    DateTime @default(now())
+}
+
+/// Estado do painel de indicadores (componentes/PainelIndicadores.jsx), compartilhado por todo o time.
+/// Linha única (id fixo "default") — substitui o antigo armazenamento por navegador do Artifact original.
+model PainelEstado {
+  id          String   @id @default("default")
+  data        Json // { kmm4: {...}, kmm5: {...} } — valores "Atual"
+  th          Json // thresholds (metas verde/amarelo) por indicador
+  history     Json // array de snapshots [{ id, ts, data }]
+  atualizadoEm DateTime @updatedAt
+}
+
+/// Log de disparos de alerta, para evitar duplicidade e auditar histórico
+model AlertaDisparado {
+  id            String   @id @default(uuid())
+  alertaConfigId String
+  disparadoEm   DateTime @default(now())
+  valorObservado Json
+  emailEnviado  Boolean  @default(false)
+}
+
+enum StatusJob {
+  EM_EXECUCAO
+  SUCESSO
+  ERRO
+}
+
+/// Snapshot diário (ou manual) de cada Product Backlog Item do Azure DevOps.
+/// Granularidade por item (não agregada), necessária para os filtros de Cliente/Squad
+/// e para recalcular aging por data de captura (PRD F01.01 - Painel Indicadores).
+model DemandaSnapshot {
+  id                  String    @id @default(uuid())
+  produto             Produto
+  workItemId          Int
+  cliente             String?   // Custom.Cliente
+  squad               String?   // System.AreaPath
+  state               String    // System.State
+  dataAberturaProduto DateTime? // Custom.DataAberturaProduto
+  createdDate         DateTime  // System.CreatedDate
+  closedDate          DateTime? // Microsoft.VSTS.Common.ClosedDate (a confirmar)
+  etapa               String?   // Custom.Etapa
+  descricao           String?   // System.Title
+  classificacao       String?   // Custom.Classificacao (assumido pelo padrão dos outros campos
+                                 // custom deste org — a confirmar contra um item real)
+  agingDias           Int?      // hoje - dataAberturaProduto (fallback: hoje - createdDate se
+                                 // dataAberturaProduto for nulo), calculado só quando state = Backlog
+  capturadoEm         DateTime  @default(now())
+  origem              String    @default("KMM4") // projeto de origem no Azure DevOps: "KMM4" ou "KMM5"
+
+  @@index([produto, capturadoEm])
+  @@index([workItemId, capturadoEm])
+  @@index([produto, state, capturadoEm])
+}
+
+/// Estado ATUAL de cada work item — 1 linha por item, upsertada a cada captura (não cresce sem
+/// limite como DemandaSnapshot, que é o log bruto diário mantido à parte). Criada em 2026-09-20
+/// porque consultar todo o histórico de DemandaSnapshot pra achar "o snapshot mais recente de
+/// cada item" ficou lento e não escala. Cobre: painel Fluxo de Demandas (histórico completo,
+/// possível aqui porque createdDate/closedDate de um item não mudam) e as figuras "ATUAL" +
+/// modal de Detalhes dos painéis de Aging/Backlog de Viabilidade.
+model DemandaAtual {
+  workItemId          Int       @id
+  produto             Produto
+  cliente             String?
+  squad               String?
+  state               String
+  etapa               String?
+  descricao           String?
+  classificacao       String?
+  dataAberturaProduto DateTime?
+  createdDate         DateTime
+  closedDate          DateTime?
+  agingDias           Int?
+  atualizadoEm        DateTime  @updatedAt
+
+  @@index([produto, state])
+  @@index([produto, cliente])
+  @@index([produto, squad])
+}
+
+/// Estado de cada item ao fim de cada mês — 1 linha por (item, mês), upsertada enquanto o mês
+/// corrente não vira (RN02.08: só o snapshot mais recente do mês conta). Criada em 2026-09-20,
+/// junto com DemandaAtual, pra alimentar o histórico mensal de Aging/Backlog de Viabilidade sem
+/// escanear o log bruto — cresce ~1 linha por item por mês (bem mais devagar que o log diário).
+model DemandaMensal {
+  id          String   @id @default(uuid())
+  workItemId  Int
+  mes         String   // "YYYY-MM"
+  produto     Produto
+  cliente     String?
+  squad       String?
+  state       String
+  agingDias   Int?
+  capturadoEm DateTime // data da captura que gerou esta linha (a mais recente dentro do mês)
+
+  @@unique([workItemId, mes])
+  @@index([produto, mes, state])
+}
+
+/// Log de cada execução do JOB diário de captura (sucesso/erro, quantidade capturada)
+model JobExecucao {
+  id              String    @id @default(uuid())
+  tipo            String    @default("captura-devops")
+  iniciadoEm      DateTime  @default(now())
+  finalizadoEm    DateTime?
+  status          StatusJob @default(EM_EXECUCAO)
+  itensCapturados Int?
+  erro            String?
+}
+
+/// Registro informativo do agendamento do JOB (REQ01.04). Cron fixo no vercel.json define
+/// a frequência real; horario/frequencia aqui são somente leitura na interface (mudar exige
+/// redeploy). "ativo" é um kill-switch de fato, lido pelo JOB antes de rodar.
+model JobConfig {
+  id           String   @id @default("default")
+  frequencia   String   @default("diaria") // diaria | dias-uteis | manual
+  horario      String   @default("06:00")  // HH:mm, horário-alvo do disparo (informativo)
+  ativo        Boolean  @default(true)     // kill-switch real, verificado pelo JOB antes de rodar
+  atualizadoEm DateTime @updatedAt
+}
+
+/// Setup de filtros salvo da tela de indicadores — linha única "default", compartilhada com o
+/// time (mesmo padrão de PainelEstado/JobConfig). Botão "Salvar Filtros" grava aqui; ao abrir o
+/// dashboard, os filtros salvos aqui viram o padrão inicial da tela.
+model FiltroPainelIndicadores {
+  id           String   @id @default("default")
+  cliente      String?
+  squads       String[]
+  dataInicio   String?  // "YYYY-MM-DD", mesmo formato do <input type="date">
+  dataFim      String?
+  atualizadoEm DateTime @updatedAt
+}
+/// Valores mensais digitados manualmente (REQ01.06), pra preencher histórico anterior ao início
+/// da captura automática (JOB) ou complementar meses sem dado confiável no Azure DevOps. Uma
+/// tabela única cobre os 3 painéis (campo "painel" como discriminador) em vez de 3 tabelas quase
+/// idênticas — decisão possível porque o volume aqui é baixo (poucas dezenas de linhas por
+/// produto/painel, digitadas à mão), diferente do caso de DemandaAtual/DemandaMensal, onde o
+/// volume por item justificou tabelas separadas. Não tem granularidade de cliente/squad (dado
+/// histórico pré-rastreio por item) — por isso só é aplicado ao dashboard quando nenhum filtro
+/// de Cliente/Squad está ativo (ver lib/demandas-agregacao.ts).
+model IndicadorManual {
+  id           String          @id @default(uuid())
+  produto      Produto
+  painel       PainelIndicador
+  mes          String          // "YYYY-MM"
+  abertas      Int?            // Fluxo de Demandas
+  encerradas   Int?            // Fluxo de Demandas
+  canceladas   Int?            // Fluxo de Demandas
+  agingMedio   Float?          // Agging de Viabilidade (média de dias, já calculada por quem digita)
+  backlogQtd   Int?            // Backlog de Viabilidade
+  observacao   String?
+  criadoPor    String?         // e-mail de quem lançou
+  criadoEm     DateTime
+  atualizadoEm DateTime
+
+  @@unique([produto, painel, mes])
+  @@index([produto, painel])
+}

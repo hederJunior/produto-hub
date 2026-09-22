@@ -1393,3 +1393,15 @@ confirmação final do recebimento do e-mail na caixa de entrada do Heder.
 **Lição pro projeto:** ao copiar a Project URL do Supabase pra qualquer env var, usar sempre o
 campo "Project URL" no topo de Settings → API — nunca uma URL de exemplo/endpoint mostrada mais
 abaixo na mesma página (essas já vêm com `/rest/v1`, `/auth/v1` etc. no final).
+
+## 2026-09-22 (cont.) — Login em produção confirmado funcionando ponta a ponta
+
+Heder recebeu o e-mail com o link mágico e conseguiu logar em produção
+(`https://produto-hub-sigma.vercel.app`). Fecha a sequência de bugs de deploy desta rodada:
+Resend instanciado no topo do módulo → rotas sem `dynamic=force-dynamic` sendo prerenderizadas →
+`NEXT_PUBLIC_*` marcadas como Secret → `SUPABASE_SERVICE_ROLE_KEY` com valor ruim → `NEXT_PUBLIC_SUPABASE_URL`
+com `/rest/v1` sobrando. App está no ar e o fluxo de autenticação funciona.
+
+Próximo passo (retomando a lista de teste ponta a ponta): confirmar se a seção **Administração**
+aparece no menu pro e-mail dele (depende do `UPDATE "AllowedUser" SET tipo = 'adm' ...` já ter
+sido rodado) e, se sim, testar o botão "Executar agora" em Administração → JOB de captura.

@@ -5,6 +5,13 @@ import {
   mesclarFluxoComManual, mesclarValorComManual, SEM_CLIENTE,
 } from "@/lib/demandas-agregacao";
 
+// Nunca prerenderizar/cachear estaticamente: toda rota aqui lê estado dinâmico
+// (Supabase, sessão, Azure DevOps). Sem isso, o Next.js tenta gerar como página estática
+// no build qualquer rota GET que não use request/cookies/headers diretamente — e o build
+// quebra com erros tipo "supabaseUrl is required." (achado em 2026-09-21 nas rotas
+// /api/demandas/filtro e /api/painel-state, as únicas 2 sem esse marcador na época).
+export const dynamic = "force-dynamic";
+
 /**
  * Fonte de dados do dashboard automático (PRD F01.01 - Painel Indicadores): filtros operacionais
  * (Data/Cliente/Squad) + os três painéis (Fluxo de demandas, Aging de Viabilidade, Backlog de

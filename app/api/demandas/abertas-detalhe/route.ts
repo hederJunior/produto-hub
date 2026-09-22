@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase";
 import { chaveMes, SEM_CLIENTE } from "@/lib/demandas-agregacao";
 
+// Nunca prerenderizar/cachear estaticamente: toda rota aqui lê estado dinâmico
+// (Supabase, sessão, Azure DevOps). Sem isso, o Next.js tenta gerar como página estática
+// no build qualquer rota GET que não use request/cookies/headers diretamente — e o build
+// quebra com erros tipo "supabaseUrl is required." (achado em 2026-09-21 nas rotas
+// /api/demandas/filtro e /api/painel-state, as únicas 2 sem esse marcador na época).
+export const dynamic = "force-dynamic";
+
 /**
  * Detalhe dos itens por trás do número "ABERTAS" do painel Fluxo de Demandas — botão "Demandas
  * Abertas" (pedido por Heder em 2026-09-20). Lê de DemandaAtual, aplica os mesmos filtros de

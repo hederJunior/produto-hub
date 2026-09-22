@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { isEmailAllowed } from "@/lib/auth-allowlist";
 import { getRouteClient } from "@/lib/supabase-server";
 
+// Nunca prerenderizar/cachear estaticamente: toda rota aqui lê estado dinâmico
+// (Supabase, sessão, Azure DevOps). Sem isso, o Next.js tenta gerar como página estática
+// no build qualquer rota GET que não use request/cookies/headers diretamente — e o build
+// quebra com erros tipo "supabaseUrl is required." (achado em 2026-09-21 nas rotas
+// /api/demandas/filtro e /api/painel-state, as únicas 2 sem esse marcador na época).
+export const dynamic = "force-dynamic";
+
 /**
  * Autenticação fase 1: link mágico (passwordless) via Supabase Auth, liberado apenas
  * para e-mails presentes na tabela AllowedUser. Não existe cadastro de senha — mais simples

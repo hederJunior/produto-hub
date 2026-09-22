@@ -3,6 +3,13 @@ import { randomUUID } from "crypto";
 import * as XLSX from "xlsx";
 import { getServiceClient } from "@/lib/supabase";
 
+// Nunca prerenderizar/cachear estaticamente: toda rota aqui lê estado dinâmico
+// (Supabase, sessão, Azure DevOps). Sem isso, o Next.js tenta gerar como página estática
+// no build qualquer rota GET que não use request/cookies/headers diretamente — e o build
+// quebra com erros tipo "supabaseUrl is required." (achado em 2026-09-21 nas rotas
+// /api/demandas/filtro e /api/painel-state, as únicas 2 sem esse marcador na época).
+export const dynamic = "force-dynamic";
+
 /**
  * Espera uma planilha com colunas (nomes flexíveis, case-insensitive):
  * Cliente | Produto | Responsável | Último contato | Situação

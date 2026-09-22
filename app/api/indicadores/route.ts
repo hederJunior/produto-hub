@@ -4,6 +4,13 @@ import { getBacklogAtivo } from "@/lib/devops-client";
 import { getServiceClient } from "@/lib/supabase";
 import { DEVOPS_PROJETOS, type Produto } from "@/lib/devops-projetos";
 
+// Nunca prerenderizar/cachear estaticamente: toda rota aqui lê estado dinâmico
+// (Supabase, sessão, Azure DevOps). Sem isso, o Next.js tenta gerar como página estática
+// no build qualquer rota GET que não use request/cookies/headers diretamente — e o build
+// quebra com erros tipo "supabaseUrl is required." (achado em 2026-09-21 nas rotas
+// /api/demandas/filtro e /api/painel-state, as únicas 2 sem esse marcador na época).
+export const dynamic = "force-dynamic";
+
 function calcularAging(items: { fields: Record<string, unknown> }[]) {
   const agora = Date.now();
   const agings = items.map((item) => {

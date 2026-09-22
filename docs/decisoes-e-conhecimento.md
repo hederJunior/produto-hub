@@ -1265,3 +1265,39 @@ criar a conta/API key do Resend e configurar a variável na Vercel, o envio de e
 funcionar normalmente sem precisar de nenhuma mudança de código.
 
 `npx tsc --noEmit` limpo depois da mudança.
+
+## 2026-09-21 (cont.) — 2º erro de build: rotas sem `dynamic = "force-dynamic"` sendo prerenderizadas
+
+Push do fix do Resend concluído; novo build (commit `eff9291`) quebrou de novo, com outro erro na
+etapa "Generating static pages":
+
+```
+Error occurred prerendering page "/api/demandas/filtro"
+Error: supabaseUrl is required.
+Error occurred prerendering page "/api/painel-state"
+Error: supabaseUrl is required.
+```
+
+Causa: o App Router do Next.js tenta automaticamente gerar como página ESTÁTICA (no build, sem
+nenhuma requisição real) qualquer rota GET que não use nenhuma API "dinâmica" (parâmetro
+`request`, `cookies()`, `headers()`, `searchParams`). `app/api/demandas/filtro/route.ts` e
+`app/api/painel-state/route.ts` são as únicas 2 rotas GET de toda a aplicação sem nenhum desses —
+então o Next tentou "prerenderizar" as duas de verdade no build, chamando `getServiceClient()` →
+`createClient(url, key)` fora do contexto de uma requisição real, num momento em que a env var
+(pelo motivo que for da fase de "collecting/generating static pages" da Vercel) não estava
+disponível igual estaria numa invocação serverless normal. Resultado: build inteiro quebrava de
+novo, agora por um motivo diferente do Resend, mas do MESMO tipo de causa raiz (código de
+servidor sendo executado durante o BUILD, não durante uma requisição real).
+
+Fix aplicado em TODAS as 22 rotas de `app/api/**/route.ts(x)`: adicionado
+`export const dynamic = "force-dynamic";` (com comentário explicando o motivo). Isso desliga a
+otimização estática do Next pra essas rotas — elas nunca mais serão executadas em build, só em
+runtime, a cada requisição real, que é o comportamento correto pra rotas que leem/gravam estado
+compartilhado no Supabase/Azure DevOps. Antes só 5 rotas (as que usam `ehAdmin()`/`cookies()`
+internamente) escapavam desse problema por acaso; agora todas escapam por design.
+
+`npx tsc --noEmit` limpo depois da mudança. Build local completo não pôde ser testado neste
+ambiente (sem acesso de rede pro binário SWC do Next — `getaddrinfo EAI_AGAIN registry.npmjs.org`,
+limitação de rede desta VM isolada, não do código), mas a causa raiz bate exatamente com o
+comportamento documentado do Next.js App Router (static optimization automática de route handlers
+sem uso de API dinâmica) — validação final será o próprio deploy da Vercel.

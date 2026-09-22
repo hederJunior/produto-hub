@@ -15,7 +15,8 @@ export const dynamic = "force-dynamic";
  * de operar para um app interno, e o allowlist é o único portão de entrada.
  *
  * A resposta é sempre a mesma, exista ou não o e-mail na allowlist, para não dar pistas
- * de quem tem acesso a quem tentar adivinhar e-mails.
+ * de quem tem acesso a quem tentar adivinhar e-mails. Os detalhes reais (permitido? o Supabase
+ * Auth aceitou o pedido?) só vão pro log de servidor (Vercel Runtime Logs), nunca pra resposta.
  */
 export async function POST(request: NextRequest) {
   const { email } = await request.json();
@@ -24,13 +25,21 @@ export async function POST(request: NextRequest) {
   }
 
   const permitido = await isEmailAllowed(email);
+  console.log(`[auth/request-link] e-mail=${email} permitido=${permitido}`);
+
   if (permitido) {
     const supabase = getRouteClient();
     const origin = request.nextUrl.origin;
-    await supabase.auth.signInWithOtp({
+    const { error } = await supabase.auth.signInWithOtp({
       email,
       options: { emailRedirectTo: `${origin}/auth/callback` },
     });
+    if (error) {
+      // Não propaga pro cliente (mantém a resposta genérica por design), mas fica registrado
+      // pro Runtime Log da Vercel — achado em 2026-09-22: sem isso, uma falha no envio do
+      // Supabase Auth (rate limit, SMTP não configurado, etc.) passava batido em silêncio.
+      console.error(`[auth/request-link] signInWithOtp falhou para ${email}:`, error);
+    }
   }
 
   return NextResponse.json({

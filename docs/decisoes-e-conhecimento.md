@@ -1354,3 +1354,22 @@ de um novo deploy pra "gravar" o valor certo no build.
 **Lição geral pro projeto:** nunca marcar variáveis `NEXT_PUBLIC_*` como Secret/Sensitive na Vercel —
 usar sempre Config/Plain pra essas. Reservar Secret só pra variáveis server-only de verdade
 (AZURE_DEVOPS_PAT, SUPABASE_SERVICE_ROLE_KEY, DATABASE_URL/DIRECT_URL, RESEND_API_KEY, CRON_SECRET).
+
+## 2026-09-22 (cont.) — Login sem erro, mas e-mail do link mágico não chega
+
+Depois de corrigir `SUPABASE_SERVICE_ROLE_KEY`, `/api/auth/request-link` passou a responder
+`{ok:true}` sem erro (confirmado por Heder). Mas o e-mail com o link mágico não chegou.
+
+A rota intencionalmente sempre responde `{ok:true}` (por design, pra não vazar quem está na
+allowlist), então um `signInWithOtp` que falha silenciosamente (rate limit do Supabase, SMTP
+padrão não configurado, etc.) não aparece nem como erro no navegador nem nos logs — o código
+não checava o retorno `{ error }` da chamada. Adicionado log server-side (console.error) nesse
+caso, e um console.log com o resultado de `isEmailAllowed`, só visível no Runtime Log da Vercel
+(nunca na resposta ao cliente).
+
+Suspeitas mais prováveis, a confirmar direto no Supabase:
+1. E-mail sem SMTP customizado configurado usa o serviço padrão do Supabase, que tem limite de
+   envio bem baixo (poucos e-mails/hora) — pensado só pra teste, não pra uso real.
+2. Conferir Supabase → Authentication → Logs, pra ver se o pedido de OTP aparece e se tem erro.
+3. Conferir se o e-mail realmente está em `AllowedUser` com o valor em minúsculas batendo (o
+   código faz `.eq("email", email.toLowerCase())`).

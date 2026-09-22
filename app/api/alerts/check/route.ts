@@ -81,7 +81,7 @@ export async function GET(request: NextRequest) {
     if (valorAtual === undefined) continue;
 
     if (avaliar(valorAtual, regra.condicao as Condicao)) {
-      await enviarAlertaEmail({
+      const resultadoEmail = await enviarAlertaEmail({
         destinatarios: regra.destinatarios,
         assunto: `[Alerta ${regra.produto}] ${regra.nome}`,
         corpoHtml: `<p>A métrica <b>${regra.condicao.metrica}</b> (fonte: ${regra.fonte}) está em <b>${valorAtual}</b>, violando a regra "${regra.nome}" (${regra.condicao.operador} ${regra.condicao.valor}).</p>`,
@@ -91,7 +91,7 @@ export async function GET(request: NextRequest) {
         id: randomUUID(),
         alertaConfigId: regra.id,
         valorObservado: { [regra.condicao.metrica]: valorAtual, fonte: regra.fonte },
-        emailEnviado: true,
+        emailEnviado: resultadoEmail.enviado,
       });
 
       disparos.push({ regra: regra.nome, produto: regra.produto, fonte: regra.fonte, valorAtual });

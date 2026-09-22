@@ -1218,3 +1218,50 @@ foi concluído pelo próprio Heder, a partir do git dele. Projeto já importado 
 
 Próximo passo: configurar as variáveis de ambiente no painel da Vercel (Settings → Environment
 Variables) e redeploy — nenhuma mudança de código necessária aqui, só configuração no dashboard.
+
+## 2026-09-21 (cont.) — Deploy na Vercel com erro após Redeploy; popover "Vercel user not found" não é a causa
+
+Heder reportou que, mesmo após adicionar as variáveis de ambiente e clicar em "Redeploy", o
+deployment continua com status Error. O print enviado mostra de novo o popover "Vercel user not
+found" (agora com "Redeployed by: hederlmjr-5310") — esse popover é só a Vercel avisando que não
+achou conta Vercel vinculada ao autor do commit; não é a causa do erro de build, e reaparece em
+qualquer deploy independente do resultado.
+
+Conferido neste momento (via `git log`/`git status -sb`/`git fetch`): o repositório local tem 2
+commits que NUNCA foram enviados ao GitHub (`git status` mostra `ahead 2` mesmo depois de
+`git fetch`): `a9ac063` (commit vazio "dispara primeiro deploy") e `828cc03` (doc). O `origin/main`
+real está parado em `beb99a2`. Confirmado que `beb99a2` já contém o fix do `postinstall`, então os
+2 commits não enviados NÃO são a causa do erro de build atual (não mudam nada de código relevante)
+— mas ficam pendentes de push pelo Heder pra manter o repositório em dia.
+
+Sem o texto real do Build Log (Vercel → deployment → aba "Building"/"Logs"), não dá pra diagnosticar
+a causa raiz do Error. Próximo passo: pedir esse log ao Heder antes de propor qualquer fix novo.
+
+## 2026-09-21 (cont.) — Causa raiz do Error encontrada: `new Resend()` no topo do módulo quebrava o build
+
+Build log real obtido (etapa "Collecting page data ..."):
+
+```
+Error: Missing API key. Pass it to the constructor `new Resend("re_123")`
+  at .../api/alerts/check/route.js
+Error: Failed to collect page data for /api/alerts/check
+```
+
+Causa: `lib/email.ts` instanciava o client do Resend assim que o módulo era carregado
+(`const resend = new Resend(process.env.RESEND_API_KEY)`), e a lib do Resend lança exceção
+imediatamente se a API key vier vazia/undefined. Como `RESEND_API_KEY` não está configurada na
+Vercel (não existe conta Resend criada ainda), a etapa "Collecting page data" do build da Vercel
+(que importa estaticamente as rotas, incluindo `app/api/alerts/check/route.ts`) quebrava o build
+inteiro — mesmo sem nenhuma chamada de envio de e-mail acontecer de fato.
+
+Fix: instanciação do Resend tornada preguiçosa (`getResendClient()`, só cria o client se
+`RESEND_API_KEY` existir) + `enviarAlertaEmail` agora retorna `{ enviado, motivo? }` em vez de
+lançar/travar quando a chave não está configurada — só loga um aviso e segue. Ajustado também
+`app/api/alerts/check/route.ts` pra gravar `emailEnviado` com o valor real retornado, em vez de
+sempre `true`.
+
+Efeito prático: o build volta a funcionar mesmo sem `RESEND_API_KEY` configurada; quando o Heder
+criar a conta/API key do Resend e configurar a variável na Vercel, o envio de e-mail passa a
+funcionar normalmente sem precisar de nenhuma mudança de código.
+
+`npx tsc --noEmit` limpo depois da mudança.

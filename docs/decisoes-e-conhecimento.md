@@ -1373,3 +1373,23 @@ Suspeitas mais prováveis, a confirmar direto no Supabase:
 2. Conferir Supabase → Authentication → Logs, pra ver se o pedido de OTP aparece e se tem erro.
 3. Conferir se o e-mail realmente está em `AllowedUser` com o valor em minúsculas batendo (o
    código faz `.eq("email", email.toLowerCase())`).
+
+## 2026-09-22 (cont.) — Causa raiz real de tudo: NEXT_PUBLIC_SUPABASE_URL com "/rest/v1" sobrando
+
+Log do Supabase revelou o problema de fato: `GET .../rest/v1/rest/v1/AllowedUser → 404` — path
+duplicado. O valor salvo em `NEXT_PUBLIC_SUPABASE_URL` tinha `/rest/v1` no final (provavelmente
+copiado de um exemplo de endpoint REST na tela do Supabase, em vez do campo "Project URL" no topo
+da página Settings → API). Como o supabase-js sempre completa a URL com `/rest/v1/...` (pra
+tabelas) e `/auth/v1/...` (pro Auth), uma URL base já contendo `/rest/v1` quebra as DUAS coisas —
+por isso `isEmailAllowed` sempre retornava `false` (a query pra conferir a allowlist ia pra um path
+inexistente, 404), e por isso o link mágico nunca era enviado, mesmo sem erro aparente pro usuário
+(a rota responde `{ok:true}` sempre, por design).
+
+Fix: Heder corrigiu o valor na Vercel pra só `https://dcojvfhoskaxqhoxgadh.supabase.co` (sem
+sufixo) e redeployou pelo painel. Confirmado por teste direto (Claude Browser): POST
+`/api/auth/request-link` voltou 200 e a tela mostrou a mensagem de sucesso — aguardando
+confirmação final do recebimento do e-mail na caixa de entrada do Heder.
+
+**Lição pro projeto:** ao copiar a Project URL do Supabase pra qualquer env var, usar sempre o
+campo "Project URL" no topo de Settings → API — nunca uma URL de exemplo/endpoint mostrada mais
+abaixo na mesma página (essas já vêm com `/rest/v1`, `/auth/v1` etc. no final).

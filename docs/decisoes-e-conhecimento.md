@@ -1301,3 +1301,27 @@ ambiente (sem acesso de rede pro binário SWC do Next — `getaddrinfo EAI_AGAIN
 limitação de rede desta VM isolada, não do código), mas a causa raiz bate exatamente com o
 comportamento documentado do Next.js App Router (static optimization automática de route handlers
 sem uso de API dinâmica) — validação final será o próprio deploy da Vercel.
+
+## 2026-09-21 (cont.) — Deploy em produção com sucesso (commit 5e82341, status Ready)
+
+Confirmado por print da Vercel: deployment do commit `5e82341` ("fix: força dynamic=force-dynamic
+em todas as rotas de API") com status **Ready** (verde), branch `main`, tag **Production**, build
+de 1m8s. Os 2 problemas de build (Resend instanciado no topo do módulo + rotas sem
+`dynamic=force-dynamic` sendo prerenderizadas) estavam resolvendo o mesmo padrão de causa raiz:
+código de servidor executando durante o BUILD em vez de em runtime request-time.
+
+Aplicação está no ar. Pendências que ainda precisam de ação do Heder no painel (não são mudança de
+código):
+1. Confirmar se `DIRECT_URL` foi mesmo adicionada nas env vars da Vercel (a `DATABASE_URL` já
+   estava lá desde antes; a que faltava era a `DIRECT_URL`, usada só pelo Prisma Migrate).
+2. Configurar em Supabase → Auth → URL Configuration → Redirect URLs: adicionar o domínio de
+   produção da Vercel + `/auth/callback` (senão o magic link de login não redireciona certo).
+3. Garantir que pelo menos 1 linha em `AllowedUser` tenha `tipo = 'adm'` (necessário pra seção
+   Administração aparecer) — ex.: `UPDATE "AllowedUser" SET tipo = 'adm' WHERE email = '...'`.
+4. Conferir em Vercel → Settings → Cron Jobs se os 2 crons do `vercel.json` aparecem ativos.
+5. Teste ponta a ponta em produção: login via magic link + rodar "Executar agora" (JOB de captura)
+   na tela de Administração, pra confirmar que as credenciais do Azure DevOps/Supabase funcionam
+   no ambiente da Vercel.
+6. `RESEND_API_KEY` segue sem valor real (sem conta Resend criada ainda) — não bloqueia mais o
+   build (fix aplicado), mas o envio de e-mail de alerta só vai funcionar quando essa conta/chave
+   existir.

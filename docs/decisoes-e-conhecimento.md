@@ -1187,3 +1187,25 @@ duas ficavam empilhadas verticalmente antes; agora estão dentro de um `<div sty
 comum.
 
 `npx tsc --noEmit` limpo depois de todas as mudanças.
+
+## 2026-09-21 — Primeiro commit feito; push bloqueado por falta de credencial GitHub neste ambiente
+
+Pedido de Heder: fazer o primeiro commit + push rumo à produção. Antes disso, corrigido um
+problema real que ia quebrar o deploy na Vercel: faltava `"postinstall": "prisma generate"` em
+`package.json` — sem isso, a Vercel instala dependências mas nunca gera o Prisma Client, e toda
+chamada que usa o banco quebraria em runtime. Adicionado.
+
+Removido também um `.git/index.lock` travado que impedia qualquer `git add`/`commit` (pedida e
+concedida permissão de exclusão nesta pasta pro Heder, só pra esse arquivo).
+
+Feito: `git config user.name/email` (só neste repo, não global) + `git add .` (conferido que
+`.env`, `node_modules` e `.next` não entraram no stage) + commit inicial (70 arquivos, commit
+`f88042e`).
+
+**Push bloqueado:** `git push -u origin main` falhou com "could not read Username for
+'https://github.com'" — este ambiente (a VM Linux isolada que o `device_bash` usa, montando só as
+pastas conectadas) não tem nenhuma credencial de Git/GitHub configurada (nem `.gitconfig` global,
+nem credential helper, nem `gh` CLI instalado) — as credenciais reais do Heder (GitHub
+Desktop/VS Code/terminal do Windows) não são acessíveis a partir daqui. O commit já está pronto
+localmente em `C:\Projetos\produto-hub`; falta só o Heder rodar `git push -u origin main` (ou usar
+o GitHub Desktop) a partir do terminal/app real dele, onde a autenticação já existe.

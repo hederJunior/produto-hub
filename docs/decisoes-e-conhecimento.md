@@ -1325,3 +1325,32 @@ código):
 6. `RESEND_API_KEY` segue sem valor real (sem conta Resend criada ainda) — não bloqueia mais o
    build (fix aplicado), mas o envio de e-mail de alerta só vai funcionar quando essa conta/chave
    existir.
+
+## 2026-09-22 — 3º erro: NEXT_PUBLIC_* marcadas como "Secret" na Vercel (não disponíveis no build/Edge)
+
+Depois do deploy com sucesso (commit `5e82341`), o app em produção (`https://produto-hub-sigma.vercel.app`)
+retornava `500 MIDDLEWARE_INVOCATION_FAILED` em toda página — reproduzido diretamente pelo Claude
+Browser. Runtime log real:
+
+```
+[Error: Your project's URL and Key are required to create a Supabase client!]
+```
+
+Causa raiz: `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY` foram salvas na Vercel com
+**Type = Secret** (print confirmou: "You can't reveal this value after saving... this variable
+can't be changed to Config"). Variáveis `NEXT_PUBLIC_*` precisam ser inlineadas no código durante
+o BUILD (é assim que o valor chega até o browser) — quando marcadas como Secret, a Vercel só libera
+o valor pra Serverless Functions em runtime, NUNCA durante o build nem no Edge Middleware. Resultado:
+o valor virava `undefined` tanto no bundle quanto no middleware (que roda no Edge), quebrando com
+esse erro em toda requisição, mesmo tendo passado no build (o build não usa o middleware, só
+compila ele). Não existe ganho de segurança em marcar `NEXT_PUBLIC_*` como Secret — esse valor já
+vai parar no JS público do navegador de qualquer forma.
+
+Fix: como a Vercel não permite converter Secret → Config numa variável já salva, é preciso
+DELETAR e recriar as duas variáveis com Type = Config (mesmo nome/valor/escopo Production+Preview).
+Não foi preciso nenhuma mudança de código — só configuração no painel. Depois de recriadas, precisa
+de um novo deploy pra "gravar" o valor certo no build.
+
+**Lição geral pro projeto:** nunca marcar variáveis `NEXT_PUBLIC_*` como Secret/Sensitive na Vercel —
+usar sempre Config/Plain pra essas. Reservar Secret só pra variáveis server-only de verdade
+(AZURE_DEVOPS_PAT, SUPABASE_SERVICE_ROLE_KEY, DATABASE_URL/DIRECT_URL, RESEND_API_KEY, CRON_SECRET).

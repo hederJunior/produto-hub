@@ -1209,3 +1209,12 @@ nem credential helper, nem `gh` CLI instalado) — as credenciais reais do Heder
 Desktop/VS Code/terminal do Windows) não são acessíveis a partir daqui. O commit já está pronto
 localmente em `C:\Projetos\produto-hub`; falta só o Heder rodar `git push -u origin main` (ou usar
 o GitHub Desktop) a partir do terminal/app real dele, onde a autenticação já existe.
+
+## 2026-09-21 (cont.) — Push concluído (pelo Heder) e projeto criado na Vercel
+
+`git log` mostra o repositório sincronizado com `origin/main` (commit `beb99a2` além do inicial
+`f88042e`) — o push que eu não conseguia fazer daqui (sem credencial de GitHub neste ambiente)
+foi concluído pelo próprio Heder, a partir do git dele. Projeto já importado na Vercel.
+
+Próximo passo: configurar as variáveis de ambiente no painel da Vercel (Settings → Environment
+Variables) e redeploy — nenhuma mudança de código necessária aqui, só configuração no dashboard.

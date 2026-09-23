@@ -1422,3 +1422,23 @@ Pendências que restam, todas não-bloqueantes (app já está operacional):
   mas não quebra mais nada (fix do 2026-09-21 já cobre isso).
 - Conferir se os 3 painéis do dashboard (Fluxo de Demandas, Agging e Backlog de Viabilidade)
   mostram os números certos agora que os 1833 itens foram gravados.
+
+## 2026-09-22 (cont.) — Troca de domínio na Vercel + ajuste do Site URL no Supabase
+
+Heder renomeou o domínio principal na Vercel de `produto-hub-sigma.vercel.app` para
+`produto-hub-nstech.vercel.app`. Isso quebrou o redirecionamento do link mágico: o e-mail passou
+a levar pro domínio antigo/alternativo `produto-hub-nstech-produtomg.vercel.app` (um alias fixo
+que a Vercel sempre mantém por trás do domínio customizado, ligado ao team/projeto).
+
+Causa: o `emailRedirectTo` passado pro Supabase é o domínio certo (calculado via
+`request.nextUrl.origin` em `app/api/auth/request-link/route.ts`), mas quando ele não bate com
+nada configurado no Supabase, o Auth cai de volta no **Site URL** (campo separado da lista de
+Redirect URLs, em Authentication → URL Configuration) — que ainda apontava pro domínio antigo.
+
+Fix (feito por Heder, sem mudança de código): atualizado o campo **Site URL** no Supabase pra
+`https://produto-hub-nstech.vercel.app`, e adicionado `https://produto-hub-nstech.vercel.app/auth/callback`
+na lista de Redirect URLs. Confirmado corrigido.
+
+**Lição pro projeto:** toda vez que o domínio de produção mudar na Vercel (customização ou domínio
+próprio), tem 2 lugares pra atualizar no Supabase: Site URL (o principal, serve de fallback) e
+Redirect URLs (lista de destinos permitidos pro `emailRedirectTo`) — os dois, não só um.

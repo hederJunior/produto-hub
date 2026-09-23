@@ -44,3 +44,18 @@ export function corDeStatus(status: string): { bg: string; fg: string } {
   if (["vencido", "crítico", "critico", "atrasado"].includes(s)) return { bg: "#FBE7E4", fg: C.red };
   return { bg: C.soft, fg: C.muted };
 }
+
+/**
+ * Mapeia um State literal do Azure DevOps (PT ou EN — cada squad usa uma convenção diferente,
+ * ex.: "Pronto para Testes" numa Task do KMM5, "Done"/"New"/"In Progress" numa Feature) pra cor
+ * de status, por palavra-chave (não dá pra confiar numa lista fixa de valores exatos).
+ * Usado na tabela de Sprints alocadas (2026-09-23) e pensado pra também servir o Gantt de
+ * Features do Roadmap quando esse ajuste de cor por status for feito lá (pedido no F02 - Road Map).
+ */
+export function corDeEstadoDevOps(state: string): { bg: string; fg: string } {
+  const s = state.toLowerCase();
+  if (/conclu|done|closed|fechado|finalizad/.test(s)) return { bg: "#E7F5EC", fg: C.green };
+  if (/andamento|execu|doing|progress|active/.test(s)) return { bg: "#E7F0FA", fg: C.blue };
+  if (/teste|review|revis|valida/.test(s)) return { bg: "#FCEFD8", fg: C.amber };
+  return { bg: C.soft, fg: C.muted };
+}

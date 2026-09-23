@@ -399,3 +399,83 @@ export async function getEpicComFeatures(epicId: number): Promise<EpicRoadmap | 
     features,
   };
 }
+
+// ===== Sprints alocadas (seção "Sprints alocadas" do painel "Roadmap e Entregas", pedido por
+// Heder em 2026-09-23) =====
+
+const CAMPOS_SPRINT_TASK = [
+  "System.Title",
+  "System.State",
+  "System.TeamProject",
+  "System.AssignedTo",
+  "Microsoft.VSTS.Common.Priority",
+  "Microsoft.VSTS.Scheduling.Effort",
+  "Microsoft.VSTS.Scheduling.CompletedWork",
+  "System.IterationPath",
+  "System.IterationLevel3",
+];
+
+type CampoPessoa = { displayName?: string; imageUrl?: string } | undefined;
+
+export type TaskAlocada = {
+  id: number;
+  titulo: string;
+  produto: string;
+  state: string;
+  prioridade: number | null;
+  spEstimados: number | null;
+  spReal: number | null;
+  sprint: string;
+  responsavel: { nome: string; avatarUrl: string | null } | null;
+};
+
+/**
+ * Busca Tasks alocadas em sprint, pra seção "Sprints alocadas" do painel "Roadmap e Entregas".
+ *
+ * V1 (2026-09-23): recebe a lista de IDs explicitamente (usado só com a Task #31537, "Ajuste
+ * cadastro de pessoas", como exemplo único pra validar o layout — mesmo padrão do Epic #15057 no
+ * Gantt). A versão genérica (WIQL por sprint atual + squad) fica pro próximo passo.
+ *
+ * Duas decisões tomadas com o Heder depois de rodar o diagnóstico contra a Task #31537:
+ * - Não existe campo equivalente a "Tipo" (Recurso/Qualidade/Bug, do protótipo original) numa
+ *   Task desse projeto — a coluna foi removida da v1.
+ * - Task não tem campo de Story Points (isso existe em Feature/PBI, não em Task) — "SP Estimados"
+ *   e "SP Real" usam Microsoft.VSTS.Scheduling.Effort e Microsoft.VSTS.Scheduling.CompletedWork.
+ *
+ * `produto` vem de System.TeamProject (KMM4/KMM5) — diferente do Epic, a Task não tem
+ * Custom.Produto preenchido.
+ */
+export async function getTasksAlocadas(taskIds: number[]): Promise<TaskAlocada[]> {
+  const { org, pat } = getConfig();
+  if (!taskIds.length) return [];
+  const base = `https://dev.azure.com/${org}/_apis`;
+
+  const res = await fetch(
+    `${base}/wit/workitems?ids=${taskIds.join(",")}&fields=${encodeURIComponent(CAMPOS_SPRINT_TASK.join(","))}&api-version=${API_VERSION}`,
+    { headers: authHeader(pat) }
+  );
+  if (!res.ok) {
+    throw new Error(`Falha ao buscar Tasks alocadas (${res.status}): ${await res.text()}`);
+  }
+  const { value } = (await res.json()) as { value: WorkItem[] };
+
+  return value.map((w) => {
+    const assignedTo = w.fields["System.AssignedTo"] as CampoPessoa;
+    const prioridade = w.fields["Microsoft.VSTS.Common.Priority"];
+    const spEstimados = w.fields["Microsoft.VSTS.Scheduling.Effort"];
+    const spReal = w.fields["Microsoft.VSTS.Scheduling.CompletedWork"];
+    return {
+      id: w.id,
+      titulo: String(w.fields["System.Title"] ?? `Item ${w.id}`),
+      produto: String(w.fields["System.TeamProject"] ?? ""),
+      state: String(w.fields["System.State"] ?? ""),
+      prioridade: typeof prioridade === "number" ? prioridade : null,
+      spEstimados: typeof spEstimados === "number" ? spEstimados : null,
+      spReal: typeof spReal === "number" ? spReal : null,
+      sprint: String(w.fields["System.IterationLevel3"] ?? w.fields["System.IterationPath"] ?? "Sem sprint"),
+      responsavel: assignedTo?.displayName
+        ? { nome: assignedTo.displayName, avatarUrl: assignedTo.imageUrl ?? null }
+        : null,
+    };
+  });
+}

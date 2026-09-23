@@ -1505,3 +1505,89 @@ Log da Vercel como sempre, depois do push).
 **Pendente (esperado, ciclo iterativo já combinado com Heder):** essa é a v1, propositalmente só
 com o Epic #15057, pra refinar o layout visual antes de generalizar pra WIQL por produto (todos os
 Epics do KMM4, depois todos do KMM5).
+
+## 2026-09-23 — Backlog registrado: "F02 - Road Map" (documento de requisitos, v1.0, Heder)
+
+Heder mandou um documento de requisitos formal (`F02 - Road Map.pdf`) com o pedido explícito de
+só **registrar na fila** por enquanto (não implementar ainda — segue em paralelo com a seção
+"Sprints alocadas", que está aguardando o diagnóstico do item 31537). Resumo interpretado do
+documento, item por item, pra virar checklist quando chegar a vez:
+
+**Contexto/DoD do documento:** a v1 do roadmap (Epic #15057 fixo) foi só pra validar o layout;
+o objetivo final é ter o painel espelhando o planejamento real do Azure DevOps por squad/produto
+(KMM4 e KMM5), com carga de dados real (não mais 1 Epic hardcoded).
+
+**1) Filtro de produto duplicado** — o filtro que acabei de adicionar no topo da página (commit
+`5ec076e`) duplica o seletor do header (`ProdutoSwitcher` em `AppShell.tsx`). Heder pediu pra
+remover a camada de baixo (a da página) e manter só o do header.
+
+**2) Agrupamento por AREA (cor de borda)** — cada Epic deve ter uma cor de borda própria,
+correspondente à sua `System.AreaPath`; as Features filhas daquele Epic replicam a mesma cor
+(hoje todas as barras são só laranja/preto, sem diferenciação por área). Precisa de uma paleta
+fixa (ou hash determinístico da string do Area Path → cor) já que no futuro vão existir vários
+Epics/áreas simultâneos, não só 1.
+
+**3) Interações Epic/Feature:**
+   - Remover a descrição do Epic da visualização inicial (hoje aparece direto na sub-linha);
+     colocar um botão "expandir" na borda superior do bloco do Epic que abre um MODAL com a
+     descrição.
+   - Permitir colapsar/expandir as Features do Epic (efeito de slide in/out); o bloco do próprio
+     Epic deve continuar sempre visível mesmo com as features colapsadas.
+   - Cor da barra da Feature conforme o `State`: Done = verde, New = cinza, In Progress = azul
+     (hoje toda barra de Feature é laranja fixo, sem diferenciar por status).
+   - Criar um filtro de **Area Path** dentro da própria página (esse é filtro novo, diferente do
+     de produto do item 1 — este continua).
+
+**4) Identidade visual** — redesenhar a aba pra ficar próxima do protótipo anexado no documento:
+cards de estatística no topo (Entregas na visão / Em andamento / Progresso médio / Horizonte),
+painel "Plano de entregas" com colunas por mês agrupadas em trimestre (Q3/Q4), barra de progresso
+com % concluído dentro da própria barra, chip de responsável, legenda de status com bolinha
+colorida (No prazo/Atenção/Atrasado) e rodapé com texto + "Atualizado em".
+
+**Ordem combinada:** primeiro fechar "Sprints alocadas" (aguardando Heder rodar
+`node --env-file=.env scripts/inspect-epic.mjs 31537` e colar o resultado), depois entrar nesse
+backlog do Road Map na ordem 1→2→3→4 listada acima.
+
+## 2026-09-23 (cont.) — Seção "Sprints alocadas" + alternância de visão (Road Map / Sprints)
+
+Segunda parte do painel "Roadmap e Entregas": uma tabela de Tasks alocadas por sprint, no estilo
+do protótipo que o Heder mandou (Sprint como cabeçalho, colunas Resp./Status/Prioridade/SP
+Estimados/SP Real, linha de soma no rodapé), com um filtro de visão no topo da página pra alternar
+entre "Road Map" (o Gantt já existente) e "Sprints" (a tabela nova) — só uma seção fica visível
+por vez.
+
+**Diagnóstico rodado pelo Heder contra a Task #31537** ("Ajuste cadastro de pessoas", KMM5) revelou
+duas diferenças importantes em relação ao protótipo original e ao que foi feito pro Epic:
+- **Não existe campo "Tipo"** (Recurso/Qualidade/Bug) numa Task desse projeto — não achei
+  `Custom.Tipo` nem nada parecido no dump de campos. Decisão do Heder: remover essa coluna da v1
+  (não usar Tags nem outro campo por enquanto).
+- **Task não tem Story Points** — esse campo existe em Feature/PBI, não em Task. Decisão do Heder:
+  usar `Microsoft.VSTS.Scheduling.Effort` como "SP Estimados" e
+  `Microsoft.VSTS.Scheduling.CompletedWork` como "SP Real" (#31537 tem Effort=20, CompletedWork=3).
+- `produto` da Task vem de `System.TeamProject` (KMM4/KMM5 direto), não de `Custom.Produto` — esse
+  campo não veio preenchido pra Task (ao contrário do Epic, que tem `Custom.Produto`).
+- Sprint exibido = `System.IterationLevel3` (ex.: "Sprint 8.16"), com fallback pro
+  `System.IterationPath` completo se não vier.
+- `System.AssignedTo` traz `displayName` + `imageUrl` (avatar) prontos — usado direto no chip do
+  responsável.
+
+**Prioridade (`Microsoft.VSTS.Common.Priority`, número 1–4):** mapeado com a convenção padrão do
+Azure DevOps (1=Crítica, 2=Alta, 3=Média, 4=Baixa) — **não confirmado explicitamente com o Heder**,
+é só a leitura usual desse campo; ajustar se a régua real do time for diferente.
+
+**Implementado:**
+- `lib/devops-client.ts`: `getTasksAlocadas(taskIds)` (V1 hardcoded: `[31537]`) + tipo `TaskAlocada`.
+- `lib/kmm-theme.ts`: novo helper `corDeEstadoDevOps(state)` — mapeia por palavra-chave (não por
+  lista fixa de valores) pra cobrir estados em PT ou EN de squads diferentes. Pensado pra também
+  ser reaproveitado no ajuste de cor das barras de Feature no Gantt (pedido no F02 - Road Map,
+  seção 3 — ainda não fiz essa parte, só deixei o helper pronto).
+- `app/api/roadmap/tarefas/route.ts` (rota nova).
+- `app/(app)/roadmap/page.tsx`: filtro de visão (Road Map / Sprints) no topo da página, e o
+  componente `SprintsAlocadas`.
+
+**Verificado:** `npx tsc --noEmit` limpo.
+
+**Pendente (esperado, mesmo ciclo iterativo do Gantt):** essa é a v1 só com a Task #31537; depois
+de aprovado o layout, trocar a lista fixa de IDs por uma WIQL pela sprint atual + squad. Segue
+valendo a ordem combinada: próximo passo depois disso é o backlog do "F02 - Road Map" (registrado
+mais acima), 1→4.

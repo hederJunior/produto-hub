@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useProduto, type ProdutoSelecionado } from "@/components/ProdutoContext";
-import { C } from "@/lib/kmm-theme";
+import { C, corDeEstadoDevOps } from "@/lib/kmm-theme";
 
 type FeatureRoadmap = {
   id: number;
@@ -22,6 +22,18 @@ type EpicRoadmap = {
   startDate: string | null;
   targetDate: string | null;
   features: FeatureRoadmap[];
+};
+
+type TaskAlocada = {
+  id: number;
+  titulo: string;
+  produto: string;
+  state: string;
+  prioridade: number | null;
+  spEstimados: number | null;
+  spReal: number | null;
+  sprint: string;
+  responsavel: { nome: string; avatarUrl: string | null } | null;
 };
 
 const MESES_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
@@ -65,25 +77,66 @@ function formatarData(dataISO: string | null): string {
   return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
+/**
+ * Prioridade do Azure DevOps vem como número (1–4). Convenção padrão adotada (não confirmada
+ * campo a campo com o Heder, só a leitura usual do Priority no processo do Azure DevOps):
+ * 1 = Crítica, 2 = Alta, 3 = Média, 4 = Baixa.
+ */
+function infoPrioridade(p: number | null): { label: string; bg: string; fg: string } {
+  switch (p) {
+    case 1:
+      return { label: "Crítica", bg: "#FBE7E4", fg: C.red };
+    case 2:
+      return { label: "Alta", bg: "#FFF1EA", fg: C.orange };
+    case 3:
+      return { label: "Média", bg: "#FCEFD8", fg: C.amber };
+    case 4:
+      return { label: "Baixa", bg: "#E7F5EC", fg: C.green };
+    default:
+      return { label: "Sem prioridade", bg: C.soft, fg: C.muted };
+  }
+}
+
 const LARGURA_COLUNA_LABEL = 280;
+
+type Visao = "roadmap" | "sprints";
 
 export default function RoadmapPage() {
   const { produto } = useProduto();
+  const [visao, setVisao] = useState<Visao>("roadmap");
+
   const [epicos, setEpicos] = useState<EpicRoadmap[]>([]);
-  const [carregando, setCarregando] = useState(true);
-  const [erro, setErro] = useState<string | null>(null);
+  const [carregandoRoadmap, setCarregandoRoadmap] = useState(true);
+  const [erroRoadmap, setErroRoadmap] = useState<string | null>(null);
+
+  const [tarefas, setTarefas] = useState<TaskAlocada[]>([]);
+  const [carregandoSprints, setCarregandoSprints] = useState(true);
+  const [erroSprints, setErroSprints] = useState<string | null>(null);
 
   useEffect(() => {
-    setCarregando(true);
-    setErro(null);
+    setCarregandoRoadmap(true);
+    setErroRoadmap(null);
     fetch(`/api/roadmap/epicos?produto=${produto}`, { cache: "no-store" })
       .then((res) => res.json())
       .then((j) => {
-        if (j.erro) setErro(j.erro);
+        if (j.erro) setErroRoadmap(j.erro);
         setEpicos(j.epicos ?? []);
       })
-      .catch(() => setErro("Não foi possível carregar o roadmap do Azure DevOps."))
-      .finally(() => setCarregando(false));
+      .catch(() => setErroRoadmap("Não foi possível carregar o roadmap do Azure DevOps."))
+      .finally(() => setCarregandoRoadmap(false));
+  }, [produto]);
+
+  useEffect(() => {
+    setCarregandoSprints(true);
+    setErroSprints(null);
+    fetch(`/api/roadmap/tarefas?produto=${produto}`, { cache: "no-store" })
+      .then((res) => res.json())
+      .then((j) => {
+        if (j.erro) setErroSprints(j.erro);
+        setTarefas(j.tarefas ?? []);
+      })
+      .catch(() => setErroSprints("Não foi possível carregar as sprints do Azure DevOps."))
+      .finally(() => setCarregandoSprints(false));
   }, [produto]);
 
   const { meses, inicioMs, fimMs } = useMemo(() => {
@@ -118,29 +171,65 @@ export default function RoadmapPage() {
         <div>
           <h1 style={{ fontFamily: "Sora,sans-serif", fontSize: 26, margin: 0, color: C.text }}>Roadmap e entregas</h1>
           <p style={{ color: C.muted, marginTop: 4, marginBottom: 0 }}>
-            Epics e Features do Azure DevOps, por área e período — versão inicial em validação (Epic #15057).
+            {visao === "roadmap"
+              ? "Epics e Features do Azure DevOps, por área e período — versão inicial em validação (Epic #15057)."
+              : "Tasks alocadas por sprint — versão inicial em validação (Task #31537)."}
           </p>
         </div>
-        <ProdutoFiltro />
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
+          <VisaoFiltro visao={visao} setVisao={setVisao} />
+          <ProdutoFiltro />
+        </div>
       </div>
 
       <div style={{ marginTop: 24 }}>
-        {carregando && <p style={{ color: C.muted }}>Carregando roadmap do Azure DevOps…</p>}
-
-        {erro && (
-          <div className="kmm-card" style={{ color: C.red, fontSize: 13 }}>
-            {erro}
-          </div>
-        )}
-
-        {!carregando && !erro && epicos.length === 0 && (
-          <p style={{ color: C.muted }}>Nenhum Epic encontrado para o produto selecionado.</p>
-        )}
-
-        {!carregando && !erro && epicos.length > 0 && (
-          <GanttRoadmap epicos={epicos} meses={meses} inicioMs={inicioMs} fimMs={fimMs} />
+        {visao === "roadmap" ? (
+          <>
+            {carregandoRoadmap && <p style={{ color: C.muted }}>Carregando roadmap do Azure DevOps…</p>}
+            {erroRoadmap && (
+              <div className="kmm-card" style={{ color: C.red, fontSize: 13 }}>
+                {erroRoadmap}
+              </div>
+            )}
+            {!carregandoRoadmap && !erroRoadmap && epicos.length === 0 && (
+              <p style={{ color: C.muted }}>Nenhum Epic encontrado para o produto selecionado.</p>
+            )}
+            {!carregandoRoadmap && !erroRoadmap && epicos.length > 0 && (
+              <GanttRoadmap epicos={epicos} meses={meses} inicioMs={inicioMs} fimMs={fimMs} />
+            )}
+          </>
+        ) : (
+          <>
+            {carregandoSprints && <p style={{ color: C.muted }}>Carregando sprints do Azure DevOps…</p>}
+            {erroSprints && (
+              <div className="kmm-card" style={{ color: C.red, fontSize: 13 }}>
+                {erroSprints}
+              </div>
+            )}
+            {!carregandoSprints && !erroSprints && tarefas.length === 0 && (
+              <p style={{ color: C.muted }}>Nenhuma Task encontrada para o produto selecionado.</p>
+            )}
+            {!carregandoSprints && !erroSprints && tarefas.length > 0 && <SprintsAlocadas tarefas={tarefas} />}
+          </>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Alterna entre a visão de Road Map (Gantt por Epic) e a de Sprints alocadas (Tasks por sprint). */
+function VisaoFiltro({ visao, setVisao }: { visao: Visao; setVisao: (v: Visao) => void }) {
+  const opcoes: { valor: Visao; label: string }[] = [
+    { valor: "roadmap", label: "Road Map" },
+    { valor: "sprints", label: "Sprints" },
+  ];
+  return (
+    <div className="kmm-seg">
+      {opcoes.map((o) => (
+        <div key={o.valor} className={`kmm-seg-item${visao === o.valor ? " active" : ""}`} onClick={() => setVisao(o.valor)}>
+          {o.label}
+        </div>
+      ))}
     </div>
   );
 }
@@ -327,5 +416,127 @@ function BarraGantt({ inicioPct, fimPct, cor, label }: { inicioPct: number; fimP
         boxShadow: "0 1px 2px rgba(20,16,12,.15)",
       }}
     />
+  );
+}
+
+const COLUNAS_SPRINT = "1fr 190px 150px 110px 110px 110px";
+
+/**
+ * Seção "Sprints alocadas": Tasks agrupadas por Sprint (System.IterationLevel3), no estilo do
+ * protótipo enviado pelo Heder — sem a coluna "Tipo" (não existe campo equivalente numa Task
+ * desse projeto) e usando Effort/Completed Work como SP Estimados/SP Real (decisões tomadas com
+ * o Heder em 2026-09-23, ver lib/devops-client.ts).
+ */
+function SprintsAlocadas({ tarefas }: { tarefas: TaskAlocada[] }) {
+  const porSprint = useMemo(() => {
+    const grupos: Record<string, TaskAlocada[]> = {};
+    for (const t of tarefas) {
+      grupos[t.sprint] ??= [];
+      grupos[t.sprint].push(t);
+    }
+    return grupos;
+  }, [tarefas]);
+
+  const nomesSprints = Object.keys(porSprint).sort();
+
+  return (
+    <div>
+      {nomesSprints.map((sprint) => {
+        const itens = porSprint[sprint];
+        const somaEstimados = itens.reduce((acc, t) => acc + (t.spEstimados ?? 0), 0);
+        const somaReal = itens.reduce((acc, t) => acc + (t.spReal ?? 0), 0);
+
+        return (
+          <div key={sprint} className="kmm-card" style={{ padding: 0, overflow: "hidden", marginBottom: 20 }}>
+            <div style={{ padding: "14px 18px 8px" }}>
+              <span style={{ fontFamily: "Sora,sans-serif", fontWeight: 800, fontSize: 16, color: C.orange }}>{sprint}</span>
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: COLUNAS_SPRINT,
+                padding: "0 18px 8px",
+                fontSize: 11,
+                fontWeight: 700,
+                color: C.muted,
+                textTransform: "uppercase",
+                letterSpacing: ".03em",
+              }}
+            >
+              <div>&nbsp;</div>
+              <div>Resp.</div>
+              <div>Status</div>
+              <div>Prioridade</div>
+              <div style={{ textAlign: "right" }}>SP Estimados</div>
+              <div style={{ textAlign: "right" }}>SP Real</div>
+            </div>
+
+            {itens.map((t) => {
+              const prio = infoPrioridade(t.prioridade);
+              const status = corDeEstadoDevOps(t.state);
+              return (
+                <div
+                  key={t.id}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: COLUNAS_SPRINT,
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "10px 18px",
+                    borderTop: `1px solid ${C.grid}`,
+                    borderLeft: `4px solid ${prio.fg}`,
+                  }}
+                >
+                  <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{t.titulo}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                    {t.responsavel?.avatarUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- avatar vem direto da API do Azure DevOps
+                      <img
+                        src={t.responsavel.avatarUrl}
+                        alt={t.responsavel.nome}
+                        width={22}
+                        height={22}
+                        style={{ borderRadius: "50%", flexShrink: 0 }}
+                      />
+                    ) : (
+                      <div style={{ width: 22, height: 22, borderRadius: "50%", background: C.soft, flexShrink: 0 }} />
+                    )}
+                    <span style={{ fontSize: 12, color: C.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {t.responsavel?.nome ?? "Sem responsável"}
+                    </span>
+                  </div>
+                  <span className="kmm-chip" style={{ background: status.bg, color: status.fg, borderColor: "transparent" }}>
+                    {t.state}
+                  </span>
+                  <span className="kmm-chip" style={{ background: prio.bg, color: prio.fg, borderColor: "transparent" }}>
+                    {prio.label}
+                  </span>
+                  <div style={{ textAlign: "right", fontSize: 13, fontWeight: 700, color: C.text }}>{t.spEstimados ?? "—"}</div>
+                  <div style={{ textAlign: "right", fontSize: 13, fontWeight: 700, color: C.text }}>{t.spReal ?? "—"}</div>
+                </div>
+              );
+            })}
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: COLUNAS_SPRINT,
+                padding: "10px 18px",
+                borderTop: `1px solid ${C.border}`,
+                background: C.soft,
+              }}
+            >
+              <div />
+              <div />
+              <div />
+              <div style={{ fontSize: 11, color: C.muted, textAlign: "right", fontWeight: 700, alignSelf: "center" }}>Soma</div>
+              <div style={{ textAlign: "right", fontSize: 13, fontWeight: 800, color: C.text }}>{somaEstimados}</div>
+              <div style={{ textAlign: "right", fontSize: 13, fontWeight: 800, color: C.text }}>{somaReal}</div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }

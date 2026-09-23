@@ -1591,3 +1591,48 @@ Azure DevOps (1=Crítica, 2=Alta, 3=Média, 4=Baixa) — **não confirmado expli
 de aprovado o layout, trocar a lista fixa de IDs por uma WIQL pela sprint atual + squad. Segue
 valendo a ordem combinada: próximo passo depois disso é o backlog do "F02 - Road Map" (registrado
 mais acima), 1→4.
+
+## 2026-09-23 (cont.) — F02 - Road Map: refinamento visual implementado (itens 1–4)
+
+Aplicados os 4 blocos registrados no backlog do "F02 - Road Map" (ver entrada acima), todos na
+tela de Road Map (visão "roadmap" dentro da aba "Roadmap e entregas"):
+
+**1) Filtro de produto duplicado** — removido o filtro que eu tinha colocado no topo da página
+(commit `5ec076e`); agora só existe o seletor de produto do header (`AppShell.tsx`).
+
+**2) Cor de borda por AREA** — `corDaArea(areaPath)` (novo, em `lib/kmm-theme.ts`): hash
+determinístico da string do Area Path numa paleta fixa de 10 cores (`PALETA_AREA`) — a mesma área
+sempre cai na mesma cor, sem precisar mapear cada uma manualmente. Aplicado como borda esquerda no
+bloco do Epic (5px) e replicado em cada Feature filha (4px), como pedido.
+
+**3) Interações Epic/Feature:**
+   - Descrição do Epic saiu da visualização inicial; agora tem um botão "Expandir" flutuando na
+     borda superior do bloco do Epic que abre um modal (`ModalDescricaoEpic`) com a descrição.
+   - Features colapsáveis por Epic (botão "Ocultar/Mostrar N features"), com efeito de slide via
+     `grid-template-rows` animado (0fr ↔ 1fr) — sem precisar medir altura em JS. O bloco do Epic
+     em si nunca some, só a lista de Features.
+   - Barra da Feature agora usa `corDeEstadoDevOps(f.state)` (o mesmo helper criado pra Sprints)
+     em vez de laranja fixo — cobre a regra Done=verde/New=cinza/In progress=azul por palavra-chave.
+   - Filtro de Area Path novo dentro da página (dropdown, dentro do card "Plano de entregas"),
+     junto com a legenda de status.
+
+**4) Identidade visual** — página redesenhada próxima do protótipo novo: 4 tiles de estatística
+(Entregas na visão / Em andamento / Progresso médio / Horizonte — todos calculados a partir dos
+Epics exibidos, não hardcoded), card "Plano de entregas" com legenda de status (bolinha colorida
+No prazo/Atenção/Atrasado) e cabeçalho de 2 níveis (trimestre agrupando os meses), barra do Epic
+com "NN% concluído" escrito dentro + marcador circular na ponta, e rodapé com
+"Planejamento consolidado de {produto}" + "Atualizado em {data}".
+
+**Métricas calculadas (não são campos nativos do Azure DevOps — heurísticas, documentando a regra):**
+- Progresso do Epic = % de Features filhas com State "concluído" (`estadoIndicaConcluido()`, por
+  palavra-chave — mesma lógica do `corDeEstadoDevOps`). Sem Features, usa o State do próprio Epic.
+- Status de prazo (No prazo/Atenção/Atrasado) = mesma fórmula já usada em `getRoadmapItems()` pro
+  roadmap antigo por trimestre (baseada em dias até o Target Date + progresso), reaproveitada aqui
+  pra manter os dois painéis consistentes.
+- "Em andamento" (tile) = Epics com progresso entre 1% e 99%. "Horizonte" = primeiro e último
+  trimestre cobertos pelo período calculado dos Epics exibidos.
+
+**Também:** `getEpicComFeatures()` agora também extrai `responsavel` (System.AssignedTo) do Epic,
+usado na sub-linha "{produto} · {responsável}".
+
+**Verificado:** `npx tsc --noEmit` limpo.

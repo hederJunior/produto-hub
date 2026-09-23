@@ -53,9 +53,43 @@ export function corDeStatus(status: string): { bg: string; fg: string } {
  * Features do Roadmap quando esse ajuste de cor por status for feito lá (pedido no F02 - Road Map).
  */
 export function corDeEstadoDevOps(state: string): { bg: string; fg: string } {
+  if (estadoIndicaConcluido(state)) return { bg: "#E7F5EC", fg: C.green };
   const s = state.toLowerCase();
-  if (/conclu|done|closed|fechado|finalizad/.test(s)) return { bg: "#E7F5EC", fg: C.green };
   if (/andamento|execu|doing|progress|active/.test(s)) return { bg: "#E7F0FA", fg: C.blue };
   if (/teste|review|revis|valida/.test(s)) return { bg: "#FCEFD8", fg: C.amber };
   return { bg: C.soft, fg: C.muted };
+}
+
+/** Um State literal do Azure DevOps indica item concluído? (Done/Closed/Concluído/Fechado/...) */
+export function estadoIndicaConcluido(state: string): boolean {
+  return /conclu|done|closed|fechado|finalizad/i.test(state);
+}
+
+/**
+ * Paleta fixa pra colorir Epics/Features por AREA (System.AreaPath) no Gantt do Roadmap —
+ * pedido no F02 - Road Map ("cada EPIC deve ter uma cor de borda respectiva à sua AREA").
+ * `corDaArea()` faz um hash simples e determinístico da string do Area Path pra escolher a cor:
+ * a mesma área sempre cai na mesma cor (mesmo com várias áreas simultâneas, sem precisar mapear
+ * cada uma manualmente).
+ */
+export const PALETA_AREA = [
+  "#FC4C02", // orange (acento do tema)
+  "#3E7CB1", // blue
+  "#2E9E5B", // green
+  "#8B5CF6", // violet
+  "#E8920C", // amber
+  "#DD3322", // red
+  "#0E9488", // teal
+  "#C2185B", // pink
+  "#6D4C41", // brown
+  "#5C6BC0", // indigo
+];
+
+export function corDaArea(areaPath: string): string {
+  let hash = 0;
+  for (let i = 0; i < areaPath.length; i++) {
+    hash = (hash * 31 + areaPath.charCodeAt(i)) | 0;
+  }
+  const idx = Math.abs(hash) % PALETA_AREA.length;
+  return PALETA_AREA[idx];
 }

@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useProduto, type ProdutoSelecionado } from "@/components/ProdutoContext";
-import { C, corDeEstadoDevOps } from "@/lib/kmm-theme";
+import { Calendar, ChevronDown, ChevronUp, Clock, Flag, Gauge, Maximize2, X } from "lucide-react";
+import { useProduto } from "@/components/ProdutoContext";
+import { C, corDaArea, corDeEstadoDevOps, corDeStatus, estadoIndicaConcluido } from "@/lib/kmm-theme";
 
 type FeatureRoadmap = {
   id: number;
@@ -21,6 +22,7 @@ type EpicRoadmap = {
   state: string;
   startDate: string | null;
   targetDate: string | null;
+  responsavel: { nome: string; avatarUrl: string | null } | null;
   features: FeatureRoadmap[];
 };
 
@@ -37,6 +39,7 @@ type TaskAlocada = {
 };
 
 const MESES_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+const MESES_ABREV = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 
 function inicioDoMes(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), 1);
@@ -62,6 +65,19 @@ function listarMeses(inicio: Date, fim: Date): Date[] {
   return meses;
 }
 
+/** Agrupa uma lista de meses consecutivos em blocos de trimestre, pro cabeçalho de 2 níveis. */
+function agruparPorTrimestre(meses: Date[]): { label: string; span: number }[] {
+  const grupos: { label: string; span: number }[] = [];
+  for (const m of meses) {
+    const trimestre = Math.floor(m.getMonth() / 3) + 1;
+    const label = `Q${trimestre} ${m.getFullYear()}`;
+    const ultimo = grupos[grupos.length - 1];
+    if (ultimo && ultimo.label === label) ultimo.span += 1;
+    else grupos.push({ label, span: 1 });
+  }
+  return grupos;
+}
+
 /** Posição (0–100%) de uma data dentro do intervalo [inicio, fim] do Gantt, por dia corrido. */
 function posicaoPercentual(dataISO: string | null, inicioMs: number, fimMs: number): number {
   if (!dataISO) return 0;
@@ -75,6 +91,29 @@ function formatarData(dataISO: string | null): string {
   const d = new Date(dataISO);
   if (Number.isNaN(d.getTime())) return "sem data";
   return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+/**
+ * Progresso (0–100) do Epic, estimado pela proporção de Features filhas com State "concluído"
+ * (ver estadoIndicaConcluido em lib/kmm-theme.ts). Sem Features, usa o próprio State do Epic.
+ */
+function progressoDoEpic(epic: EpicRoadmap): number {
+  if (!epic.features.length) return estadoIndicaConcluido(epic.state) ? 100 : 0;
+  const concluidas = epic.features.filter((f) => estadoIndicaConcluido(f.state)).length;
+  return Math.round((concluidas / epic.features.length) * 100);
+}
+
+/**
+ * Status de prazo do Epic (No prazo / Atenção / Atrasado), mesma fórmula usada em
+ * getRoadmapItems() (lib/devops-client.ts) pro roadmap antigo por trimestre — reaproveitada aqui
+ * pra manter os dois painéis consistentes.
+ */
+function statusPrazoDoEpic(epic: EpicRoadmap, progresso: number): "No prazo" | "Atenção" | "Atrasado" {
+  if (!epic.targetDate) return "No prazo";
+  const diasRestantes = (new Date(epic.targetDate).getTime() - Date.now()) / 86_400_000;
+  if (diasRestantes < 0 && progresso < 100) return "Atrasado";
+  if (diasRestantes < 15 && progresso < 80) return "Atenção";
+  return "No prazo";
 }
 
 /**
@@ -97,7 +136,7 @@ function infoPrioridade(p: number | null): { label: string; bg: string; fg: stri
   }
 }
 
-const LARGURA_COLUNA_LABEL = 280;
+const LARGURA_COLUNA_LABEL = 300;
 
 type Visao = "roadmap" | "sprints";
 
@@ -108,10 +147,16 @@ export default function RoadmapPage() {
   const [epicos, setEpicos] = useState<EpicRoadmap[]>([]);
   const [carregandoRoadmap, setCarregandoRoadmap] = useState(true);
   const [erroRoadmap, setErroRoadmap] = useState<string | null>(null);
+  const [areaSelecionada, setAreaSelecionada] = useState("todas");
+  const [epicDescricaoAberta, setEpicDescricaoAberta] = useState<number | null>(null);
+  const [featuresAbertas, setFeaturesAbertas] = useState<Record<number, boolean>>({});
 
   const [tarefas, setTarefas] = useState<TaskAlocada[]>([]);
   const [carregandoSprints, setCarregandoSprints] = useState(true);
   const [erroSprints, setErroSprints] = useState<string | null>(null);
+
+  const [agora, setAgora] = useState<Date | null>(null);
+  useEffect(() => setAgora(new Date()), []);
 
   useEffect(() => {
     setCarregandoRoadmap(true);
@@ -139,9 +184,16 @@ export default function RoadmapPage() {
       .finally(() => setCarregandoSprints(false));
   }, [produto]);
 
+  const areasDisponiveis = useMemo(() => Array.from(new Set(epicos.map((e) => e.areaPath))).sort(), [epicos]);
+
+  const epicosExibidos = useMemo(
+    () => (areaSelecionada === "todas" ? epicos : epicos.filter((e) => e.areaPath === areaSelecionada)),
+    [epicos, areaSelecionada]
+  );
+
   const { meses, inicioMs, fimMs } = useMemo(() => {
     const datas: Date[] = [];
-    for (const epic of epicos) {
+    for (const epic of epicosExibidos) {
       if (epic.startDate) datas.push(new Date(epic.startDate));
       if (epic.targetDate) datas.push(new Date(epic.targetDate));
       for (const f of epic.features) {
@@ -163,7 +215,29 @@ export default function RoadmapPage() {
       inicioMs: inicioCalc.getTime(),
       fimMs: fimCalc.getTime(),
     };
-  }, [epicos]);
+  }, [epicosExibidos]);
+
+  const progressos = epicosExibidos.map((e) => progressoDoEpic(e));
+  const entregasNaVisao = epicosExibidos.length;
+  const emAndamento = progressos.filter((p) => p > 0 && p < 100).length;
+  const progressoMedio = progressos.length ? Math.round(progressos.reduce((a, b) => a + b, 0) / progressos.length) : 0;
+  const gruposTrimestre = agruparPorTrimestre(meses);
+  const horizonte = !gruposTrimestre.length
+    ? "—"
+    : gruposTrimestre.length === 1
+    ? gruposTrimestre[0].label.split(" ")[0]
+    : `${gruposTrimestre[0].label.split(" ")[0]} — ${gruposTrimestre[gruposTrimestre.length - 1].label.split(" ")[0]}`;
+
+  const subtituloPeriodo = !meses.length
+    ? "sem período definido"
+    : meses.length === 1
+    ? `${MESES_PT[meses[0].getMonth()].toLowerCase()} de ${meses[0].getFullYear()}`
+    : `${MESES_PT[meses[0].getMonth()].toLowerCase()} a ${MESES_PT[meses[meses.length - 1].getMonth()].toLowerCase()} de ${meses[
+        meses.length - 1
+      ].getFullYear()}`;
+
+  const produtoLabelFooter = produto === "AMBOS" ? "KMM4 e KMM5" : produto;
+  const epicDescricao = epicos.find((e) => e.id === epicDescricaoAberta) ?? null;
 
   return (
     <div>
@@ -172,14 +246,11 @@ export default function RoadmapPage() {
           <h1 style={{ fontFamily: "Sora,sans-serif", fontSize: 26, margin: 0, color: C.text }}>Roadmap e entregas</h1>
           <p style={{ color: C.muted, marginTop: 4, marginBottom: 0 }}>
             {visao === "roadmap"
-              ? "Epics e Features do Azure DevOps, por área e período — versão inicial em validação (Epic #15057)."
+              ? "Cronograma estratégico de desenvolvimento, marcos e entregas do time de Produto."
               : "Tasks alocadas por sprint — versão inicial em validação (Task #31537)."}
           </p>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
-          <VisaoFiltro visao={visao} setVisao={setVisao} />
-          <ProdutoFiltro />
-        </div>
+        <VisaoFiltro visao={visao} setVisao={setVisao} />
       </div>
 
       <div style={{ marginTop: 24 }}>
@@ -195,7 +266,62 @@ export default function RoadmapPage() {
               <p style={{ color: C.muted }}>Nenhum Epic encontrado para o produto selecionado.</p>
             )}
             {!carregandoRoadmap && !erroRoadmap && epicos.length > 0 && (
-              <GanttRoadmap epicos={epicos} meses={meses} inicioMs={inicioMs} fimMs={fimMs} />
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 20 }}>
+                  <StatTile icon={<Flag size={18} color={C.orange} />} bg="#FDEDE7" label="Entregas na visão" valor={String(entregasNaVisao)} />
+                  <StatTile icon={<Clock size={18} color={C.blue} />} bg="#E9F1FB" label="Em andamento" valor={String(emAndamento)} />
+                  <StatTile icon={<Gauge size={18} color="#8B5CF6" />} bg="#F1ECFB" label="Progresso médio" valor={`${progressoMedio}%`} />
+                  <StatTile icon={<Calendar size={18} color={C.orangeDark} />} bg="#FDEDE0" label="Horizonte" valor={horizonte} />
+                </div>
+
+                <div className="kmm-card" style={{ padding: "18px 18px 14px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12, marginBottom: 14 }}>
+                    <div>
+                      <div style={{ fontFamily: "Sora,sans-serif", fontWeight: 800, fontSize: 16, color: C.text }}>Plano de entregas</div>
+                      <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>Visão mensal · {subtituloPeriodo}</div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+                      <LegendaStatus />
+                      <select
+                        className="kmm-input"
+                        style={{ width: "auto" }}
+                        value={areaSelecionada}
+                        onChange={(e) => setAreaSelecionada(e.target.value)}
+                      >
+                        <option value="todas">Todas as áreas</option>
+                        {areasDisponiveis.map((a) => (
+                          <option key={a} value={a}>
+                            {a.split("\\").pop() || a}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div style={{ overflowX: "auto" }}>
+                    <div style={{ minWidth: LARGURA_COLUNA_LABEL + meses.length * 90 }}>
+                      <CabecalhoMeses meses={meses} gruposTrimestre={gruposTrimestre} />
+                      {epicosExibidos.map((epic) => (
+                        <EpicRow
+                          key={epic.id}
+                          epic={epic}
+                          meses={meses}
+                          inicioMs={inicioMs}
+                          fimMs={fimMs}
+                          aberto={featuresAbertas[epic.id] ?? true}
+                          onToggle={() => setFeaturesAbertas((f) => ({ ...f, [epic.id]: !(f[epic.id] ?? true) }))}
+                          onExpandirDescricao={() => setEpicDescricaoAberta(epic.id)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: C.muted, paddingTop: 12 }}>
+                    <span>Planejamento consolidado de {produtoLabelFooter}</span>
+                    <span>{agora ? `Atualizado em ${agora.getDate()} ${MESES_ABREV[agora.getMonth()]} ${agora.getFullYear()}` : ""}</span>
+                  </div>
+                </div>
+              </>
             )}
           </>
         ) : (
@@ -213,6 +339,8 @@ export default function RoadmapPage() {
           </>
         )}
       </div>
+
+      {epicDescricao && <ModalDescricaoEpic epic={epicDescricao} onFechar={() => setEpicDescricaoAberta(null)} />}
     </div>
   );
 }
@@ -234,43 +362,65 @@ function VisaoFiltro({ visao, setVisao }: { visao: Visao; setVisao: (v: Visao) =
   );
 }
 
-/** Filtro de produto no início da página, no mesmo padrão visual do seletor do header (kmm-seg). */
-function ProdutoFiltro() {
-  const { produto, setProduto } = useProduto();
-  const opcoes: { valor: ProdutoSelecionado; label: string }[] = [
-    { valor: "KMM4", label: "KMM4" },
-    { valor: "KMM5", label: "KMM5" },
-    { valor: "AMBOS", label: "Ambos" },
+function StatTile({ icon, bg, label, valor }: { icon: React.ReactNode; bg: string; label: string; valor: string }) {
+  return (
+    <div className="kmm-card" style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px" }}>
+      <div style={{ width: 38, height: 38, borderRadius: 10, background: bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        {icon}
+      </div>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 11.5, color: C.muted, fontWeight: 600 }}>{label}</div>
+        <div style={{ fontSize: 19, fontWeight: 800, color: C.text, fontFamily: "Sora,sans-serif" }}>{valor}</div>
+      </div>
+    </div>
+  );
+}
+
+function LegendaStatus() {
+  const itens: { label: string; cor: string }[] = [
+    { label: "No prazo", cor: C.green },
+    { label: "Atenção", cor: C.amber },
+    { label: "Atrasado", cor: C.red },
   ];
   return (
-    <div className="kmm-seg">
-      {opcoes.map((o) => (
-        <div
-          key={o.valor}
-          className={`kmm-seg-item${produto === o.valor ? " active" : ""}`}
-          onClick={() => setProduto(o.valor)}
-        >
-          {o.label}
-        </div>
+    <div style={{ display: "flex", gap: 12, fontSize: 11.5, color: C.muted }}>
+      {itens.map((i) => (
+        <span key={i.label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <span style={{ width: 8, height: 8, borderRadius: "50%", background: i.cor, display: "inline-block" }} />
+          {i.label}
+        </span>
       ))}
     </div>
   );
 }
 
-function GanttRoadmap({
-  epicos,
-  meses,
-  inicioMs,
-  fimMs,
-}: {
-  epicos: EpicRoadmap[];
-  meses: Date[];
-  inicioMs: number;
-  fimMs: number;
-}) {
+function CabecalhoMeses({ meses, gruposTrimestre }: { meses: Date[]; gruposTrimestre: { label: string; span: number }[] }) {
   return (
-    <div className="kmm-card" style={{ padding: 0, overflow: "hidden" }}>
+    <div>
       <div style={{ display: "flex" }}>
+        <div style={{ width: LARGURA_COLUNA_LABEL, flexShrink: 0 }} />
+        <div style={{ flex: 1, display: "flex" }}>
+          {gruposTrimestre.map((g, i) => (
+            <div
+              key={i}
+              style={{
+                flex: g.span,
+                textAlign: "center",
+                fontSize: 11,
+                fontWeight: 700,
+                color: C.faint,
+                padding: "4px 4px",
+                borderLeft: i === 0 ? "none" : `1px solid ${C.grid}`,
+                textTransform: "uppercase",
+                letterSpacing: ".04em",
+              }}
+            >
+              {g.label}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={{ display: "flex", borderBottom: `1px solid ${C.border}` }}>
         <div style={{ width: LARGURA_COLUNA_LABEL, flexShrink: 0, borderRight: `1px solid ${C.border}` }} />
         <div style={{ flex: 1, display: "flex" }}>
           {meses.map((m, i) => (
@@ -282,10 +432,8 @@ function GanttRoadmap({
                 fontSize: 12,
                 fontWeight: 700,
                 color: C.muted,
-                padding: "10px 4px",
+                padding: "8px 4px",
                 borderLeft: i === 0 ? "none" : `1px solid ${C.grid}`,
-                textTransform: "uppercase",
-                letterSpacing: ".03em",
               }}
             >
               {MESES_PT[m.getMonth()]}/{String(m.getFullYear()).slice(2)}
@@ -293,97 +441,6 @@ function GanttRoadmap({
           ))}
         </div>
       </div>
-
-      {epicos.map((epic) => (
-        <div key={epic.id} style={{ borderTop: `1px solid ${C.border}` }}>
-          {/* Swimlane do Epic: rótulo = Area Path (regra "SALES = AREA PATH") */}
-          <div style={{ display: "flex", background: C.soft }}>
-            <div
-              style={{
-                width: LARGURA_COLUNA_LABEL,
-                flexShrink: 0,
-                padding: "10px 14px",
-                fontWeight: 800,
-                fontSize: 13,
-                color: C.text,
-                borderRight: `1px solid ${C.border}`,
-                textTransform: "uppercase",
-                letterSpacing: ".03em",
-              }}
-            >
-              {epic.areaPath.split("\\").pop() || epic.areaPath || "Sem Area Path"}
-            </div>
-            <div style={{ flex: 1, position: "relative" }}>
-              <GradeMeses totalMeses={meses.length} />
-            </div>
-          </div>
-
-          {/* Sub-linha do Epic: título + descrição (regra "STRATEGY e RESEARCH = descrição do EPIC") */}
-          <div style={{ display: "flex" }}>
-            <div style={{ width: LARGURA_COLUNA_LABEL, flexShrink: 0, padding: "10px 14px", borderRight: `1px solid ${C.border}` }}>
-              <div style={{ fontWeight: 700, fontSize: 13, color: C.text }}>{epic.titulo}</div>
-              <div style={{ fontSize: 11.5, color: C.muted, marginTop: 4, whiteSpace: "pre-line" }}>
-                {epic.descricao || "Sem descrição cadastrada no Azure DevOps."}
-              </div>
-            </div>
-            <div style={{ flex: 1, position: "relative", minHeight: 56 }}>
-              <GradeMeses totalMeses={meses.length} />
-              {epic.startDate && epic.targetDate && (
-                <BarraGantt
-                  inicioPct={posicaoPercentual(epic.startDate, inicioMs, fimMs)}
-                  fimPct={posicaoPercentual(epic.targetDate, inicioMs, fimMs)}
-                  cor={C.dark}
-                  label={`Epic #${epic.id}: ${formatarData(epic.startDate)} – ${formatarData(epic.targetDate)}`}
-                />
-              )}
-            </div>
-          </div>
-
-          {/* Features filhas do Epic (Work Item = Feature) */}
-          {epic.features.length === 0 && (
-            <div style={{ display: "flex", borderTop: `1px solid ${C.grid}` }}>
-              <div style={{ width: LARGURA_COLUNA_LABEL, flexShrink: 0, padding: "8px 14px 8px 28px", borderRight: `1px solid ${C.border}`, fontSize: 12, color: C.muted }}>
-                Nenhuma Feature filha encontrada.
-              </div>
-              <div style={{ flex: 1, position: "relative", minHeight: 36 }}>
-                <GradeMeses totalMeses={meses.length} />
-              </div>
-            </div>
-          )}
-          {epic.features.map((f) => (
-            <div key={f.id} style={{ display: "flex", borderTop: `1px solid ${C.grid}` }}>
-              <div
-                style={{
-                  width: LARGURA_COLUNA_LABEL,
-                  flexShrink: 0,
-                  padding: "8px 14px 8px 28px",
-                  borderRight: `1px solid ${C.border}`,
-                  fontSize: 12.5,
-                  color: C.text,
-                }}
-              >
-                {f.titulo}
-                <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{f.state}</div>
-              </div>
-              <div style={{ flex: 1, position: "relative", minHeight: 44 }}>
-                <GradeMeses totalMeses={meses.length} />
-                {f.startDate && f.targetDate ? (
-                  <BarraGantt
-                    inicioPct={posicaoPercentual(f.startDate, inicioMs, fimMs)}
-                    fimPct={posicaoPercentual(f.targetDate, inicioMs, fimMs)}
-                    cor={C.orange}
-                    label={`${formatarData(f.startDate)} – ${formatarData(f.targetDate)}`}
-                  />
-                ) : (
-                  <div style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", fontSize: 11, color: C.faint }}>
-                    Sem Start/Target Date cadastrada
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      ))}
     </div>
   );
 }
@@ -399,7 +456,142 @@ function GradeMeses({ totalMeses }: { totalMeses: number }) {
   );
 }
 
-function BarraGantt({ inicioPct, fimPct, cor, label }: { inicioPct: number; fimPct: number; cor: string; label: string }) {
+function EpicRow({
+  epic,
+  meses,
+  inicioMs,
+  fimMs,
+  aberto,
+  onToggle,
+  onExpandirDescricao,
+}: {
+  epic: EpicRoadmap;
+  meses: Date[];
+  inicioMs: number;
+  fimMs: number;
+  aberto: boolean;
+  onToggle: () => void;
+  onExpandirDescricao: () => void;
+}) {
+  const cor = corDaArea(epic.areaPath);
+  const progresso = progressoDoEpic(epic);
+  const statusPrazo = statusPrazoDoEpic(epic, progresso);
+  const corStatus = corDeStatus(statusPrazo);
+
+  return (
+    <div style={{ position: "relative", borderTop: `1px solid ${C.border}`, borderLeft: `5px solid ${cor}` }}>
+      <button
+        onClick={onExpandirDescricao}
+        title="Ver descrição do Epic"
+        style={{
+          position: "absolute",
+          top: -11,
+          right: 14,
+          display: "flex",
+          alignItems: "center",
+          gap: 4,
+          fontSize: 11,
+          fontWeight: 700,
+          color: C.muted,
+          background: "#fff",
+          border: `1px solid ${C.border}`,
+          borderRadius: 999,
+          padding: "3px 10px",
+          cursor: "pointer",
+        }}
+      >
+        <Maximize2 size={11} /> Expandir
+      </button>
+
+      <div style={{ display: "flex" }}>
+        <div style={{ width: LARGURA_COLUNA_LABEL, flexShrink: 0, padding: "14px 14px 12px", borderRight: `1px solid ${C.border}` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontWeight: 700, fontSize: 13.5, color: C.text }}>{epic.titulo}</span>
+            <span className="kmm-chip" style={{ background: corStatus.bg, color: corStatus.fg, borderColor: "transparent", fontSize: 11 }}>
+              {statusPrazo}
+            </span>
+          </div>
+          <div style={{ fontSize: 11.5, color: C.muted, marginTop: 4 }}>
+            {epic.produto || epic.areaPath.split("\\")[0]} · {epic.responsavel?.nome ?? "Sem responsável"}
+          </div>
+          {epic.features.length > 0 && (
+            <button
+              onClick={onToggle}
+              style={{
+                marginTop: 8,
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                fontSize: 11.5,
+                color: C.muted,
+                background: "none",
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
+                fontWeight: 600,
+              }}
+            >
+              {aberto ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+              {aberto ? "Ocultar" : "Mostrar"} {epic.features.length} feature{epic.features.length > 1 ? "s" : ""}
+            </button>
+          )}
+        </div>
+        <div style={{ flex: 1, position: "relative", minHeight: 64 }}>
+          <GradeMeses totalMeses={meses.length} />
+          {epic.startDate && epic.targetDate && (
+            <BarraComProgresso
+              inicioPct={posicaoPercentual(epic.startDate, inicioMs, fimMs)}
+              fimPct={posicaoPercentual(epic.targetDate, inicioMs, fimMs)}
+              cor={C.orangeDark}
+              progresso={progresso}
+              label={`Epic #${epic.id}: ${formatarData(epic.startDate)} – ${formatarData(epic.targetDate)}`}
+            />
+          )}
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateRows: aberto ? "1fr" : "0fr", transition: "grid-template-rows 220ms ease" }}>
+        <div style={{ overflow: "hidden" }}>
+          {epic.features.map((f) => (
+            <div key={f.id} style={{ display: "flex", borderTop: `1px solid ${C.grid}` }}>
+              <div
+                style={{
+                  width: LARGURA_COLUNA_LABEL,
+                  flexShrink: 0,
+                  padding: "8px 14px 8px 24px",
+                  borderRight: `1px solid ${C.border}`,
+                  borderLeft: `4px solid ${cor}`,
+                  fontSize: 12.5,
+                  color: C.text,
+                }}
+              >
+                {f.titulo}
+                <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{f.state}</div>
+              </div>
+              <div style={{ flex: 1, position: "relative", minHeight: 40 }}>
+                <GradeMeses totalMeses={meses.length} />
+                {f.startDate && f.targetDate ? (
+                  <BarraSimples
+                    inicioPct={posicaoPercentual(f.startDate, inicioMs, fimMs)}
+                    fimPct={posicaoPercentual(f.targetDate, inicioMs, fimMs)}
+                    cor={corDeEstadoDevOps(f.state).fg}
+                    label={`${formatarData(f.startDate)} – ${formatarData(f.targetDate)}`}
+                  />
+                ) : (
+                  <div style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", fontSize: 11, color: C.faint }}>
+                    Sem Start/Target Date cadastrada
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BarraSimples({ inicioPct, fimPct, cor, label }: { inicioPct: number; fimPct: number; cor: string; label: string }) {
   const largura = Math.max(fimPct - inicioPct, 1.5);
   return (
     <div
@@ -410,12 +602,105 @@ function BarraGantt({ inicioPct, fimPct, cor, label }: { inicioPct: number; fimP
         transform: "translateY(-50%)",
         left: `${inicioPct}%`,
         width: `${largura}%`,
-        height: 20,
+        height: 18,
         borderRadius: 6,
         background: cor,
         boxShadow: "0 1px 2px rgba(20,16,12,.15)",
       }}
     />
+  );
+}
+
+function BarraComProgresso({
+  inicioPct,
+  fimPct,
+  cor,
+  progresso,
+  label,
+}: {
+  inicioPct: number;
+  fimPct: number;
+  cor: string;
+  progresso: number;
+  label: string;
+}) {
+  const largura = Math.max(fimPct - inicioPct, 6);
+  return (
+    <div
+      title={label}
+      style={{
+        position: "absolute",
+        top: "50%",
+        transform: "translateY(-50%)",
+        left: `${inicioPct}%`,
+        width: `${largura}%`,
+        height: 24,
+        borderRadius: 6,
+        background: cor,
+        boxShadow: "0 1px 2px rgba(20,16,12,.2)",
+        display: "flex",
+        alignItems: "center",
+        paddingLeft: 10,
+        overflow: "hidden",
+        whiteSpace: "nowrap",
+      }}
+    >
+      <span style={{ fontSize: 11, fontWeight: 700, color: "#fff" }}>{progresso}% concluído</span>
+      <span
+        style={{
+          position: "absolute",
+          right: -4,
+          top: "50%",
+          transform: "translateY(-50%)",
+          width: 8,
+          height: 8,
+          borderRadius: "50%",
+          background: "#fff",
+          border: `2px solid ${cor}`,
+        }}
+      />
+    </div>
+  );
+}
+
+function ModalDescricaoEpic({ epic, onFechar }: { epic: EpicRoadmap; onFechar: () => void }) {
+  return (
+    <div
+      onClick={onFechar}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(22,19,15,.45)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 100,
+        padding: 20,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="kmm-card"
+        style={{ maxWidth: 560, width: "100%", maxHeight: "80vh", overflowY: "auto", padding: 22 }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 11.5, color: C.muted, fontWeight: 700 }}>EPIC #{epic.id}</div>
+            <div style={{ fontFamily: "Sora,sans-serif", fontWeight: 800, fontSize: 17, color: C.text, marginTop: 2 }}>{epic.titulo}</div>
+          </div>
+          <button
+            onClick={onFechar}
+            style={{ background: "none", border: "none", cursor: "pointer", color: C.muted, padding: 4 }}
+            aria-label="Fechar"
+          >
+            <X size={18} />
+          </button>
+        </div>
+        <div style={{ fontSize: 13, color: C.text, marginTop: 16, whiteSpace: "pre-line", lineHeight: 1.5 }}>
+          {epic.descricao || "Sem descrição cadastrada no Azure DevOps."}
+        </div>
+      </div>
+    </div>
   );
 }
 

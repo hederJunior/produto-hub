@@ -311,6 +311,7 @@ export type EpicRoadmap = {
   state: string;
   startDate: string | null;
   targetDate: string | null;
+  responsavel: { nome: string; avatarUrl: string | null } | null;
   features: FeatureRoadmap[];
 };
 
@@ -387,6 +388,10 @@ export async function getEpicComFeatures(epicId: number): Promise<EpicRoadmap | 
       .sort((a, b) => (a.startDate ?? "").localeCompare(b.startDate ?? ""));
   }
 
+  const responsavelEpic = epic.fields["System.AssignedTo"] as
+    | { displayName?: string; imageUrl?: string }
+    | undefined;
+
   return {
     id: epic.id,
     titulo: String(epic.fields["System.Title"] ?? `Item ${epic.id}`),
@@ -396,6 +401,9 @@ export async function getEpicComFeatures(epicId: number): Promise<EpicRoadmap | 
     state: String(epic.fields["System.State"] ?? ""),
     startDate: (epic.fields["Microsoft.VSTS.Scheduling.StartDate"] as string) ?? null,
     targetDate: (epic.fields["Microsoft.VSTS.Scheduling.TargetDate"] as string) ?? null,
+    responsavel: responsavelEpic?.displayName
+      ? { nome: responsavelEpic.displayName, avatarUrl: responsavelEpic.imageUrl ?? null }
+      : null,
     features,
   };
 }

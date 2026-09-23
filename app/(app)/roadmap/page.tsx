@@ -29,6 +29,7 @@ type EpicRoadmap = {
 type TaskAlocada = {
   id: number;
   titulo: string;
+  tipo: string;
   produto: string;
   state: string;
   prioridade: number | null;
@@ -174,7 +175,8 @@ export default function RoadmapPage() {
   useEffect(() => {
     setCarregandoSprints(true);
     setErroSprints(null);
-    fetch(`/api/roadmap/tarefas?produto=${produto}`, { cache: "no-store" })
+    // Visão fixa em KMM5 (pedido do Heder) — não depende do seletor de produto do header.
+    fetch(`/api/roadmap/tarefas`, { cache: "no-store" })
       .then((res) => res.json())
       .then((j) => {
         if (j.erro) setErroSprints(j.erro);
@@ -182,7 +184,7 @@ export default function RoadmapPage() {
       })
       .catch(() => setErroSprints("Não foi possível carregar as sprints do Azure DevOps."))
       .finally(() => setCarregandoSprints(false));
-  }, [produto]);
+  }, []);
 
   const areasDisponiveis = useMemo(() => Array.from(new Set(epicos.map((e) => e.areaPath))).sort(), [epicos]);
 
@@ -247,7 +249,7 @@ export default function RoadmapPage() {
           <p style={{ color: C.muted, marginTop: 4, marginBottom: 0 }}>
             {visao === "roadmap"
               ? "Cronograma estratégico de desenvolvimento, marcos e entregas do time de Produto."
-              : "Tasks alocadas por sprint — versão inicial em validação (Task #31537)."}
+              : "Sincronizado com o Azure DevOps."}
           </p>
         </div>
         <VisaoFiltro visao={visao} setVisao={setVisao} />
@@ -326,6 +328,12 @@ export default function RoadmapPage() {
           </>
         ) : (
           <>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontFamily: "Sora,sans-serif", fontWeight: 800, fontSize: 20, color: C.text }}>Sprints KMM5</div>
+              <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+                Tasks e Bugs do projeto KMM5, da Sprint 8.16 em diante.
+              </div>
+            </div>
             {carregandoSprints && <p style={{ color: C.muted }}>Carregando sprints do Azure DevOps…</p>}
             {erroSprints && (
               <div className="kmm-card" style={{ color: C.red, fontSize: 13 }}>
@@ -333,7 +341,7 @@ export default function RoadmapPage() {
               </div>
             )}
             {!carregandoSprints && !erroSprints && tarefas.length === 0 && (
-              <p style={{ color: C.muted }}>Nenhuma Task encontrada para o produto selecionado.</p>
+              <p style={{ color: C.muted }}>Nenhuma Task ou Bug encontrada a partir da Sprint 8.16.</p>
             )}
             {!carregandoSprints && !erroSprints && tarefas.length > 0 && <SprintsAlocadas tarefas={tarefas} />}
           </>
@@ -704,13 +712,26 @@ function ModalDescricaoEpic({ epic, onFechar }: { epic: EpicRoadmap; onFechar: (
   );
 }
 
-const COLUNAS_SPRINT = "1fr 190px 150px 110px 110px 110px";
+const COLUNAS_SPRINT = "1fr 180px 140px 110px 90px 110px 110px";
+
+/** Cor do chip de Tipo (Task/Bug) — Bug em vermelho pra chamar atenção num board misto. */
+function infoTipo(tipo: string): { bg: string; fg: string } {
+  if (tipo.toLowerCase() === "bug") return { bg: "#FBE7E4", fg: C.red };
+  return { bg: "#E7F0FA", fg: C.blue };
+}
+
+/** Extrai (major, minor) de "Sprint 8.16" pra ordenar sprints numericamente, não por string
+ * (string sort erraria: "Sprint 8.2" > "Sprint 8.16" alfabeticamente, mas 8.2 é anterior). */
+function chaveOrdenacaoSprint(label: string): [number, number] {
+  const m = /(\d+)\.(\d+)/.exec(label);
+  return m ? [Number(m[1]), Number(m[2])] : [0, 0];
+}
 
 /**
- * Seção "Sprints alocadas": Tasks agrupadas por Sprint (System.IterationLevel3), no estilo do
- * protótipo enviado pelo Heder — sem a coluna "Tipo" (não existe campo equivalente numa Task
- * desse projeto) e usando Effort/Completed Work como SP Estimados/SP Real (decisões tomadas com
- * o Heder em 2026-09-23, ver lib/devops-client.ts).
+ * Seção "Sprints KMM5": Tasks e Bugs do projeto KMM5 (a partir da Sprint 8.16), agrupados por
+ * Sprint (System.IterationLevel3), no estilo do protótipo enviado pelo Heder — usando
+ * Effort/Completed Work como SP Estimados/SP Real (Task/Bug não tem Story Points, decisão
+ * tomada com o Heder em 2026-09-23, ver lib/devops-client.ts).
  */
 function SprintsAlocadas({ tarefas }: { tarefas: TaskAlocada[] }) {
   const porSprint = useMemo(() => {
@@ -722,7 +743,15 @@ function SprintsAlocadas({ tarefas }: { tarefas: TaskAlocada[] }) {
     return grupos;
   }, [tarefas]);
 
-  const nomesSprints = Object.keys(porSprint).sort();
+  const nomesSprints = useMemo(
+    () =>
+      Object.keys(porSprint).sort((a, b) => {
+        const [amaj, amin] = chaveOrdenacaoSprint(a);
+        const [bmaj, bmin] = chaveOrdenacaoSprint(b);
+        return amaj !== bmaj ? amaj - bmaj : amin - bmin;
+      }),
+    [porSprint]
+  );
 
   return (
     <div>
@@ -733,8 +762,11 @@ function SprintsAlocadas({ tarefas }: { tarefas: TaskAlocada[] }) {
 
         return (
           <div key={sprint} className="kmm-card" style={{ padding: 0, overflow: "hidden", marginBottom: 20 }}>
-            <div style={{ padding: "14px 18px 8px" }}>
+            <div style={{ padding: "14px 18px 8px", display: "flex", alignItems: "baseline", gap: 8 }}>
               <span style={{ fontFamily: "Sora,sans-serif", fontWeight: 800, fontSize: 16, color: C.orange }}>{sprint}</span>
+              <span style={{ fontSize: 11.5, color: C.muted }}>
+                {itens.length} item{itens.length > 1 ? "s" : ""}
+              </span>
             </div>
 
             <div
@@ -753,6 +785,7 @@ function SprintsAlocadas({ tarefas }: { tarefas: TaskAlocada[] }) {
               <div>Resp.</div>
               <div>Status</div>
               <div>Prioridade</div>
+              <div>Tipo</div>
               <div style={{ textAlign: "right" }}>SP Estimados</div>
               <div style={{ textAlign: "right" }}>SP Real</div>
             </div>
@@ -760,6 +793,7 @@ function SprintsAlocadas({ tarefas }: { tarefas: TaskAlocada[] }) {
             {itens.map((t) => {
               const prio = infoPrioridade(t.prioridade);
               const status = corDeEstadoDevOps(t.state);
+              const tipo = infoTipo(t.tipo);
               return (
                 <div
                   key={t.id}
@@ -797,6 +831,9 @@ function SprintsAlocadas({ tarefas }: { tarefas: TaskAlocada[] }) {
                   <span className="kmm-chip" style={{ background: prio.bg, color: prio.fg, borderColor: "transparent" }}>
                     {prio.label}
                   </span>
+                  <span className="kmm-chip" style={{ background: tipo.bg, color: tipo.fg, borderColor: "transparent" }}>
+                    {t.tipo}
+                  </span>
                   <div style={{ textAlign: "right", fontSize: 13, fontWeight: 700, color: C.text }}>{t.spEstimados ?? "—"}</div>
                   <div style={{ textAlign: "right", fontSize: 13, fontWeight: 700, color: C.text }}>{t.spReal ?? "—"}</div>
                 </div>
@@ -812,6 +849,7 @@ function SprintsAlocadas({ tarefas }: { tarefas: TaskAlocada[] }) {
                 background: C.soft,
               }}
             >
+              <div />
               <div />
               <div />
               <div />

@@ -409,10 +409,11 @@ export async function getEpicComFeatures(epicId: number): Promise<EpicRoadmap | 
 }
 
 // ===== Sprints alocadas (seção "Sprints alocadas" do painel "Roadmap e Entregas", pedido por
-// Heder em 2026-09-23) =====
+// Heder em 2026-09-23; generalizada de Task-only/1-item pra Task+Bug/WIQL em 2026-09-23) =====
 
 const CAMPOS_SPRINT_TASK = [
   "System.Title",
+  "System.WorkItemType",
   "System.State",
   "System.TeamProject",
   "System.AssignedTo",
@@ -428,6 +429,7 @@ type CampoPessoa = { displayName?: string; imageUrl?: string } | undefined;
 export type TaskAlocada = {
   id: number;
   titulo: string;
+  tipo: string; // "Task" ou "Bug" (System.WorkItemType)
   produto: string;
   state: string;
   prioridade: number | null;
@@ -437,53 +439,108 @@ export type TaskAlocada = {
   responsavel: { nome: string; avatarUrl: string | null } | null;
 };
 
+export type SprintMinima = { major: number; minor: number };
+
+/** Extrai (major, minor) de um rótulo tipo "Sprint 8.16" (IterationLevel3). Sem match → null. */
+function parseSprint(label: string): SprintMinima | null {
+  const m = /(\d+)\.(\d+)/.exec(label);
+  if (!m) return null;
+  return { major: Number(m[1]), minor: Number(m[2]) };
+}
+
+/** `sprint` é igual ou posterior a `minima`? Compara major primeiro, depois minor. */
+function sprintEhIgualOuPosterior(sprint: SprintMinima, minima: SprintMinima): boolean {
+  if (sprint.major !== minima.major) return sprint.major > minima.major;
+  return sprint.minor >= minima.minor;
+}
+
 /**
- * Busca Tasks alocadas em sprint, pra seção "Sprints alocadas" do painel "Roadmap e Entregas".
+ * Busca Tasks e Bugs alocados em sprint, de um projeto específico, a partir de uma sprint mínima
+ * (inclusive) em diante — pra seção "Sprints alocadas" do painel "Roadmap e Entregas".
  *
- * V1 (2026-09-23): recebe a lista de IDs explicitamente (usado só com a Task #31537, "Ajuste
- * cadastro de pessoas", como exemplo único pra validar o layout — mesmo padrão do Epic #15057 no
- * Gantt). A versão genérica (WIQL por sprint atual + squad) fica pro próximo passo.
+ * Generalizada em 2026-09-23 (pedido do Heder depois de validar o layout da v1, que trazia só a
+ * Task #31537): agora é uma WIQL de verdade, trazendo TODOS os Task/Bug do projeto, não mais uma
+ * lista fixa de IDs.
  *
- * Duas decisões tomadas com o Heder depois de rodar o diagnóstico contra a Task #31537:
- * - Não existe campo equivalente a "Tipo" (Recurso/Qualidade/Bug, do protótipo original) numa
- *   Task desse projeto — a coluna foi removida da v1.
- * - Task não tem campo de Story Points (isso existe em Feature/PBI, não em Task) — "SP Estimados"
- *   e "SP Real" usam Microsoft.VSTS.Scheduling.Effort e Microsoft.VSTS.Scheduling.CompletedWork.
+ * Duas decisões que continuam valendo da v1 (tomadas depois do diagnóstico contra a Task #31537):
+ * - Task/Bug não tem Story Points — "SP Estimados"/"SP Real" usam
+ *   Microsoft.VSTS.Scheduling.Effort / Microsoft.VSTS.Scheduling.CompletedWork.
+ * - `produto` vem de System.TeamProject, não de Custom.Produto (que não vem preenchido em Task/Bug).
  *
- * `produto` vem de System.TeamProject (KMM4/KMM5) — diferente do Epic, a Task não tem
- * Custom.Produto preenchido.
+ * A comparação de sprint é numérica (major.minor extraído de "Sprint 8.16"), não textual — sprint
+ * textual tipo string sort erraria (ex.: "8.2" > "8.16" na ordem alfabética, mas 8.2 é ANTERIOR).
+ * Item cujo IterationLevel3 não bate no formato "N.M" é tratado como fora do filtro (excluído).
+ *
+ * A WIQL restringe `[System.IterationPath] UNDER '<project>\2026'` — assunção pra não puxar o
+ * histórico inteiro do projeto numa consulta só (Task/Bug de anos anteriores não interessam pra
+ * "sprint 8.16 em diante"); ajustar/generalizar se algum dia precisar enxergar sprint de outro ano.
  */
-export async function getTasksAlocadas(taskIds: number[]): Promise<TaskAlocada[]> {
+export async function getTasksAlocadas(project: string, sprintMinima: SprintMinima): Promise<TaskAlocada[]> {
   const { org, pat } = getConfig();
-  if (!taskIds.length) return [];
-  const base = `https://dev.azure.com/${org}/_apis`;
+  const base = `https://dev.azure.com/${org}/${encodeURIComponent(project)}/_apis`;
 
-  const res = await fetch(
-    `${base}/wit/workitems?ids=${taskIds.join(",")}&fields=${encodeURIComponent(CAMPOS_SPRINT_TASK.join(","))}&api-version=${API_VERSION}`,
-    { headers: authHeader(pat) }
-  );
-  if (!res.ok) {
-    throw new Error(`Falha ao buscar Tasks alocadas (${res.status}): ${await res.text()}`);
-  }
-  const { value } = (await res.json()) as { value: WorkItem[] };
+  const wiql = `
+    SELECT [System.Id]
+    FROM WorkItems
+    WHERE [System.TeamProject] = '${project}'
+      AND [System.WorkItemType] IN ('Task', 'Bug')
+      AND [System.State] NOT IN ('Removed')
+      AND [System.IterationPath] UNDER '${project}\\2026'
+    ORDER BY [System.IterationPath] ASC
+  `;
 
-  return value.map((w) => {
-    const assignedTo = w.fields["System.AssignedTo"] as CampoPessoa;
-    const prioridade = w.fields["Microsoft.VSTS.Common.Priority"];
-    const spEstimados = w.fields["Microsoft.VSTS.Scheduling.Effort"];
-    const spReal = w.fields["Microsoft.VSTS.Scheduling.CompletedWork"];
-    return {
-      id: w.id,
-      titulo: String(w.fields["System.Title"] ?? `Item ${w.id}`),
-      produto: String(w.fields["System.TeamProject"] ?? ""),
-      state: String(w.fields["System.State"] ?? ""),
-      prioridade: typeof prioridade === "number" ? prioridade : null,
-      spEstimados: typeof spEstimados === "number" ? spEstimados : null,
-      spReal: typeof spReal === "number" ? spReal : null,
-      sprint: String(w.fields["System.IterationLevel3"] ?? w.fields["System.IterationPath"] ?? "Sem sprint"),
-      responsavel: assignedTo?.displayName
-        ? { nome: assignedTo.displayName, avatarUrl: assignedTo.imageUrl ?? null }
-        : null,
-    };
+  const wiqlRes = await fetch(`${base}/wit/wiql?api-version=${API_VERSION}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeader(pat) },
+    body: JSON.stringify({ query: wiql }),
   });
+  if (!wiqlRes.ok) {
+    throw new Error(`Falha na consulta WIQL de Tasks/Bugs alocados (${wiqlRes.status}): ${await wiqlRes.text()}`);
+  }
+  const { workItems } = (await wiqlRes.json()) as { workItems: { id: number }[] };
+  const ids = workItems.map((w) => w.id);
+  if (!ids.length) return [];
+
+  const lotes: number[][] = [];
+  for (let i = 0; i < ids.length; i += 200) lotes.push(ids.slice(i, i + 200));
+
+  const todos: WorkItem[] = [];
+  for (const lote of lotes) {
+    const res = await fetch(`${base}/wit/workitemsbatch?api-version=${API_VERSION}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader(pat) },
+      body: JSON.stringify({ ids: lote, fields: CAMPOS_SPRINT_TASK }),
+    });
+    if (!res.ok) {
+      throw new Error(`Falha ao buscar lote de Tasks/Bugs alocados (${res.status}): ${await res.text()}`);
+    }
+    const { value } = (await res.json()) as { value: WorkItem[] };
+    todos.push(...value);
+  }
+
+  return todos
+    .map((w) => {
+      const assignedTo = w.fields["System.AssignedTo"] as CampoPessoa;
+      const prioridade = w.fields["Microsoft.VSTS.Common.Priority"];
+      const spEstimados = w.fields["Microsoft.VSTS.Scheduling.Effort"];
+      const spReal = w.fields["Microsoft.VSTS.Scheduling.CompletedWork"];
+      return {
+        id: w.id,
+        titulo: String(w.fields["System.Title"] ?? `Item ${w.id}`),
+        tipo: String(w.fields["System.WorkItemType"] ?? ""),
+        produto: String(w.fields["System.TeamProject"] ?? ""),
+        state: String(w.fields["System.State"] ?? ""),
+        prioridade: typeof prioridade === "number" ? prioridade : null,
+        spEstimados: typeof spEstimados === "number" ? spEstimados : null,
+        spReal: typeof spReal === "number" ? spReal : null,
+        sprint: String(w.fields["System.IterationLevel3"] ?? w.fields["System.IterationPath"] ?? "Sem sprint"),
+        responsavel: assignedTo?.displayName
+          ? { nome: assignedTo.displayName, avatarUrl: assignedTo.imageUrl ?? null }
+          : null,
+      };
+    })
+    .filter((t) => {
+      const parsed = parseSprint(t.sprint);
+      return parsed !== null && sprintEhIgualOuPosterior(parsed, sprintMinima);
+    });
 }

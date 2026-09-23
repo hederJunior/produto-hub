@@ -1636,3 +1636,35 @@ com "NN% concluído" escrito dentro + marcador circular na ponta, e rodapé com
 usado na sub-linha "{produto} · {responsável}".
 
 **Verificado:** `npx tsc --noEmit` limpo.
+
+## 2026-09-23 (cont.) — "Sprints KMM5": generalizado de 1 item fixo pra WIQL real (Task + Bug)
+
+Depois de validar o layout da v1 (só a Task #31537), Heder pediu pra trazer TODOS os itens de
+verdade: Work Item Type IN ('Task', 'Bug'), só do projeto KMM5, a partir da Sprint 8.16 em diante.
+Título da visão mudou de "Sprints" (genérico) pra "Sprints KMM5".
+
+**`getTasksAlocadas(project, sprintMinima)` reescrita** (era `getTasksAlocadas(taskIds: number[])`):
+- Agora roda uma WIQL de verdade (`WorkItemType IN ('Task','Bug')`, `TeamProject = 'KMM5'`,
+  `State NOT IN ('Removed')`) em vez de buscar uma lista fixa de IDs, e busca os resultados em
+  lotes de 200 via `workitemsbatch` (mesmo padrão já usado em `fetchPbisParaSnapshot`).
+- **Assunção pra não puxar o histórico inteiro do projeto:** a WIQL restringe
+  `[System.IterationPath] UNDER 'KMM5\\2026'` — exclui anos anteriores, que não interessam pra
+  "sprint 8.16 em diante". Se um dia precisar enxergar sprint de outro ano, ajustar aqui.
+- **Filtro de sprint mínima é numérico, não textual:** "Sprint 8.16" vira `{major:8, minor:16}`
+  via regex, e a comparação é `major` primeiro depois `minor` — ordenação por string erraria (ex.:
+  "Sprint 8.2" > "Sprint 8.16" alfabeticamente, mas 8.2 é uma sprint ANTERIOR a 8.16). Item cujo
+  `IterationLevel3` não bate no formato "N.M" é excluído (tratado como sem sprint aplicável).
+- Novo campo `tipo` no retorno (`System.WorkItemType`: "Task" ou "Bug") — com Task e Bug misturados
+  na mesma lista, essa coluna volta a fazer sentido (diferente da tentativa anterior de
+  "Recurso/Qualidade/Bug", que não tinha campo real por trás).
+
+**Rota `/api/roadmap/tarefas`** não lê mais `?produto=` — fixa em KMM5 (`PROJETO = "KMM5"`,
+`SPRINT_MINIMA = {major:8, minor:16}` como constantes no topo do arquivo, fáceis de ajustar depois).
+Essa visão agora é independente do seletor de produto do header.
+
+**Página:** título da seção mudou pra "Sprints KMM5" (heading dedicado, antes do card por sprint);
+coluna "Tipo" de volta na tabela (chip Task=azul/Bug=vermelho); grupos de sprint ordenados
+numericamente (não mais `Array.sort()` alfabético); cada card de sprint agora mostra a contagem de
+itens no cabeçalho.
+
+**Verificado:** `npx tsc --noEmit` limpo.

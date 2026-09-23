@@ -280,3 +280,122 @@ export async function getRoadmapItems(
     })
   );
 }
+
+// ===== Roadmap por Epic/Feature (painel "Roadmap e Entregas", pedido por Heder em 2026-09-22) =====
+
+const CAMPOS_ROADMAP_EPIC = [
+  "System.Title",
+  "System.WorkItemType",
+  "System.State",
+  "System.AreaPath",
+  "System.Description",
+  "Custom.Produto",
+  "Microsoft.VSTS.Scheduling.StartDate",
+  "Microsoft.VSTS.Scheduling.TargetDate",
+];
+
+export type FeatureRoadmap = {
+  id: number;
+  titulo: string;
+  state: string;
+  startDate: string | null;
+  targetDate: string | null;
+};
+
+export type EpicRoadmap = {
+  id: number;
+  titulo: string;
+  areaPath: string;
+  descricao: string;
+  produto: string;
+  state: string;
+  startDate: string | null;
+  targetDate: string | null;
+  features: FeatureRoadmap[];
+};
+
+/** Remove tags HTML do campo System.Description (vem como HTML do editor rich-text do Azure DevOps). */
+function textoSemHtml(html: unknown): string {
+  const s = typeof html === "string" ? html : "";
+  return s
+    .replace(/<\/(p|div|li)>/gi, "\n")
+    .replace(/<li[^>]*>/gi, "• ")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+}
+
+/**
+ * Busca um EPIC específico (por ID) + as Features filhas diretas dele (relação
+ * `System.LinkTypes.Hierarchy-Forward` — filtra WorkItemType = 'Feature' entre os filhos, já que
+ * um Epic pode ter outros tipos de link, ex.: "Related"), pro painel "Roadmap e Entregas".
+ *
+ * V1 (2026-09-22): recebe o ID do Epic explicitamente (usado com o #15057, "Integração SuperApp
+ * <=> KMM4 (Onda 3)", como exemplo único pra validar o layout com o Heder). A versão genérica —
+ * WIQL por `[Custom.Produto] = 'KMM4'` + `[System.WorkItemType] = 'Epic'` pra listar TODOS os
+ * Epics do produto — fica pro próximo passo, depois do layout aprovado.
+ *
+ * Work item IDs são únicos pra organização inteira (não por projeto Azure DevOps), então dá pra
+ * buscar direto pelo endpoint de organização (sem `/{project}/` na URL), sem precisar saber antes
+ * se o Epic mora no projeto KMM4 ou KMM5.
+ */
+export async function getEpicComFeatures(epicId: number): Promise<EpicRoadmap | null> {
+  const { org, pat } = getConfig();
+  const base = `https://dev.azure.com/${org}/_apis`;
+
+  const epicRes = await fetch(`${base}/wit/workitems/${epicId}?$expand=relations&api-version=${API_VERSION}`, {
+    headers: authHeader(pat),
+  });
+  if (epicRes.status === 404) return null;
+  if (!epicRes.ok) {
+    throw new Error(`Falha ao buscar Epic #${epicId} (${epicRes.status}): ${await epicRes.text()}`);
+  }
+  const epic = (await epicRes.json()) as WorkItem & { relations?: { rel: string; url: string }[] };
+
+  const idsFilhos = (epic.relations ?? [])
+    .filter((r) => r.rel === "System.LinkTypes.Hierarchy-Forward")
+    .map((r) => Number(r.url.split("/").pop()))
+    .filter((n) => Number.isFinite(n));
+
+  let features: FeatureRoadmap[] = [];
+  if (idsFilhos.length) {
+    const filhosRes = await fetch(
+      `${base}/wit/workitems?ids=${idsFilhos.join(",")}&fields=${encodeURIComponent(CAMPOS_ROADMAP_EPIC.join(","))}&api-version=${API_VERSION}`,
+      { headers: authHeader(pat) }
+    );
+    if (!filhosRes.ok) {
+      throw new Error(`Falha ao buscar filhos do Epic #${epicId} (${filhosRes.status}): ${await filhosRes.text()}`);
+    }
+    const { value } = (await filhosRes.json()) as { value: WorkItem[] };
+    features = value
+      .filter((w) => w.fields["System.WorkItemType"] === "Feature")
+      .map((w) => ({
+        id: w.id,
+        titulo: String(w.fields["System.Title"] ?? `Item ${w.id}`),
+        state: String(w.fields["System.State"] ?? ""),
+        startDate: (w.fields["Microsoft.VSTS.Scheduling.StartDate"] as string) ?? null,
+        targetDate: (w.fields["Microsoft.VSTS.Scheduling.TargetDate"] as string) ?? null,
+      }))
+      .sort((a, b) => (a.startDate ?? "").localeCompare(b.startDate ?? ""));
+  }
+
+  return {
+    id: epic.id,
+    titulo: String(epic.fields["System.Title"] ?? `Item ${epic.id}`),
+    areaPath: String(epic.fields["System.AreaPath"] ?? ""),
+    descricao: textoSemHtml(epic.fields["System.Description"]),
+    produto: String(epic.fields["Custom.Produto"] ?? ""),
+    state: String(epic.fields["System.State"] ?? ""),
+    startDate: (epic.fields["Microsoft.VSTS.Scheduling.StartDate"] as string) ?? null,
+    targetDate: (epic.fields["Microsoft.VSTS.Scheduling.TargetDate"] as string) ?? null,
+    features,
+  };
+}

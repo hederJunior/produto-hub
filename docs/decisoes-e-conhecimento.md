@@ -1442,3 +1442,66 @@ na lista de Redirect URLs. Confirmado corrigido.
 **Lição pro projeto:** toda vez que o domínio de produção mudar na Vercel (customização ou domínio
 próprio), tem 2 lugares pra atualizar no Supabase: Site URL (o principal, serve de fallback) e
 Redirect URLs (lista de destinos permitidos pro `emailRedirectTo`) — os dois, não só um.
+
+## 2026-09-22 (cont.) — Início do desenvolvimento: aba "Roadmap e Entregas" (Gantt por Epic/Feature)
+
+Heder pediu pra refazer a aba "Roadmap e entregas" (que hoje mostra cards agrupados por trimestre,
+vindos de `getRoadmapItems()`/`/api/roadmap`) como um Gantt por Epic, no estilo de um mockup que
+ele mandou (swimlanes coloridas com sub-linhas, cabeçalho por período, barras horizontais por data).
+
+**Regras de mapeamento definidas por Heder** (Azure DevOps → visual):
+- Work item de topo = **Epic** (não PBI/Feature — esses já são usados noutras telas).
+- Área/swimlane do Epic = `System.AreaPath`.
+- Descrição da swimlane = `System.Description` do Epic (texto veio em HTML — precisa stripar tags).
+- Itens dentro do roadmap = **Features filhas do Epic** (relação `System.LinkTypes.Hierarchy-Forward`,
+  filtrando só `System.WorkItemType = 'Feature'` entre os filhos — um Epic pode ter outros tipos
+  de link, ex. "Related", que não são filhos de verdade).
+- Cabeçalho do Gantt = meses do ano (não mais trimestre).
+- Datas de posicionamento das barras = `Microsoft.VSTS.Scheduling.StartDate` e `...TargetDate`,
+  tanto do Epic quanto de cada Feature.
+- Filtro de produto: só entram Epics com `Custom.Produto = 'KMM4'` (regra atual; campo já
+  confirmado existir tanto em Epic quanto em Feature via script de diagnóstico).
+
+**Campos confirmados via `scripts/inspect-epic.mjs`** (script novo, rodado pelo próprio Heder —
+esse sandbox não tem rede pra `dev.azure.com` — contra o Epic #15057 "Integração SuperApp <=> KMM4
+(Onda 3)" e suas 5 Features filhas): `Custom.Produto`, `Microsoft.VSTS.Scheduling.StartDate`,
+`Microsoft.VSTS.Scheduling.TargetDate`, `System.Description`, `System.AreaPath`,
+`System.LinkTypes.Hierarchy-Forward` (relação pai→filho).
+
+**Decisão de arquitetura — rota nova, não reaproveitar `/api/roadmap`:** `/api/avisos/route.ts`
+depende do shape atual de `/api/roadmap` (`{trimestres: {...}}`) — mudar esse contrato quebraria
+os avisos. Por isso foi criada uma rota totalmente nova, `/api/roadmap/epicos`, só pro painel novo;
+`/api/roadmap` e `getRoadmapItems()` continuam intactos, sem nenhuma mudança.
+
+**O que foi implementado (v1, hardcoded, só pra validar o layout com o Heder):**
+- `lib/devops-client.ts`: nova função `getEpicComFeatures(epicId)` — busca o Epic pelo endpoint de
+  organização (`/_apis/wit/workitems/{id}?$expand=relations`, sem precisar saber se ele é do
+  projeto KMM4 ou KMM5, já que IDs são únicos na org inteira), extrai os IDs dos filhos via
+  `Hierarchy-Forward`, busca os dados completos deles em lote (`workitemsbatch`-style via
+  `wit/workitems?ids=...&fields=...`) e filtra só os do tipo Feature. Inclui `textoSemHtml()` pra
+  limpar o HTML de `System.Description`. Tipos novos: `EpicRoadmap` (com campo `produto`, vindo de
+  `Custom.Produto`) e `FeatureRoadmap`.
+- `app/api/roadmap/epicos/route.ts` (rota nova): por enquanto usa uma lista fixa
+  `EPIC_IDS_V1 = [15057]` — o próximo passo, depois do layout aprovado, é trocar isso por uma WIQL
+  `[System.WorkItemType] = 'Epic' AND [Custom.Produto] = '<produto>'` pra trazer todos os Epics do
+  produto automaticamente. Filtra o resultado por `?produto=` (KMM4/KMM5/AMBOS) comparando com o
+  `Custom.Produto` de cada Epic já carregado.
+- `app/(app)/roadmap/page.tsx` (reescrita): novo componente `GanttRoadmap` — cabeçalho com os
+  meses do intervalo (calculado a partir do menor Start Date e maior Target Date entre Epic e
+  Features, ou um intervalo padrão de 6 meses se não houver nenhuma data); uma swimlane por Epic
+  (rótulo = último segmento do Area Path); sub-linha com título + descrição do Epic; uma linha por
+  Feature filha, com barra posicionada por `%` corrido de dias entre Start Date e Target Date
+  (linhas sem as duas datas mostram um aviso ao invés de barra). Filtro de produto adicionado no
+  topo da própria página (não só no seletor do header), no mesmo padrão visual (`kmm-seg`) usado
+  no painel principal de indicadores.
+- `scripts/inspect-epic.mjs` (novo): script de diagnóstico standalone (`node --env-file=.env
+  scripts/inspect-epic.mjs <id> [--filhos]`) que imprime todos os campos de um work item e, opcionalmente,
+  de todos os filhos via Hierarchy-Forward — foi assim que os nomes de campo acima foram confirmados.
+
+**Verificado:** `npx tsc --noEmit` limpo depois de todas as mudanças acima (`npm run build` completo
+não terminou a tempo neste sandbox — sem sinal de erro até onde rodou; Heder deve conferir o Build
+Log da Vercel como sempre, depois do push).
+
+**Pendente (esperado, ciclo iterativo já combinado com Heder):** essa é a v1, propositalmente só
+com o Epic #15057, pra refinar o layout visual antes de generalizar pra WIQL por produto (todos os
+Epics do KMM4, depois todos do KMM5).

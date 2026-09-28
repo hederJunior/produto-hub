@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { BarChart3, Calendar, ChevronDown, ChevronUp, Clock, Download, Flag, Gauge, Maximize2, X } from "lucide-react";
+import { BarChart3, Calendar, ChevronDown, ChevronUp, Clock, Download, Eraser, Flag, Gauge, Maximize2, X } from "lucide-react";
 import { useProduto } from "@/components/ProdutoContext";
 import { C, corDaArea, corDeEstadoDevOps, corDeStatus, corDoDev, estadoIndicaConcluido } from "@/lib/kmm-theme";
 
@@ -187,6 +187,11 @@ export default function RoadmapPage() {
   const [erroComites, setErroComites] = useState<string | null>(null);
   const [areaSelecionadaComites, setAreaSelecionadaComites] = useState("todas");
   const [clienteSelecionadoComites, setClienteSelecionadoComites] = useState("todos");
+  // Bloco de filtro por Data de Comitê, no mesmo estilo do card "CREATED DATE" do painel de
+  // indicadores (app/(app)/page.tsx) — pedido por Heder em 2026-09-28.
+  const [dataInicioComites, setDataInicioComites] = useState("");
+  const [dataFimComites, setDataFimComites] = useState("");
+  const [dataComitesColapsada, setDataComitesColapsada] = useState(false);
 
   const [agora, setAgora] = useState<Date | null>(null);
   useEffect(() => setAgora(new Date()), []);
@@ -267,12 +272,16 @@ export default function RoadmapPage() {
   );
   const demandasExibidas = useMemo(
     () =>
-      demandasComite.filter(
-        (d) =>
-          (areaSelecionadaComites === "todas" || d.areaPath === areaSelecionadaComites) &&
-          (clienteSelecionadoComites === "todos" || d.cliente === clienteSelecionadoComites)
-      ),
-    [demandasComite, areaSelecionadaComites, clienteSelecionadoComites]
+      demandasComite.filter((d) => {
+        if (areaSelecionadaComites !== "todas" && d.areaPath !== areaSelecionadaComites) return false;
+        if (clienteSelecionadoComites !== "todos" && d.cliente !== clienteSelecionadoComites) return false;
+        if (dataInicioComites && (!d.dataComite || d.dataComite < dataInicioComites)) return false;
+        // dataComite vem com horário (ISO) — compara só a parte de data (10 chars) contra o
+        // "até" do filtro pra não excluir o próprio dia final por causa do horário.
+        if (dataFimComites && (!d.dataComite || d.dataComite.slice(0, 10) > dataFimComites)) return false;
+        return true;
+      }),
+    [demandasComite, areaSelecionadaComites, clienteSelecionadoComites, dataInicioComites, dataFimComites]
   );
 
   const { meses, inicioMs, fimMs } = useMemo(() => {
@@ -501,6 +510,57 @@ export default function RoadmapPage() {
           </>
         ) : (
           <>
+            {/* Bloco de filtro por Data de Comitê, no mesmo estilo do card "CREATED DATE" do
+                painel de indicadores (app/(app)/page.tsx: kmm-card colapsável + par de inputs
+                de data + botão de limpar) — pedido por Heder em 2026-09-28. */}
+            <div className="kmm-card" style={{ maxWidth: 380, marginBottom: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span style={{ fontSize: 11, color: C.muted, fontWeight: 700, letterSpacing: ".04em" }}>
+                  DATA DE COMITÊ
+                </span>
+                <div style={{ display: "flex", gap: 4 }}>
+                  {(dataInicioComites || dataFimComites) && (
+                    <button
+                      className="kmm-btn"
+                      style={{ padding: 6 }}
+                      title="Limpar período"
+                      onClick={() => { setDataInicioComites(""); setDataFimComites(""); }}
+                    >
+                      <Eraser size={13} />
+                    </button>
+                  )}
+                  <button
+                    className="kmm-btn"
+                    style={{ padding: 6 }}
+                    title={dataComitesColapsada ? "Expandir" : "Recolher"}
+                    onClick={() => setDataComitesColapsada((v) => !v)}
+                  >
+                    <ChevronDown
+                      size={13}
+                      style={{ transform: dataComitesColapsada ? "rotate(-90deg)" : "none", transition: "transform .15s" }}
+                    />
+                  </button>
+                </div>
+              </div>
+              {!dataComitesColapsada && (
+                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                  <input
+                    type="date"
+                    className="kmm-input"
+                    style={{ flex: 1 }}
+                    value={dataInicioComites}
+                    onChange={(e) => setDataInicioComites(e.target.value)}
+                  />
+                  <input
+                    type="date"
+                    className="kmm-input"
+                    style={{ flex: 1 }}
+                    value={dataFimComites}
+                    onChange={(e) => setDataFimComites(e.target.value)}
+                  />
+                </div>
+              )}
+            </div>
             <div
               style={{
                 display: "flex",
@@ -956,10 +1016,12 @@ function PainelEsforcoPorSprint({
   onFechar: () => void;
 }) {
   const [area, setArea] = useState("");
-  // Isolamento de dev via clique na legenda (pedido em 2026-09-28): null = mostra todos; um nome =
-  // mostra só as barras desse dev. Clicar de novo no mesmo nome isolado limpa o filtro (volta a
-  // mostrar todos). Reseta ao trocar de Área, já que a lista de devs muda.
-  const [devIsolado, setDevIsolado] = useState<string | null>(null);
+  // Isolamento de dev via clique na legenda (pedido em 2026-09-28): [] = mostra todos; clique
+  // normal isola só aquele dev (substitui a seleção anterior); Ctrl/Cmd+clique acumula, permitindo
+  // isolar vários devs de uma vez (pedido em 2026-09-28, ajuste posterior). Clicar de novo no
+  // único dev isolado limpa o filtro (volta a mostrar todos). Reseta ao trocar de Área, já que a
+  // lista de devs muda.
+  const [devsIsolados, setDevsIsolados] = useState<string[]>([]);
 
   const tarefasDaArea = useMemo(() => (area ? tarefas.filter((t) => t.areaPath === area) : []), [tarefas, area]);
 
@@ -968,9 +1030,9 @@ function PainelEsforcoPorSprint({
     [tarefasDaArea]
   );
 
-  useEffect(() => setDevIsolado(null), [area]);
+  useEffect(() => setDevsIsolados([]), [area]);
 
-  const devsVisiveis = devIsolado ? devs.filter((d) => d === devIsolado) : devs;
+  const devsVisiveis = devsIsolados.length ? devs.filter((d) => devsIsolados.includes(d)) : devs;
 
   const dadosGrafico = useMemo(() => {
     const porSprint = new Map<string, Record<string, number>>();
@@ -1065,7 +1127,16 @@ function PainelEsforcoPorSprint({
           </div>
         )}
         {area && dadosGrafico.length > 0 && (
-          <LegendaFiltroDev devs={devs} devIsolado={devIsolado} onAlternar={(dev) => setDevIsolado((atual) => (atual === dev ? null : dev))} />
+          <LegendaFiltroDev
+            devs={devs}
+            devsIsolados={devsIsolados}
+            onAlternar={(dev, ctrl) =>
+              setDevsIsolados((atual) => {
+                if (ctrl) return atual.includes(dev) ? atual.filter((d) => d !== dev) : [...atual, dev];
+                return atual.length === 1 && atual[0] === dev ? [] : [dev];
+              })
+            }
+          />
         )}
       </div>
     </div>
@@ -1074,38 +1145,45 @@ function PainelEsforcoPorSprint({
 
 /**
  * Legenda custom do painel "Esforço alocado por Sprint" que atua como filtro (pedido em
- * 2026-09-28): clicar num dev isola ele (mostra só as barras dele no gráfico); clicar de novo no
- * mesmo dev já isolado limpa o filtro e volta a mostrar todos. Lista SEMPRE todos os devs da área
- * (mesmo os ocultos no momento), pra dar pra voltar/trocar o isolamento a qualquer clique — por
- * isso não é a <Legend> nativa do recharts (o payload dela só reflete as <Bar> renderizadas no
- * momento, e as ocultas somem da lista).
+ * 2026-09-28): clique normal num dev isola ele (mostra só as barras dele no gráfico), substituindo
+ * qualquer isolamento anterior; clicar de novo no único dev já isolado limpa o filtro e volta a
+ * mostrar todos. Ctrl/Cmd+clique acumula: soma ou remove aquele dev da seleção sem mexer nos
+ * demais, permitindo isolar vários de uma vez (ajuste pedido em 2026-09-28). Lista SEMPRE todos os
+ * devs da área (mesmo os ocultos no momento), pra dar pra voltar/trocar o isolamento a qualquer
+ * clique — por isso não é a <Legend> nativa do recharts (o payload dela só reflete as <Bar>
+ * renderizadas no momento, e as ocultas somem da lista).
  */
 function LegendaFiltroDev({
   devs,
-  devIsolado,
+  devsIsolados,
   onAlternar,
 }: {
   devs: string[];
-  devIsolado: string | null;
-  onAlternar: (dev: string) => void;
+  devsIsolados: string[];
+  onAlternar: (dev: string, ctrl: boolean) => void;
 }) {
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12, justifyContent: "center" }}>
       {devs.map((dev) => {
-        const ativo = !devIsolado || devIsolado === dev;
+        const isolado = devsIsolados.includes(dev);
+        const ativo = !devsIsolados.length || isolado;
         return (
           <button
             key={dev}
             type="button"
-            onClick={() => onAlternar(dev)}
+            onClick={(e) => onAlternar(dev, e.ctrlKey || e.metaKey)}
             className="kmm-chip"
             style={{
               cursor: "pointer",
               opacity: ativo ? 1 : 0.4,
-              fontWeight: devIsolado === dev ? 700 : 600,
-              borderColor: devIsolado === dev ? corDoDev(dev) : C.border,
+              fontWeight: isolado ? 700 : 600,
+              borderColor: isolado ? corDoDev(dev) : C.border,
             }}
-            title={devIsolado === dev ? "Clique para mostrar todos" : `Clique para isolar ${dev}`}
+            title={
+              isolado
+                ? "Clique para mostrar todos · Ctrl+clique para tirar só este da seleção"
+                : `Clique para isolar ${dev} · Ctrl+clique para somar à seleção`
+            }
           >
             <span style={{ width: 9, height: 9, borderRadius: 2, background: corDoDev(dev), display: "inline-block" }} />
             {dev}

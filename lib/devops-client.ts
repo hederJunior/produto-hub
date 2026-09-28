@@ -660,12 +660,15 @@ export async function getDemandasComite(projetos: string[]): Promise<DemandaComi
   const porProjeto = await Promise.all(
     projetos.map(async (project) => {
       const base = `https://dev.azure.com/${org}/${encodeURIComponent(project)}/_apis`;
+      // Só PBIs ainda no estado "Backlog" (pedido por Heder em 2026-09-28) — os já movidos
+      // pra estados seguintes do fluxo (Doing, Done etc.) saem da lista mesmo com Data de
+      // Comitê preenchida.
       const wiql = `
         SELECT [System.Id]
         FROM WorkItems
         WHERE [System.TeamProject] = '${project}'
           AND [System.WorkItemType] = 'Product Backlog Item'
-          AND [System.State] NOT IN ('Removed')
+          AND [System.State] = 'Backlog'
           AND [${CAMPO_DATA_COMITE}] <> ''
         ORDER BY [${CAMPO_DATA_COMITE}] ASC
       `;

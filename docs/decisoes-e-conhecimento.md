@@ -1889,3 +1889,21 @@ deve usar o padrão de paginação em lotes desde o início, não só quando o v
 
 **Verificado:** `npx tsc --noEmit` limpo. Correção não pôde ser testada contra o Azure DevOps
 real neste sandbox (sem rede) — pedir pro Heder validar a aba "Comitês" depois do deploy.
+
+## 2026-09-28 (cont. 6) — Fix: script de acesso (AllowedUser.id sem DEFAULT no banco)
+
+Heder rodou `scripts/adicionar-acesso.mjs` e bateu em `null value in column "id" ... violates
+not-null constraint`. Causa: `prisma/schema.prisma` declara `id String @id @default(uuid())`, mas
+a migration real (`prisma/migrations/20260919125654_init/migration.sql`) criou a coluna só como
+`"id" TEXT NOT NULL` — **sem** `DEFAULT` no Postgres. O `@default(uuid())` é responsabilidade do
+Prisma Client (ele gera o UUID em código antes do INSERT); como o script fala direto com o
+Supabase (sem passar pelo Prisma), o `id` chegava vazio e violava o NOT NULL.
+
+**Fix:** o script agora gera o `id` ele mesmo com `randomUUID()` (`node:crypto`) e inclui no
+insert. Vale como lição geral: qualquer script novo que insira direto via Supabase (fora do
+Prisma) em QUALQUER tabela com `@default(uuid())` no schema precisa gerar o `id` manualmente — os
+`@default(...)` do Prisma nunca viram `DEFAULT` real no Postgres a menos que a migration diga isso
+explicitamente (não é o caso aqui).
+
+**Não pôde ser testado neste sandbox** (sem rede pro Supabase, `EAI_AGAIN` ao resolver o host) —
+Heder precisa rodar de novo pra confirmar.

@@ -12,6 +12,7 @@
 // só atualiza o tipo se você passar --tipo).
 
 import { createClient } from "@supabase/supabase-js";
+import { randomUUID } from "node:crypto";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -59,7 +60,10 @@ async function main() {
       continue;
     }
 
-    const { error: erroInsert } = await supabase.from("AllowedUser").insert({ email, tipo });
+    // A tabela não tem DEFAULT no banco pra "id" (o @default(uuid()) do schema.prisma é aplicado
+    // pelo Prisma Client, não pelo Postgres) — inserindo direto via Supabase (sem passar pelo
+    // Prisma), o id tem que ser gerado aqui, senão vem NULL e viola o NOT NULL da coluna.
+    const { error: erroInsert } = await supabase.from("AllowedUser").insert({ id: randomUUID(), email, tipo });
     if (erroInsert) {
       console.error(`❌ ${email}: erro ao inserir — ${erroInsert.message}`);
     } else {

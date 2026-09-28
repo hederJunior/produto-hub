@@ -1907,3 +1907,23 @@ explicitamente (não é o caso aqui).
 
 **Não pôde ser testado neste sandbox** (sem rede pro Supabase, `EAI_AGAIN` ao resolver o host) —
 Heder precisa rodar de novo pra confirmar.
+
+## 2026-09-28 — Esclarecimento: cadastrar em AllowedUser não envia e-mail sozinho
+
+Heder reportou que Rodrigo (recém-liberado via `adicionar-acesso.mjs`) não recebeu e-mail com
+link de acesso. Não é um bug: inserir na tabela `AllowedUser` só libera a PASSAGEM no check de
+`isEmailAllowed()` (`lib/auth-allowlist.ts`) — não dispara e-mail nenhum por conta própria. O
+e-mail com o link mágico só é enviado quando a própria pessoa acessa a tela de login do app e
+digita o e-mail dela lá, disparando `POST /api/auth/request-link` → `supabase.auth.signInWithOtp`
+(ver `app/api/auth/request-link/route.ts`).
+
+Ou seja: o passo que faltou não foi técnico, foi de fluxo — Rodrigo (e Natália) precisam ir até
+a URL de produção (`https://produto-hub-nstech.vercel.app` — nome atual do domínio, ver entrada
+de 2026-09-22 "Troca de domínio na Vercel") e pedir o link de acesso eles mesmos, digitando o
+próprio e-mail na tela de login.
+
+Criado `scripts/verificar-acesso.mjs` (só leitura) pra conferir rapidamente se um e-mail está
+mesmo cadastrado em `AllowedUser` sem precisar abrir o Supabase manualmente:
+```
+node --env-file=.env scripts/verificar-acesso.mjs rodrigo.sampaio@nstech.com.br
+```

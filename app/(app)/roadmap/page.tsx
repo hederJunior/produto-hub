@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Calendar, ChevronDown, ChevronUp, Clock, Flag, Gauge, Maximize2, X } from "lucide-react";
+import { Calendar, ChevronDown, ChevronUp, Clock, Download, Flag, Gauge, Maximize2, X } from "lucide-react";
 import { useProduto } from "@/components/ProdutoContext";
 import { C, corDaArea, corDeEstadoDevOps, corDeStatus, estadoIndicaConcluido } from "@/lib/kmm-theme";
 
@@ -31,6 +31,7 @@ type TaskAlocada = {
   titulo: string;
   tipo: string;
   produto: string;
+  areaPath: string;
   state: string;
   prioridade: number | null;
   spEstimados: number | null;
@@ -155,6 +156,8 @@ export default function RoadmapPage() {
   const [tarefas, setTarefas] = useState<TaskAlocada[]>([]);
   const [carregandoSprints, setCarregandoSprints] = useState(true);
   const [erroSprints, setErroSprints] = useState<string | null>(null);
+  const [sprintSelecionada, setSprintSelecionada] = useState("todas");
+  const [areaSelecionadaSprints, setAreaSelecionadaSprints] = useState("todas");
 
   const [agora, setAgora] = useState<Date | null>(null);
   useEffect(() => setAgora(new Date()), []);
@@ -175,8 +178,8 @@ export default function RoadmapPage() {
   useEffect(() => {
     setCarregandoSprints(true);
     setErroSprints(null);
-    // Visão fixa em KMM5 (pedido do Heder) — não depende do seletor de produto do header.
-    fetch(`/api/roadmap/tarefas`, { cache: "no-store" })
+    // O filtro de produto do header agora reflete aqui também (pedido do Heder em 2026-09-28).
+    fetch(`/api/roadmap/tarefas?produto=${produto}`, { cache: "no-store" })
       .then((res) => res.json())
       .then((j) => {
         if (j.erro) setErroSprints(j.erro);
@@ -184,13 +187,34 @@ export default function RoadmapPage() {
       })
       .catch(() => setErroSprints("Não foi possível carregar as sprints do Azure DevOps."))
       .finally(() => setCarregandoSprints(false));
-  }, []);
+  }, [produto]);
 
   const areasDisponiveis = useMemo(() => Array.from(new Set(epicos.map((e) => e.areaPath))).sort(), [epicos]);
 
   const epicosExibidos = useMemo(
     () => (areaSelecionada === "todas" ? epicos : epicos.filter((e) => e.areaPath === areaSelecionada)),
     [epicos, areaSelecionada]
+  );
+
+  const sprintsDisponiveis = useMemo(
+    () =>
+      Array.from(new Set(tarefas.map((t) => t.sprint))).sort((a, b) => {
+        const [amaj, amin] = chaveOrdenacaoSprint(a);
+        const [bmaj, bmin] = chaveOrdenacaoSprint(b);
+        return amaj !== bmaj ? amaj - bmaj : amin - bmin;
+      }),
+    [tarefas]
+  );
+  const areasDisponiveisSprints = useMemo(() => Array.from(new Set(tarefas.map((t) => t.areaPath))).sort(), [tarefas]);
+
+  const tarefasExibidas = useMemo(
+    () =>
+      tarefas.filter(
+        (t) =>
+          (sprintSelecionada === "todas" || t.sprint === sprintSelecionada) &&
+          (areaSelecionadaSprints === "todas" || t.areaPath === areaSelecionadaSprints)
+      ),
+    [tarefas, sprintSelecionada, areaSelecionadaSprints]
   );
 
   const { meses, inicioMs, fimMs } = useMemo(() => {
@@ -240,6 +264,32 @@ export default function RoadmapPage() {
 
   const produtoLabelFooter = produto === "AMBOS" ? "KMM4 e KMM5" : produto;
   const epicDescricao = epicos.find((e) => e.id === epicDescricaoAberta) ?? null;
+
+  /**
+   * Exporta pra Excel exatamente o que está filtrado em tela na aba Sprints (produto do header +
+   * sprint + área selecionados aqui) — pedido do Heder em 2026-09-28. Usa a lib "xlsx" (já é
+   * dependência do projeto, usada hoje só pra IMPORTAR planilha de clientes) via import dinâmico,
+   * pra não engordar o bundle inicial da página com uma lib que só roda quando o botão é clicado.
+   */
+  async function exportarExcelSprints() {
+    const XLSX = await import("xlsx");
+    const linhas = tarefasExibidas.map((t) => ({
+      Sprint: t.sprint,
+      Título: t.titulo,
+      Tipo: t.tipo,
+      Área: t.areaPath.split("\\").pop() || t.areaPath,
+      Responsável: t.responsavel?.nome ?? "Sem responsável",
+      Status: t.state,
+      Prioridade: infoPrioridade(t.prioridade).label,
+      "SP Estimados": t.spEstimados ?? "",
+      "SP Real": t.spReal ?? "",
+    }));
+    const planilha = XLSX.utils.json_to_sheet(linhas);
+    const livro = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(livro, planilha, "Sprints");
+    const dataArquivo = agora ? `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}-${String(agora.getDate()).padStart(2, "0")}` : "export";
+    XLSX.writeFile(livro, `sprints-${produto.toLowerCase()}-${dataArquivo}.xlsx`);
+  }
 
   return (
     <div>
@@ -328,10 +378,51 @@ export default function RoadmapPage() {
           </>
         ) : (
           <>
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ fontFamily: "Sora,sans-serif", fontWeight: 800, fontSize: 20, color: C.text }}>Sprints KMM5</div>
-              <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
-                Tasks e Bugs do projeto KMM5, da Sprint 8.16 em diante.
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-end",
+                flexWrap: "wrap",
+                gap: 12,
+                marginBottom: 16,
+              }}
+            >
+              <div>
+                <div style={{ fontFamily: "Sora,sans-serif", fontWeight: 800, fontSize: 20, color: C.text }}>
+                  Sprints {produtoLabelFooter}
+                </div>
+                <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+                  Tasks e Bugs da Sprint 8.16 em diante.
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <select className="kmm-input" style={{ width: "auto" }} value={sprintSelecionada} onChange={(e) => setSprintSelecionada(e.target.value)}>
+                  <option value="todas">Todas as sprints</option>
+                  {sprintsDisponiveis.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className="kmm-input"
+                  style={{ width: "auto" }}
+                  value={areaSelecionadaSprints}
+                  onChange={(e) => setAreaSelecionadaSprints(e.target.value)}
+                >
+                  <option value="todas">Todas as áreas</option>
+                  {areasDisponiveisSprints.map((a) => (
+                    <option key={a} value={a}>
+                      {a.split("\\").pop() || a}
+                    </option>
+                  ))}
+                </select>
+                <button className="kmm-btn" onClick={exportarExcelSprints} disabled={!tarefasExibidas.length}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <Download size={13} /> Exportar Excel
+                  </span>
+                </button>
               </div>
             </div>
             {carregandoSprints && <p style={{ color: C.muted }}>Carregando sprints do Azure DevOps…</p>}
@@ -340,10 +431,10 @@ export default function RoadmapPage() {
                 {erroSprints}
               </div>
             )}
-            {!carregandoSprints && !erroSprints && tarefas.length === 0 && (
-              <p style={{ color: C.muted }}>Nenhuma Task ou Bug encontrada a partir da Sprint 8.16.</p>
+            {!carregandoSprints && !erroSprints && tarefasExibidas.length === 0 && (
+              <p style={{ color: C.muted }}>Nenhuma Task ou Bug encontrada para os filtros selecionados.</p>
             )}
-            {!carregandoSprints && !erroSprints && tarefas.length > 0 && <SprintsAlocadas tarefas={tarefas} />}
+            {!carregandoSprints && !erroSprints && tarefasExibidas.length > 0 && <SprintsAlocadas tarefas={tarefasExibidas} />}
           </>
         )}
       </div>
@@ -712,7 +803,7 @@ function ModalDescricaoEpic({ epic, onFechar }: { epic: EpicRoadmap; onFechar: (
   );
 }
 
-const COLUNAS_SPRINT = "1fr 180px 140px 110px 90px 110px 110px";
+const COLUNAS_SPRINT = "1fr 150px 160px 140px 110px 90px 110px 110px";
 
 /** Cor do chip de Tipo (Task/Bug) — Bug em vermelho pra chamar atenção num board misto. */
 function infoTipo(tipo: string): { bg: string; fg: string } {
@@ -728,12 +819,16 @@ function chaveOrdenacaoSprint(label: string): [number, number] {
 }
 
 /**
- * Seção "Sprints KMM5": Tasks e Bugs do projeto KMM5 (a partir da Sprint 8.16), agrupados por
- * Sprint (System.IterationLevel3), no estilo do protótipo enviado pelo Heder — usando
- * Effort/Completed Work como SP Estimados/SP Real (Task/Bug não tem Story Points, decisão
- * tomada com o Heder em 2026-09-23, ver lib/devops-client.ts).
+ * Seção "Sprints": Tasks e Bugs agrupados por Sprint (System.IterationLevel3), no estilo do
+ * protótipo enviado pelo Heder — usando Effort/Completed Work como SP Estimados/SP Real
+ * (Task/Bug não tem Story Points, decisão tomada com o Heder em 2026-09-23, ver
+ * lib/devops-client.ts). Cada bloco de sprint é colapsável (pedido em 2026-09-28), e a coluna
+ * Resp. mostra só o nome (sem avatar, também pedido em 2026-09-28 — a versão anterior mostrava a
+ * foto vinda do Azure DevOps).
  */
 function SprintsAlocadas({ tarefas }: { tarefas: TaskAlocada[] }) {
+  const [abertos, setAbertos] = useState<Record<string, boolean>>({});
+
   const porSprint = useMemo(() => {
     const grupos: Record<string, TaskAlocada[]> = {};
     for (const t of tarefas) {
@@ -759,103 +854,113 @@ function SprintsAlocadas({ tarefas }: { tarefas: TaskAlocada[] }) {
         const itens = porSprint[sprint];
         const somaEstimados = itens.reduce((acc, t) => acc + (t.spEstimados ?? 0), 0);
         const somaReal = itens.reduce((acc, t) => acc + (t.spReal ?? 0), 0);
+        const aberto = abertos[sprint] ?? true;
 
         return (
           <div key={sprint} className="kmm-card" style={{ padding: 0, overflow: "hidden", marginBottom: 20 }}>
-            <div style={{ padding: "14px 18px 8px", display: "flex", alignItems: "baseline", gap: 8 }}>
+            <button
+              onClick={() => setAbertos((a) => ({ ...a, [sprint]: !(a[sprint] ?? true) }))}
+              style={{
+                width: "100%",
+                display: "flex",
+                alignItems: "baseline",
+                gap: 8,
+                padding: "14px 18px 8px",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                textAlign: "left",
+              }}
+            >
+              {aberto ? <ChevronUp size={14} color={C.muted} /> : <ChevronDown size={14} color={C.muted} />}
               <span style={{ fontFamily: "Sora,sans-serif", fontWeight: 800, fontSize: 16, color: C.orange }}>{sprint}</span>
               <span style={{ fontSize: 11.5, color: C.muted }}>
                 {itens.length} item{itens.length > 1 ? "s" : ""}
               </span>
-            </div>
+            </button>
 
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: COLUNAS_SPRINT,
-                padding: "0 18px 8px",
-                fontSize: 11,
-                fontWeight: 700,
-                color: C.muted,
-                textTransform: "uppercase",
-                letterSpacing: ".03em",
-              }}
-            >
-              <div>&nbsp;</div>
-              <div>Resp.</div>
-              <div>Status</div>
-              <div>Prioridade</div>
-              <div>Tipo</div>
-              <div style={{ textAlign: "right" }}>SP Estimados</div>
-              <div style={{ textAlign: "right" }}>SP Real</div>
-            </div>
-
-            {itens.map((t) => {
-              const prio = infoPrioridade(t.prioridade);
-              const status = corDeEstadoDevOps(t.state);
-              const tipo = infoTipo(t.tipo);
-              return (
+            <div style={{ display: "grid", gridTemplateRows: aberto ? "1fr" : "0fr", transition: "grid-template-rows 220ms ease" }}>
+              <div style={{ overflow: "hidden" }}>
                 <div
-                  key={t.id}
                   style={{
                     display: "grid",
                     gridTemplateColumns: COLUNAS_SPRINT,
-                    alignItems: "center",
-                    gap: 10,
-                    padding: "10px 18px",
-                    borderTop: `1px solid ${C.grid}`,
-                    borderLeft: `4px solid ${prio.fg}`,
+                    padding: "0 18px 8px",
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: C.muted,
+                    textTransform: "uppercase",
+                    letterSpacing: ".03em",
                   }}
                 >
-                  <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{t.titulo}</div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-                    {t.responsavel?.avatarUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element -- avatar vem direto da API do Azure DevOps
-                      <img
-                        src={t.responsavel.avatarUrl}
-                        alt={t.responsavel.nome}
-                        width={22}
-                        height={22}
-                        style={{ borderRadius: "50%", flexShrink: 0 }}
-                      />
-                    ) : (
-                      <div style={{ width: 22, height: 22, borderRadius: "50%", background: C.soft, flexShrink: 0 }} />
-                    )}
-                    <span style={{ fontSize: 12, color: C.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {t.responsavel?.nome ?? "Sem responsável"}
-                    </span>
-                  </div>
-                  <span className="kmm-chip" style={{ background: status.bg, color: status.fg, borderColor: "transparent" }}>
-                    {t.state}
-                  </span>
-                  <span className="kmm-chip" style={{ background: prio.bg, color: prio.fg, borderColor: "transparent" }}>
-                    {prio.label}
-                  </span>
-                  <span className="kmm-chip" style={{ background: tipo.bg, color: tipo.fg, borderColor: "transparent" }}>
-                    {t.tipo}
-                  </span>
-                  <div style={{ textAlign: "right", fontSize: 13, fontWeight: 700, color: C.text }}>{t.spEstimados ?? "—"}</div>
-                  <div style={{ textAlign: "right", fontSize: 13, fontWeight: 700, color: C.text }}>{t.spReal ?? "—"}</div>
+                  <div>&nbsp;</div>
+                  <div>Área</div>
+                  <div>Resp.</div>
+                  <div>Status</div>
+                  <div>Prioridade</div>
+                  <div>Tipo</div>
+                  <div style={{ textAlign: "right" }}>SP Estimados</div>
+                  <div style={{ textAlign: "right" }}>SP Real</div>
                 </div>
-              );
-            })}
 
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: COLUNAS_SPRINT,
-                padding: "10px 18px",
-                borderTop: `1px solid ${C.border}`,
-                background: C.soft,
-              }}
-            >
-              <div />
-              <div />
-              <div />
-              <div />
-              <div style={{ fontSize: 11, color: C.muted, textAlign: "right", fontWeight: 700, alignSelf: "center" }}>Soma</div>
-              <div style={{ textAlign: "right", fontSize: 13, fontWeight: 800, color: C.text }}>{somaEstimados}</div>
-              <div style={{ textAlign: "right", fontSize: 13, fontWeight: 800, color: C.text }}>{somaReal}</div>
+                {itens.map((t) => {
+                  const prio = infoPrioridade(t.prioridade);
+                  const status = corDeEstadoDevOps(t.state);
+                  const tipo = infoTipo(t.tipo);
+                  return (
+                    <div
+                      key={t.id}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: COLUNAS_SPRINT,
+                        alignItems: "center",
+                        gap: 10,
+                        padding: "10px 18px",
+                        borderTop: `1px solid ${C.grid}`,
+                        borderLeft: `4px solid ${prio.fg}`,
+                      }}
+                    >
+                      <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{t.titulo}</div>
+                      <div style={{ fontSize: 12, color: C.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {t.areaPath.split("\\").pop() || t.areaPath || "—"}
+                      </div>
+                      <div style={{ fontSize: 12, color: C.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {t.responsavel?.nome ?? "Sem responsável"}
+                      </div>
+                      <span className="kmm-chip" style={{ background: status.bg, color: status.fg, borderColor: "transparent" }}>
+                        {t.state}
+                      </span>
+                      <span className="kmm-chip" style={{ background: prio.bg, color: prio.fg, borderColor: "transparent" }}>
+                        {prio.label}
+                      </span>
+                      <span className="kmm-chip" style={{ background: tipo.bg, color: tipo.fg, borderColor: "transparent" }}>
+                        {t.tipo}
+                      </span>
+                      <div style={{ textAlign: "right", fontSize: 13, fontWeight: 700, color: C.text }}>{t.spEstimados ?? "—"}</div>
+                      <div style={{ textAlign: "right", fontSize: 13, fontWeight: 700, color: C.text }}>{t.spReal ?? "—"}</div>
+                    </div>
+                  );
+                })}
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: COLUNAS_SPRINT,
+                    padding: "10px 18px",
+                    borderTop: `1px solid ${C.border}`,
+                    background: C.soft,
+                  }}
+                >
+                  <div />
+                  <div />
+                  <div />
+                  <div />
+                  <div />
+                  <div style={{ fontSize: 11, color: C.muted, textAlign: "right", fontWeight: 700, alignSelf: "center" }}>Soma</div>
+                  <div style={{ textAlign: "right", fontSize: 13, fontWeight: 800, color: C.text }}>{somaEstimados}</div>
+                  <div style={{ textAlign: "right", fontSize: 13, fontWeight: 800, color: C.text }}>{somaReal}</div>
+                </div>
+              </div>
             </div>
           </div>
         );

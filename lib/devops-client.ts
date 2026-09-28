@@ -294,6 +294,41 @@ const CAMPOS_ROADMAP_EPIC = [
   "Microsoft.VSTS.Scheduling.TargetDate",
 ];
 
+/**
+ * Lista os IDs de todos os Epics que batem com as regras do painel "Roadmap e Entregas": Work
+ * Item Type = Epic, `Custom.Produto` igual a um dos produtos pedidos, excluindo Removed.
+ *
+ * Generalizada em 2026-09-28 (pedido do Heder): a v1 trazia só o Epic #15057 fixo, pra validar o
+ * layout. `projetos` deve cobrir TODOS os TeamProjects onde um Epic pode morar (o chamador passa
+ * os dois, KMM4 e KMM5 — ver lib/devops-projetos.ts) — um Epic pode ter `Custom.Produto = 'KMM4'`
+ * mesmo morando tecnicamente no TeamProject KMM5 (quem decide se ele entra na visão é o campo
+ * Custom.Produto, não o TeamProject), então não dá pra confiar só num projeto por produto. Usa o
+ * `queryWorkItems()` já testado em produção (project-scoped) uma vez por projeto, em paralelo.
+ */
+export async function getEpicIds(produtos: string[], projetos: string[]): Promise<number[]> {
+  const clausulaProduto = produtos.length
+    ? `AND [Custom.Produto] IN (${produtos.map((p) => `'${p.replace(/'/g, "''")}'`).join(", ")})`
+    : "";
+
+  const idsPorProjeto = await Promise.all(
+    projetos.map(async (project) => {
+      const wiql = `
+        SELECT [System.Id]
+        FROM WorkItems
+        WHERE [System.TeamProject] = '${project}'
+          AND [System.WorkItemType] = 'Epic'
+          AND [System.State] NOT IN ('Removed')
+          ${clausulaProduto}
+        ORDER BY [System.Id]
+      `;
+      const items = await queryWorkItems(wiql, project);
+      return items.map((w) => w.id);
+    })
+  );
+
+  return Array.from(new Set(idsPorProjeto.flat()));
+}
+
 export type FeatureRoadmap = {
   id: number;
   titulo: string;
@@ -416,6 +451,7 @@ const CAMPOS_SPRINT_TASK = [
   "System.WorkItemType",
   "System.State",
   "System.TeamProject",
+  "System.AreaPath",
   "System.AssignedTo",
   "Microsoft.VSTS.Common.Priority",
   "Microsoft.VSTS.Scheduling.Effort",
@@ -431,6 +467,7 @@ export type TaskAlocada = {
   titulo: string;
   tipo: string; // "Task" ou "Bug" (System.WorkItemType)
   produto: string;
+  areaPath: string;
   state: string;
   prioridade: number | null;
   spEstimados: number | null;
@@ -529,6 +566,7 @@ export async function getTasksAlocadas(project: string, sprintMinima: SprintMini
         titulo: String(w.fields["System.Title"] ?? `Item ${w.id}`),
         tipo: String(w.fields["System.WorkItemType"] ?? ""),
         produto: String(w.fields["System.TeamProject"] ?? ""),
+        areaPath: String(w.fields["System.AreaPath"] ?? ""),
         state: String(w.fields["System.State"] ?? ""),
         prioridade: typeof prioridade === "number" ? prioridade : null,
         spEstimados: typeof spEstimados === "number" ? spEstimados : null,

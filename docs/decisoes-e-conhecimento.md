@@ -1668,3 +1668,59 @@ numericamente (não mais `Array.sort()` alfabético); cada card de sprint agora 
 itens no cabeçalho.
 
 **Verificado:** `npx tsc --noEmit` limpo.
+
+## 2026-09-28 — Road Map: tira o Epic travado, traz todos; Sprints: filtros, colapso, área, export
+
+**Road Map — generalização do fetch de Epics.** Até aqui o painel só trazia o Epic #15057, fixo
+(`EPIC_IDS_V1`), usado pra validar o layout. Heder pediu pra tirar esse trava e trazer TODOS os
+Epics que batem com as regras da visão.
+
+- **Nova `getEpicIds(produtos, projetos)`** em `lib/devops-client.ts`: WIQL
+  (`WorkItemType = 'Epic'`, `State NOT IN ('Removed')`, `Custom.Produto IN (...)`) rodada uma vez
+  por `TeamProject` em `projetos`, em paralelo, resultado deduplicado (`Set`).
+  **Por que consultar os dois projetos (KMM4 e KMM5) sempre, e filtrar por `Custom.Produto`
+  depois:** um Epic pode ter `Custom.Produto = 'KMM4'` mesmo morando tecnicamente no TeamProject
+  KMM5 — quem decide se ele entra na visão de um produto é o campo `Custom.Produto`, não o
+  TeamProject onde o item vive. Confiar só em "TeamProject = produto" esconderia Epics.
+  **Decisão técnica (minha, não pedida pelo Heder):** cheguei a escrever uma versão chamando o
+  endpoint de WIQL no nível de ORGANIZAÇÃO direto (`_apis/wit/wiql` sem `/project/`), mas reverti
+  pra reusar o `queryWorkItems(wiql, project)` já testado em produção há meses (project-scoped) —
+  esse sandbox não tem rede pra validar uma chamada nova, e o helper existente já é comprovado.
+- `app/api/roadmap/epicos/route.ts` reescrita: chama `getEpicIds(produtos, [KMM4, KMM5])` e busca
+  `getEpicComFeatures(id)` pra cada Epic encontrado, sem mais filtrar por produto depois (a
+  WIQL já filtra).
+
+**Sprints — sete pedidos nesta rodada:**
+
+1. **Filtro de Sprint** (dropdown "Todas as sprints" + lista ordenada numericamente via
+   `chaveOrdenacaoSprint`, reaproveitando a mesma lógica de parse major.minor já usada pro filtro
+   de sprint mínima).
+2. **Colapsar/expandir cada bloco de sprint**: `useState<Record<string,boolean>>` local
+   (`abertos`), header do card virou `<button>` com `ChevronUp`/`ChevronDown`, mesmo truque de
+   `grid-template-rows` (0fr ↔ 1fr) + `overflow:hidden` já usado nas Features do Epic (Road Map).
+3. **Removida a foto/avatar da coluna Resp.** — agora é só o nome (texto simples), sem `<img>`
+   nem círculo-placeholder.
+4. **Filtro por Área** (dropdown, a partir de `AreaPath` distintos nas tasks carregadas).
+5. **Coluna Área no relatório**: nova coluna entre Título e Resp. (`COLUNAS_SPRINT` passou de 7
+   pra 8 colunas: `"1fr 150px 160px 140px 110px 90px 110px 110px"`), mostrando só o último
+   segmento do AreaPath (`.split("\\").pop()`).
+   → Exigiu adicionar `System.AreaPath` em `CAMPOS_SPRINT_TASK` e `areaPath: string` em
+   `TaskAlocada` (lib e página), preenchido em `getTasksAlocadas`.
+6. **Filtro de produto volta a valer pras Sprints** (reversão explícita de uma decisão da rodada
+   anterior, onde a visão tinha sido deliberadamente desacoplada do seletor de produto do header).
+   `/api/roadmap/tarefas` volta a aceitar `?produto=` (KMM4/KMM5/AMBOS — AMBOS busca os dois
+   projetos em paralelo e junta o resultado); a página volta a incluir `produto` nas deps do
+   `useEffect` de fetch. Título da seção agora é dinâmico: "Sprints {produtoLabelFooter}".
+   **Risco em aberto, documentado no código:** `SPRINT_MINIMA = {major:8, minor:16}` foi calibrada
+   em cima do padrão de sprint do KMM5 ("Sprint 8.16"). Não confirmamos se o KMM4 usa o mesmo
+   formato "N.M" — se não usar, `getTasksAlocadas` simplesmente não vai casar nenhum item do KMM4
+   (fica vazio, não traz dado errado). Precisa validar com o Heder assim que ele olhar dados reais
+   do KMM4 nessa visão.
+7. **Botão "Exportar Excel"**: usa o pacote `xlsx` (já era dependência do projeto, só usado antes
+   pra IMPORT server-side em `app/api/clientes/import/route.ts`) — agora também client-side, via
+   `import("xlsx")` dinâmico dentro do handler de clique (não import estático no topo do arquivo),
+   pra não engordar o bundle inicial da página com uma lib pesada que só é carregada se o botão for
+   clicado. Exporta exatamente as linhas visíveis (`tarefasExibidas`, já filtradas por sprint/área/
+   produto), incluindo a coluna Área, pro arquivo `sprints-{produto}-{data}.xlsx`.
+
+**Verificado:** `npx tsc --noEmit` limpo (sem erros, só aviso de versão do npm).

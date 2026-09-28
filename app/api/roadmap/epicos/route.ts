@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getEpicComFeatures, type EpicRoadmap } from "@/lib/devops-client";
+import { getEpicComFeatures, getEpicIds, type EpicRoadmap } from "@/lib/devops-client";
+import { DEVOPS_PROJETOS } from "@/lib/devops-projetos";
 
 // Nunca prerenderizar/cachear estaticamente (mesmo motivo documentado em app/api/roadmap/route.ts).
 export const dynamic = "force-dynamic";
@@ -9,25 +10,23 @@ export const dynamic = "force-dynamic";
  * /api/avisos depende — não pode ser repropósito). Alimenta o painel "Roadmap e Entregas" novo,
  * em formato Gantt por Epic/Feature (pedido por Heder em 2026-09-22).
  *
- * V1 (2026-09-22): lista de IDs de Epic ainda é hardcoded (só o #15057, "Integração SuperApp
- * <=> KMM4 (Onda 3)"), pra validar o layout com o Heder antes de generalizar. Quando aprovado, o
- * próximo passo é trocar essa lista fixa por uma WIQL `[System.WorkItemType] = 'Epic' AND
- * [Custom.Produto] = '<produto>'` (ver getEpicComFeatures em lib/devops-client.ts).
+ * Generalizada em 2026-09-28 (pedido do Heder): a v1 trazia só o Epic #15057 fixo, pra validar o
+ * layout. Agora traz TODOS os Epics que batem com a regra original (Work Item Type = Epic,
+ * Custom.Produto = produto pedido, excluindo Removed) via getEpicIds() — ver lib/devops-client.ts.
  */
-const EPIC_IDS_V1 = [15057];
+const PROJETOS = Object.values(DEVOPS_PROJETOS).map((p) => p.project);
 
 export async function GET(request: NextRequest) {
   const produtoParam = request.nextUrl.searchParams.get("produto")?.toUpperCase() ?? "AMBOS";
+  const produtos = produtoParam === "AMBOS" ? Object.keys(DEVOPS_PROJETOS) : [produtoParam];
 
   try {
-    const epicos = (
-      await Promise.all(EPIC_IDS_V1.map((id) => getEpicComFeatures(id)))
-    ).filter((e): e is EpicRoadmap => e !== null);
+    const ids = await getEpicIds(produtos, PROJETOS);
+    const epicos = (await Promise.all(ids.map((id) => getEpicComFeatures(id)))).filter(
+      (e): e is EpicRoadmap => e !== null
+    );
 
-    const filtrados =
-      produtoParam === "AMBOS" ? epicos : epicos.filter((e) => e.produto.toUpperCase() === produtoParam);
-
-    return NextResponse.json({ epicos: filtrados });
+    return NextResponse.json({ epicos });
   } catch (err) {
     console.error("[roadmap/epicos] falha ao buscar epicos do Azure DevOps:", err);
     return NextResponse.json(

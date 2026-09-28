@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { BarChart3, Calendar, ChevronDown, ChevronUp, Clock, Download, Eraser, Flag, Gauge, Maximize2, X } from "lucide-react";
 import { useProduto } from "@/components/ProdutoContext";
@@ -162,6 +162,82 @@ function infoPrioridade(p: number | null): { label: string; bg: string; fg: stri
 
 const LARGURA_COLUNA_LABEL = 300;
 
+/**
+ * Dropdown de multi-seleção por checkbox (mesmo padrão do MultiSelectSquad em app/(app)/page.tsx,
+ * generalizado aqui pros filtros de Área e Cliente da aba Comitês — pedido por Heder em
+ * 2026-09-28: antes eram <select> de escolha única). `selecionados` vazio = sem filtro ("todas"/
+ * "todos"). `formatar` é opcional, pra exibir um rótulo diferente do valor usado no filtro (ex.:
+ * Área mostra só o último segmento do Area Path, mas filtra pelo path completo).
+ */
+function MultiSelectFiltro({
+  rotuloTodos,
+  opcoes,
+  selecionados,
+  onChange,
+  formatar,
+}: {
+  rotuloTodos: string;
+  opcoes: string[];
+  selecionados: string[];
+  onChange: (v: string[]) => void;
+  formatar?: (v: string) => string;
+}) {
+  const [aberto, setAberto] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function aoClicarFora(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setAberto(false);
+    }
+    document.addEventListener("mousedown", aoClicarFora);
+    return () => document.removeEventListener("mousedown", aoClicarFora);
+  }, []);
+
+  function alternar(opcao: string) {
+    onChange(selecionados.includes(opcao) ? selecionados.filter((s) => s !== opcao) : [...selecionados, opcao]);
+  }
+
+  const rotulo =
+    selecionados.length === 0
+      ? rotuloTodos
+      : selecionados.length === 1
+        ? formatar?.(selecionados[0]) ?? selecionados[0]
+        : `${selecionados.length} selecionados`;
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <button
+        type="button"
+        className="kmm-input"
+        onClick={() => setAberto((a) => !a)}
+        style={{ width: "auto", textAlign: "left", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, minWidth: 180, cursor: "pointer" }}
+      >
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{rotulo}</span>
+        <ChevronDown size={14} color={C.muted} style={{ flexShrink: 0 }} />
+      </button>
+      {aberto && (
+        <div
+          className="kmm-card"
+          style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 30, minWidth: 240, maxHeight: 280, overflowY: "auto", padding: 8 }}
+        >
+          <label
+            style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", fontSize: 13, cursor: "pointer", borderBottom: `1px solid ${C.border}`, marginBottom: 4 }}
+          >
+            <input type="checkbox" checked={selecionados.length === 0} onChange={() => onChange([])} />
+            {rotuloTodos}
+          </label>
+          {opcoes.map((op) => (
+            <label key={op} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", fontSize: 13, cursor: "pointer" }}>
+              <input type="checkbox" checked={selecionados.includes(op)} onChange={() => alternar(op)} />
+              {formatar?.(op) ?? op}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 type Visao = "roadmap" | "sprints" | "comites";
 
 export default function RoadmapPage() {
@@ -185,8 +261,10 @@ export default function RoadmapPage() {
   const [demandasComite, setDemandasComite] = useState<DemandaComite[]>([]);
   const [carregandoComites, setCarregandoComites] = useState(true);
   const [erroComites, setErroComites] = useState<string | null>(null);
-  const [areaSelecionadaComites, setAreaSelecionadaComites] = useState("todas");
-  const [clienteSelecionadoComites, setClienteSelecionadoComites] = useState("todos");
+  // Arrays vazios = "todas"/"todos" (sem filtro). Multi-seleção pedida por Heder em 2026-09-28,
+  // no mesmo padrão do MultiSelectSquad já usado no painel de indicadores (app/(app)/page.tsx).
+  const [areasSelecionadasComites, setAreasSelecionadasComites] = useState<string[]>([]);
+  const [clientesSelecionadosComites, setClientesSelecionadosComites] = useState<string[]>([]);
   // Bloco de filtro por Data de Comitê, no mesmo estilo do card "CREATED DATE" do painel de
   // indicadores (app/(app)/page.tsx) — pedido por Heder em 2026-09-28.
   const [dataInicioComites, setDataInicioComites] = useState("");
@@ -273,15 +351,15 @@ export default function RoadmapPage() {
   const demandasExibidas = useMemo(
     () =>
       demandasComite.filter((d) => {
-        if (areaSelecionadaComites !== "todas" && d.areaPath !== areaSelecionadaComites) return false;
-        if (clienteSelecionadoComites !== "todos" && d.cliente !== clienteSelecionadoComites) return false;
+        if (areasSelecionadasComites.length && !areasSelecionadasComites.includes(d.areaPath)) return false;
+        if (clientesSelecionadosComites.length && !clientesSelecionadosComites.includes(d.cliente)) return false;
         if (dataInicioComites && (!d.dataComite || d.dataComite < dataInicioComites)) return false;
         // dataComite vem com horário (ISO) — compara só a parte de data (10 chars) contra o
         // "até" do filtro pra não excluir o próprio dia final por causa do horário.
         if (dataFimComites && (!d.dataComite || d.dataComite.slice(0, 10) > dataFimComites)) return false;
         return true;
       }),
-    [demandasComite, areaSelecionadaComites, clienteSelecionadoComites, dataInicioComites, dataFimComites]
+    [demandasComite, areasSelecionadasComites, clientesSelecionadosComites, dataInicioComites, dataFimComites]
   );
 
   const { meses, inicioMs, fimMs } = useMemo(() => {
@@ -580,32 +658,19 @@ export default function RoadmapPage() {
                 </div>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                <select
-                  className="kmm-input"
-                  style={{ width: "auto" }}
-                  value={areaSelecionadaComites}
-                  onChange={(e) => setAreaSelecionadaComites(e.target.value)}
-                >
-                  <option value="todas">Todas as áreas</option>
-                  {areasDisponiveisComites.map((a) => (
-                    <option key={a} value={a}>
-                      {a.split("\\").pop() || a}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  className="kmm-input"
-                  style={{ width: "auto" }}
-                  value={clienteSelecionadoComites}
-                  onChange={(e) => setClienteSelecionadoComites(e.target.value)}
-                >
-                  <option value="todos">Todos os clientes</option>
-                  {clientesDisponiveis.map((cli) => (
-                    <option key={cli} value={cli}>
-                      {cli}
-                    </option>
-                  ))}
-                </select>
+                <MultiSelectFiltro
+                  rotuloTodos="Todas as áreas"
+                  opcoes={areasDisponiveisComites}
+                  selecionados={areasSelecionadasComites}
+                  onChange={setAreasSelecionadasComites}
+                  formatar={(a) => a.split("\\").pop() || a}
+                />
+                <MultiSelectFiltro
+                  rotuloTodos="Todos os clientes"
+                  opcoes={clientesDisponiveis}
+                  selecionados={clientesSelecionadosComites}
+                  onChange={setClientesSelecionadosComites}
+                />
               </div>
             </div>
             {carregandoComites && <p style={{ color: C.muted }}>Carregando demandas de comitê do Azure DevOps…</p>}

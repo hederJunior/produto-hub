@@ -350,15 +350,22 @@ export default function RoadmapPage() {
   );
   const demandasExibidas = useMemo(
     () =>
-      demandasComite.filter((d) => {
-        if (areasSelecionadasComites.length && !areasSelecionadasComites.includes(d.areaPath)) return false;
-        if (clientesSelecionadosComites.length && !clientesSelecionadosComites.includes(d.cliente)) return false;
-        if (dataInicioComites && (!d.dataComite || d.dataComite < dataInicioComites)) return false;
-        // dataComite vem com horário (ISO) — compara só a parte de data (10 chars) contra o
-        // "até" do filtro pra não excluir o próprio dia final por causa do horário.
-        if (dataFimComites && (!d.dataComite || d.dataComite.slice(0, 10) > dataFimComites)) return false;
-        return true;
-      }),
+      demandasComite
+        .filter((d) => {
+          if (areasSelecionadasComites.length && !areasSelecionadasComites.includes(d.areaPath)) return false;
+          if (clientesSelecionadosComites.length && !clientesSelecionadosComites.includes(d.cliente)) return false;
+          if (dataInicioComites && (!d.dataComite || d.dataComite < dataInicioComites)) return false;
+          // dataComite vem com horário (ISO) — compara só a parte de data (10 chars) contra o
+          // "até" do filtro pra não excluir o próprio dia final por causa do horário.
+          if (dataFimComites && (!d.dataComite || d.dataComite.slice(0, 10) > dataFimComites)) return false;
+          return true;
+        })
+        // Ordena por Data Comitê (pedido por Heder em 2026-09-28): a API já pede ORDER BY na
+        // WIQL, mas isso vale só dentro de cada TeamProject — com produto "AMBOS" os resultados
+        // de KMM4 e KMM5 vêm concatenados (getDemandasComite roda um WIQL por projeto e dá
+        // `.flat()` no fim), quebrando a ordem cronológica geral. Comparação de string funciona
+        // porque dataComite é ISO (YYYY-MM-DDTHH:mm:ssZ).
+        .sort((a, b) => (a.dataComite ?? "").localeCompare(b.dataComite ?? "")),
     [demandasComite, areasSelecionadasComites, clientesSelecionadosComites, dataInicioComites, dataFimComites]
   );
 

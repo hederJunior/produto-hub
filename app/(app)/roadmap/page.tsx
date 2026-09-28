@@ -49,6 +49,19 @@ type TaskAlocada = {
   responsavel: { nome: string; avatarUrl: string | null } | null;
 };
 
+/** Aba "Comitês" (pedido por Heder em 2026-09-28) — PBIs com Data de Comitê marcada, ver
+ * getDemandasComite em lib/devops-client.ts. */
+type DemandaComite = {
+  id: number;
+  titulo: string;
+  produto: string;
+  areaPath: string;
+  cliente: string;
+  po: string;
+  state: string;
+  dataComite: string | null;
+};
+
 const MESES_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 const MESES_ABREV = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 
@@ -149,7 +162,7 @@ function infoPrioridade(p: number | null): { label: string; bg: string; fg: stri
 
 const LARGURA_COLUNA_LABEL = 300;
 
-type Visao = "roadmap" | "sprints";
+type Visao = "roadmap" | "sprints" | "comites";
 
 export default function RoadmapPage() {
   const { produto } = useProduto();
@@ -168,6 +181,12 @@ export default function RoadmapPage() {
   const [sprintSelecionada, setSprintSelecionada] = useState("todas");
   const [areaSelecionadaSprints, setAreaSelecionadaSprints] = useState("todas");
   const [painelEsforcoAberto, setPainelEsforcoAberto] = useState(false);
+
+  const [demandasComite, setDemandasComite] = useState<DemandaComite[]>([]);
+  const [carregandoComites, setCarregandoComites] = useState(true);
+  const [erroComites, setErroComites] = useState<string | null>(null);
+  const [areaSelecionadaComites, setAreaSelecionadaComites] = useState("todas");
+  const [clienteSelecionadoComites, setClienteSelecionadoComites] = useState("todos");
 
   const [agora, setAgora] = useState<Date | null>(null);
   useEffect(() => setAgora(new Date()), []);
@@ -199,6 +218,20 @@ export default function RoadmapPage() {
       .finally(() => setCarregandoSprints(false));
   }, [produto]);
 
+  useEffect(() => {
+    setCarregandoComites(true);
+    setErroComites(null);
+    // Mesmo padrão de produto do header já usado nas outras abas (pedido em 2026-09-28).
+    fetch(`/api/roadmap/comites?produto=${produto}`, { cache: "no-store" })
+      .then((res) => res.json())
+      .then((j) => {
+        if (j.erro) setErroComites(j.erro);
+        setDemandasComite(j.demandas ?? []);
+      })
+      .catch(() => setErroComites("Não foi possível carregar as demandas de comitê do Azure DevOps."))
+      .finally(() => setCarregandoComites(false));
+  }, [produto]);
+
   const areasDisponiveis = useMemo(() => Array.from(new Set(epicos.map((e) => e.areaPath))).sort(), [epicos]);
 
   const epicosExibidos = useMemo(
@@ -225,6 +258,21 @@ export default function RoadmapPage() {
           (areaSelecionadaSprints === "todas" || t.areaPath === areaSelecionadaSprints)
       ),
     [tarefas, sprintSelecionada, areaSelecionadaSprints]
+  );
+
+  const areasDisponiveisComites = useMemo(() => Array.from(new Set(demandasComite.map((d) => d.areaPath))).sort(), [demandasComite]);
+  const clientesDisponiveis = useMemo(
+    () => Array.from(new Set(demandasComite.map((d) => d.cliente).filter(Boolean))).sort(),
+    [demandasComite]
+  );
+  const demandasExibidas = useMemo(
+    () =>
+      demandasComite.filter(
+        (d) =>
+          (areaSelecionadaComites === "todas" || d.areaPath === areaSelecionadaComites) &&
+          (clienteSelecionadoComites === "todos" || d.cliente === clienteSelecionadoComites)
+      ),
+    [demandasComite, areaSelecionadaComites, clienteSelecionadoComites]
   );
 
   const { meses, inicioMs, fimMs } = useMemo(() => {
@@ -386,7 +434,7 @@ export default function RoadmapPage() {
               </>
             )}
           </>
-        ) : (
+        ) : visao === "sprints" ? (
           <>
             <div
               style={{
@@ -451,6 +499,66 @@ export default function RoadmapPage() {
             )}
             {!carregandoSprints && !erroSprints && tarefasExibidas.length > 0 && <SprintsAlocadas tarefas={tarefasExibidas} />}
           </>
+        ) : (
+          <>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-end",
+                flexWrap: "wrap",
+                gap: 12,
+                marginBottom: 16,
+              }}
+            >
+              <div>
+                <div style={{ fontFamily: "Sora,sans-serif", fontWeight: 800, fontSize: 20, color: C.text }}>
+                  Comitês {produtoLabelFooter}
+                </div>
+                <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+                  Demandas (PBIs) com Data de Comitê marcada no Azure DevOps.
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <select
+                  className="kmm-input"
+                  style={{ width: "auto" }}
+                  value={areaSelecionadaComites}
+                  onChange={(e) => setAreaSelecionadaComites(e.target.value)}
+                >
+                  <option value="todas">Todas as áreas</option>
+                  {areasDisponiveisComites.map((a) => (
+                    <option key={a} value={a}>
+                      {a.split("\\").pop() || a}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className="kmm-input"
+                  style={{ width: "auto" }}
+                  value={clienteSelecionadoComites}
+                  onChange={(e) => setClienteSelecionadoComites(e.target.value)}
+                >
+                  <option value="todos">Todos os clientes</option>
+                  {clientesDisponiveis.map((cli) => (
+                    <option key={cli} value={cli}>
+                      {cli}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            {carregandoComites && <p style={{ color: C.muted }}>Carregando demandas de comitê do Azure DevOps…</p>}
+            {erroComites && (
+              <div className="kmm-card" style={{ color: C.red, fontSize: 13 }}>
+                {erroComites}
+              </div>
+            )}
+            {!carregandoComites && !erroComites && demandasExibidas.length === 0 && (
+              <p style={{ color: C.muted }}>Nenhuma demanda com Data de Comitê encontrada para os filtros selecionados.</p>
+            )}
+            {!carregandoComites && !erroComites && demandasExibidas.length > 0 && <DemandasComiteLista demandas={demandasExibidas} />}
+          </>
         )}
       </div>
 
@@ -471,6 +579,7 @@ function VisaoFiltro({ visao, setVisao }: { visao: Visao; setVisao: (v: Visao) =
   const opcoes: { valor: Visao; label: string }[] = [
     { valor: "roadmap", label: "Road Map" },
     { valor: "sprints", label: "Sprints" },
+    { valor: "comites", label: "Comitês" },
   ];
   return (
     <div className="kmm-seg">
@@ -1112,6 +1221,71 @@ function SprintsAlocadas({ tarefas }: { tarefas: TaskAlocada[] }) {
                 </div>
               </div>
             </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+const COLUNAS_COMITE = "110px 1fr 150px 140px 130px 170px";
+
+/**
+ * Lista "Demandas Programadas" da aba Comitês — PBIs com Data de Comitê marcada, no estilo do
+ * dashboard Power BI que o Heder mandou de referência (2026-09-28): lista simples, ordenada por
+ * Data de Comitê (ordem que já vem da API — ver getDemandasComite em lib/devops-client.ts), sem
+ * agrupamento por bloco. Colunas confirmadas com o Heder: Data Comitê, Título, Cliente, PO,
+ * Status, Área (Prioridade ficou de fora).
+ */
+function DemandasComiteLista({ demandas }: { demandas: DemandaComite[] }) {
+  return (
+    <div className="kmm-card" style={{ padding: 0, overflow: "hidden" }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: COLUNAS_COMITE,
+          padding: "10px 18px",
+          borderBottom: `1px solid ${C.border}`,
+          fontSize: 11,
+          fontWeight: 700,
+          color: C.muted,
+          textTransform: "uppercase",
+          letterSpacing: 0.3,
+        }}
+      >
+        <div>Data Comitê</div>
+        <div>Título</div>
+        <div>Cliente</div>
+        <div>PO</div>
+        <div>Status</div>
+        <div>Área</div>
+      </div>
+      {demandas.map((d) => {
+        const status = corDeEstadoDevOps(d.state);
+        return (
+          <div
+            key={d.id}
+            style={{
+              display: "grid",
+              gridTemplateColumns: COLUNAS_COMITE,
+              padding: "10px 18px",
+              borderBottom: `1px solid ${C.border}`,
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
+            <div style={{ fontSize: 12.5, color: C.text, fontVariantNumeric: "tabular-nums" }}>{formatarData(d.dataComite)}</div>
+            <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>
+              #{d.id} · {d.titulo}
+            </div>
+            <div style={{ fontSize: 12.5, color: C.muted }}>{d.cliente || "—"}</div>
+            <div style={{ fontSize: 12.5, color: C.muted }}>{d.po || "—"}</div>
+            <div>
+              <span className="kmm-chip" style={{ background: status.bg, color: status.fg, borderColor: "transparent" }}>
+                {d.state}
+              </span>
+            </div>
+            <div style={{ fontSize: 12.5, color: C.muted }}>{d.areaPath.split("\\").pop() || d.areaPath}</div>
           </div>
         );
       })}

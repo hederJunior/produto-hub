@@ -1793,3 +1793,44 @@ violet/red, escolhida pra distinção sob daltonismo) em vez da paleta de 10 cor
 (`PALETA_AREA`) — são conceitos diferentes (Área vs Dev) e não deveriam compartilhar a paleta.
 
 **Verificado:** `npx tsc --noEmit` limpo.
+
+## 2026-09-28 (cont. 3) — Nova aba "Comitês" no painel "Roadmap e Entregas"
+
+Heder mandou um print de um dashboard Power BI existente ("Demandas Programadas") e pediu uma
+terceira aba, "Comitês", ao lado de "Road Map" e "Sprints", com uma lista parecida.
+
+**Duas perguntas feitas antes de implementar (a frase "com base no campo X" tinha leituras
+diferentes possíveis, e o print tinha uma coluna cortada):**
+1. Colunas extras além de Data Comitê/Título/Cliente → Heder escolheu **PO, Status e Área**
+   (Prioridade ficou de fora).
+2. Regra de inclusão do campo de data (`Custom.443622e0-6ab8-4ae5-9371-612b44a8fb1d`) → Heder
+   confirmou que é **filtro de inclusão mesmo** (só entra o PBI que já tem essa Data de Comitê
+   preenchida), não "todo PBI em aberto, mostrando a data quando tiver" (apesar do print de
+   referência ter uma linha em branco — provavelmente uma particularidade do relatório Power BI
+   existente, não a regra pedida pra essa tela nova).
+3. Confirmado também: excluir PBIs já concluídos/fechados dessa lista.
+
+**`getDemandasComite(projetos)` nova em `lib/devops-client.ts`:**
+- WIQL por TeamProject (KMM4 e/ou KMM5, em paralelo): `WorkItemType = 'Product Backlog Item'`
+  (mesma convenção de "Demanda" usada no resto do app — `fetchPbisParaSnapshot`), `State NOT IN
+  ('Removed')`, e `[Custom.443622e0-6ab8-4ae5-9371-612b44a8fb1d] <> ''` (campo preenchido).
+- Depois da WIQL, um filtro em JS remove os já concluídos/fechados, reaproveitando
+  `estadoIndicaConcluido()` (mesmo motivo de sempre: não dá pra confiar numa lista fixa de valores
+  exatos de State entre squads diferentes).
+- Reaproveita `queryWorkItems()` já testado em produção (mesmo padrão de `getEpicIds`).
+- Campos trazidos: Título, TeamProject, AreaPath, `Custom.Cliente`, `Custom.PO`, State e o próprio
+  campo de Data Comitê.
+
+**`app/api/roadmap/comites/route.ts`** nova: mesmo padrão de `?produto=` (KMM4/KMM5/AMBOS) das
+outras rotas do roadmap, restringindo quais TeamProjects são consultados.
+
+**Página (`app/(app)/roadmap/page.tsx`):**
+- `Visao` ganhou `"comites"`; `VisaoFiltro` ganhou a opção "Comitês" no segmented control ao lado
+  de "Road Map"/"Sprints".
+- Filtros da aba: dropdown de Área e dropdown de Cliente (pedido explícito do Heder), aplicados
+  client-side sobre os dados já carregados (mesmo padrão das outras abas).
+- `DemandasComiteLista`: lista simples (sem agrupamento em blocos, diferente da tabela de
+  Sprints), ordenada por Data de Comitê (ordem que já vem da API), colunas Data Comitê / Título /
+  Cliente / PO / Status (chip colorido via `corDeEstadoDevOps`) / Área.
+
+**Verificado:** `npx tsc --noEmit` limpo.

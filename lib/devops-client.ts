@@ -6,6 +6,8 @@
  * O PAT precisa do escopo "Work Items → Read" (mesmo requisito já identificado no roadmap-panel).
  */
 
+import { estadoIndicaConcluido } from "./kmm-theme";
+
 const API_VERSION = "7.1";
 
 function getConfig() {
@@ -587,4 +589,74 @@ export async function getTasksAlocadas(project: string, sprintMinima: SprintMini
       const parsed = parseSprint(t.sprint);
       return parsed !== null && sprintEhIgualOuPosterior(parsed, sprintMinima);
     });
+}
+
+// ===== Demandas de Comitê (aba "Comitês" do painel "Roadmap e Entregas", pedido por Heder em
+// 2026-09-28, a partir de um dashboard Power BI existente "Demandas Programadas") =====
+
+/**
+ * Nome de referência do campo custom "Data Comitê" (tipo Date) — GUID em vez de nome legível,
+ * confirmado por Heder direto no Azure DevOps (mesmo motivo do campo "Item de Road Map
+ * Estratégico" documentado em getEpicIds: alguns campos custom saem com nome de referência em
+ * GUID, não dá pra adivinhar esse formato).
+ */
+const CAMPO_DATA_COMITE = "Custom.443622e0-6ab8-4ae5-9371-612b44a8fb1d";
+
+export type DemandaComite = {
+  id: number;
+  titulo: string;
+  produto: string;
+  areaPath: string;
+  cliente: string;
+  po: string;
+  state: string;
+  dataComite: string | null;
+};
+
+/**
+ * Lista os PBIs ("Demanda", mesma convenção do resto do app — ver fetchPbisParaSnapshot) que já
+ * têm uma Data de Comitê marcada, pra aba "Comitês" do painel "Roadmap e Entregas".
+ *
+ * Regras confirmadas com o Heder em 2026-09-28 (a frase "com base no campo X" tinha duas leituras
+ * possíveis — perguntei antes de escrever a query):
+ * - Só entra o PBI que JÁ TEM esse campo de data preenchido — `[CAMPO_DATA_COMITE] <> ''` na
+ *   WIQL é filtro de inclusão mesmo, não é "todo PBI em aberto, mostrando a data quando tiver".
+ * - Exclui PBIs já concluídos/fechados. Como não dá pra confiar numa lista fixa de valores
+ *   exatos de State (cada squad usa uma convenção diferente — mesmo problema documentado em
+ *   corDeEstadoDevOps/estadoIndicaConcluido em lib/kmm-theme.ts), a WIQL só exclui Removed e o
+ *   filtro de "concluído" roda em JS reaproveitando `estadoIndicaConcluido()`.
+ *
+ * Roda por TeamProject em `projetos` (o chamador passa KMM4 e/ou KMM5 — ver
+ * lib/devops-projetos.ts), reaproveitando `queryWorkItems()` já testado em produção, mesmo padrão
+ * de getEpicIds.
+ */
+export async function getDemandasComite(projetos: string[]): Promise<DemandaComite[]> {
+  const porProjeto = await Promise.all(
+    projetos.map((project) => {
+      const wiql = `
+        SELECT [System.Id]
+        FROM WorkItems
+        WHERE [System.TeamProject] = '${project}'
+          AND [System.WorkItemType] = 'Product Backlog Item'
+          AND [System.State] NOT IN ('Removed')
+          AND [${CAMPO_DATA_COMITE}] <> ''
+        ORDER BY [${CAMPO_DATA_COMITE}] ASC
+      `;
+      return queryWorkItems(wiql, project);
+    })
+  );
+
+  return porProjeto
+    .flat()
+    .map((w) => ({
+      id: w.id,
+      titulo: String(w.fields["System.Title"] ?? `Item ${w.id}`),
+      produto: String(w.fields["System.TeamProject"] ?? ""),
+      areaPath: String(w.fields["System.AreaPath"] ?? ""),
+      cliente: String(w.fields["Custom.Cliente"] ?? ""),
+      po: String(w.fields["Custom.PO"] ?? ""),
+      state: String(w.fields["System.State"] ?? ""),
+      dataComite: (w.fields[CAMPO_DATA_COMITE] as string) ?? null,
+    }))
+    .filter((d) => !estadoIndicaConcluido(d.state));
 }

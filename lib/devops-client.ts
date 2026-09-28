@@ -613,6 +613,16 @@ export type DemandaComite = {
   dataComite: string | null;
 };
 
+const CAMPOS_DEMANDA_COMITE = [
+  "System.Title",
+  "System.State",
+  "System.TeamProject",
+  "System.AreaPath",
+  "Custom.Cliente",
+  "Custom.PO",
+  CAMPO_DATA_COMITE,
+];
+
 /**
  * Lista os PBIs ("Demanda", mesma convenção do resto do app — ver fetchPbisParaSnapshot) que já
  * têm uma Data de Comitê marcada, pra aba "Comitês" do painel "Roadmap e Entregas".
@@ -626,13 +636,30 @@ export type DemandaComite = {
  *   corDeEstadoDevOps/estadoIndicaConcluido em lib/kmm-theme.ts), a WIQL só exclui Removed e o
  *   filtro de "concluído" roda em JS reaproveitando `estadoIndicaConcluido()`.
  *
+ * BUG corrigido em 2026-09-28 (Heder reportou a aba "Comitês" vazia mesmo com PBIs claramente com
+ * a data marcada — ex.: #41987): a v1 usava `queryWorkItems()`, que busca os detalhes numa única
+ * chamada GET (`wit/workitems?ids=...`) — só seguro pra conjuntos pequenos (comentário já existia
+ * em cima da própria queryWorkItems). Um produto sozinho já tem 500+ PBIs com Data de Comitê
+ * preenchida (WIQL bateu 526 só em KMM4, confirmado com scripts/checar-comite.mjs), bem acima do
+ * limite de 200 ids por chamada da Azure DevOps REST API — a chamada de detalhes falhava (400) e
+ * a tela caía silenciosamente pra lista vazia. Fix: pagina em lotes de 200 via `workitemsbatch`
+ * (POST), mesmo padrão já usado em `fetchPbisParaSnapshot`/`getTasksAlocadas`.
+ *
+ * Outro bug corrigido junto: `Custom.PO` não é texto, é um campo de Identidade (mesmo formato de
+ * `System.AssignedTo`) — vem como objeto `{ displayName, imageUrl, ... }`. A v1 fazia
+ * `String(w.fields["Custom.PO"])`, que virava o literal "[object Object]" em vez do nome da
+ * pessoa; corrigido pra extrair `displayName` (reaproveita o tipo `CampoPessoa` já usado em
+ * getTasksAlocadas).
+ *
  * Roda por TeamProject em `projetos` (o chamador passa KMM4 e/ou KMM5 — ver
- * lib/devops-projetos.ts), reaproveitando `queryWorkItems()` já testado em produção, mesmo padrão
- * de getEpicIds.
+ * lib/devops-projetos.ts).
  */
 export async function getDemandasComite(projetos: string[]): Promise<DemandaComite[]> {
+  const { org, pat } = getConfig();
+
   const porProjeto = await Promise.all(
-    projetos.map((project) => {
+    projetos.map(async (project) => {
+      const base = `https://dev.azure.com/${org}/${encodeURIComponent(project)}/_apis`;
       const wiql = `
         SELECT [System.Id]
         FROM WorkItems
@@ -642,21 +669,53 @@ export async function getDemandasComite(projetos: string[]): Promise<DemandaComi
           AND [${CAMPO_DATA_COMITE}] <> ''
         ORDER BY [${CAMPO_DATA_COMITE}] ASC
       `;
-      return queryWorkItems(wiql, project);
+
+      const wiqlRes = await fetch(`${base}/wit/wiql?api-version=${API_VERSION}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(pat) },
+        body: JSON.stringify({ query: wiql }),
+      });
+      if (!wiqlRes.ok) {
+        throw new Error(`Falha na consulta WIQL de Demandas de Comitê (${project}) (${wiqlRes.status}): ${await wiqlRes.text()}`);
+      }
+      const { workItems } = (await wiqlRes.json()) as { workItems: { id: number }[] };
+      const ids = workItems.map((w) => w.id);
+      if (!ids.length) return [];
+
+      const lotes: number[][] = [];
+      for (let i = 0; i < ids.length; i += 200) lotes.push(ids.slice(i, i + 200));
+
+      const todos: WorkItem[] = [];
+      for (const lote of lotes) {
+        const res = await fetch(`${base}/wit/workitemsbatch?api-version=${API_VERSION}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeader(pat) },
+          body: JSON.stringify({ ids: lote, fields: CAMPOS_DEMANDA_COMITE }),
+        });
+        if (!res.ok) {
+          throw new Error(`Falha ao buscar lote de Demandas de Comitê (${project}) (${res.status}): ${await res.text()}`);
+        }
+        const { value } = (await res.json()) as { value: WorkItem[] };
+        todos.push(...value);
+      }
+      return todos;
     })
   );
 
   return porProjeto
     .flat()
-    .map((w) => ({
-      id: w.id,
-      titulo: String(w.fields["System.Title"] ?? `Item ${w.id}`),
-      produto: String(w.fields["System.TeamProject"] ?? ""),
-      areaPath: String(w.fields["System.AreaPath"] ?? ""),
-      cliente: String(w.fields["Custom.Cliente"] ?? ""),
-      po: String(w.fields["Custom.PO"] ?? ""),
-      state: String(w.fields["System.State"] ?? ""),
-      dataComite: (w.fields[CAMPO_DATA_COMITE] as string) ?? null,
-    }))
+    .map((w) => {
+      const po = w.fields["Custom.PO"] as CampoPessoa;
+      return {
+        id: w.id,
+        titulo: String(w.fields["System.Title"] ?? `Item ${w.id}`),
+        produto: String(w.fields["System.TeamProject"] ?? ""),
+        areaPath: String(w.fields["System.AreaPath"] ?? ""),
+        cliente: String(w.fields["Custom.Cliente"] ?? ""),
+        po: po?.displayName ?? "",
+        state: String(w.fields["System.State"] ?? ""),
+        dataComite: (w.fields[CAMPO_DATA_COMITE] as string) ?? null,
+      };
+    })
     .filter((d) => !estadoIndicaConcluido(d.state));
 }

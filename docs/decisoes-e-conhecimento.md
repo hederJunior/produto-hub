@@ -1854,3 +1854,38 @@ voltar a ver todos. `LegendaFiltroDev` sempre lista TODOS os devs da área (com 
 nos que estão ocultos no momento), garantindo que dá pra reverter o isolamento.
 
 **Verificado:** `npx tsc --noEmit` limpo.
+
+## 2026-09-28 (cont. 5) — Fix: aba "Comitês" vazia (limite de 200 ids + bug no campo PO)
+
+Heder reportou a aba "Comitês" sem nenhum dado, mesmo com PBIs no Azure DevOps claramente com a
+Data de Comitê preenchida (ex.: #41987 em KMM4). Sem acesso de rede pro Azure DevOps neste
+sandbox, pedi pra ele rodar `scripts/checar-comite.mjs 41987` (script novo, commit anterior) —
+o resultado mostrou que a WIQL de produção (idêntica à usada em `getDemandasComite`) encontrava
+526 PBIs só em KMM4, incluindo o #41987. Ou seja, **a WIQL/regra de negócio estava certa**; o bug
+estava na camada seguinte.
+
+**Causa raiz:** `getDemandasComite` reaproveitava `queryWorkItems()`, que busca os detalhes em UMA
+chamada GET (`wit/workitems?ids=...`) — a própria função já tinha um comentário avisando que isso
+só é seguro pra conjuntos pequenos (o padrão certo pra listas grandes, já usado em
+`fetchPbisParaSnapshot`/`getTasksAlocadas`, é paginar em lotes de 200 via `workitemsbatch` POST).
+Com 526 ids numa QueryString só, a chamada de detalhes estourava o limite de 200 ids por request
+da Azure DevOps REST API e falhava (400) — o erro subia até o `catch` da rota, que devolvia
+`{ erro, demandas: [] }`, e a tela caía silenciosamente pra lista vazia.
+
+**Fix:** `getDemandasComite` agora faz a própria paginação (WIQL → ids → lotes de 200 →
+`workitemsbatch`), igual ao padrão já estabelecido em `fetchPbisParaSnapshot`/`getTasksAlocadas`,
+em vez de reaproveitar `queryWorkItems()`.
+
+**Bug secundário encontrado no mesmo dump:** `Custom.PO` não é texto — é um campo de Identidade
+(mesmo formato de `System.AssignedTo`), vem como objeto `{ displayName, imageUrl, ... }`. A v1
+fazia `String(w.fields["Custom.PO"])`, que virava o literal `"[object Object]"` na coluna PO da
+tabela em vez do nome da pessoa. Corrigido pra extrair `displayName` (reaproveita o tipo
+`CampoPessoa` já usado em `getTasksAlocadas`).
+
+**Lição pra próximas queries desse tipo:** `queryWorkItems()` só é segura pra conjuntos que
+comprovadamente ficam bem abaixo de 200 itens (como a lista de Epics do Road Map, que é pequena).
+Qualquer consulta que possa trazer um volume de PBIs/Tasks/Bugs real (não um punhado de Epics)
+deve usar o padrão de paginação em lotes desde o início, não só quando o volume "ficar grande".
+
+**Verificado:** `npx tsc --noEmit` limpo. Correção não pôde ser testada contra o Azure DevOps
+real neste sandbox (sem rede) — pedir pro Heder validar a aba "Comitês" depois do deploy.

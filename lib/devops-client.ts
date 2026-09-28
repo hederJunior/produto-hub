@@ -295,21 +295,27 @@ const CAMPOS_ROADMAP_EPIC = [
 ];
 
 /**
- * Lista os IDs de todos os Epics que batem com as regras do painel "Roadmap e Entregas": Work
- * Item Type = Epic, `Custom.Produto` igual a um dos produtos pedidos, excluindo Removed.
- *
- * Generalizada em 2026-09-28 (pedido do Heder): a v1 trazia só o Epic #15057 fixo, pra validar o
- * layout. `projetos` deve cobrir TODOS os TeamProjects onde um Epic pode morar (o chamador passa
- * os dois, KMM4 e KMM5 — ver lib/devops-projetos.ts) — um Epic pode ter `Custom.Produto = 'KMM4'`
- * mesmo morando tecnicamente no TeamProject KMM5 (quem decide se ele entra na visão é o campo
- * Custom.Produto, não o TeamProject), então não dá pra confiar só num projeto por produto. Usa o
- * `queryWorkItems()` já testado em produção (project-scoped) uma vez por projeto, em paralelo.
+ * Nome de referência do campo custom "Item de Road Map Estratégico" (picklist de string, valores
+ * "Sim"/"Não") no processo do Azure DevOps. É um campo picklist, por isso o nome de referência é
+ * um GUID em vez de um nome legível (confirmado por Heder em 2026-09-28, direto na tela de
+ * Project Settings > Process > Epic > Fields — não dá pra adivinhar esse formato).
  */
-export async function getEpicIds(produtos: string[], projetos: string[]): Promise<number[]> {
-  const clausulaProduto = produtos.length
-    ? `AND [Custom.Produto] IN (${produtos.map((p) => `'${p.replace(/'/g, "''")}'`).join(", ")})`
-    : "";
+const CAMPO_ITEM_ROADMAP_ESTRATEGICO = "Custom.44b378c0-6c3f-4478-8693-c16e44f9928b";
 
+/**
+ * Lista os IDs de todos os Epics que batem com as regras do painel "Roadmap e Entregas": Work
+ * Item Type = Epic, excluindo Removed, com o campo "Item de Road Map Estratégico" marcado como
+ * "Sim".
+ *
+ * Regra trocada em 2026-09-28 (pedido do Heder): a v1 filtrava por `Custom.Produto` (produto de
+ * negócio do Epic). Heder pediu pra substituir isso por uma regra única — só o campo booleano de
+ * negócio "Item de Road Map Estratégico" decide se o Epic entra na visão, independente de produto.
+ *
+ * `projetos` deve cobrir todos os TeamProjects onde um Epic marcado pode morar (o chamador passa
+ * KMM4 e/ou KMM5 — ver lib/devops-projetos.ts). Usa o `queryWorkItems()` já testado em produção
+ * (project-scoped) uma vez por projeto, em paralelo.
+ */
+export async function getEpicIds(projetos: string[]): Promise<number[]> {
   const idsPorProjeto = await Promise.all(
     projetos.map(async (project) => {
       const wiql = `
@@ -318,7 +324,7 @@ export async function getEpicIds(produtos: string[], projetos: string[]): Promis
         WHERE [System.TeamProject] = '${project}'
           AND [System.WorkItemType] = 'Epic'
           AND [System.State] NOT IN ('Removed')
-          ${clausulaProduto}
+          AND [${CAMPO_ITEM_ROADMAP_ESTRATEGICO}] = 'Sim'
         ORDER BY [System.Id]
       `;
       const items = await queryWorkItems(wiql, project);

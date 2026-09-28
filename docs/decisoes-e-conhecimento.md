@@ -1724,3 +1724,35 @@ Epics que batem com as regras da visão.
    produto), incluindo a coluna Área, pro arquivo `sprints-{produto}-{data}.xlsx`.
 
 **Verificado:** `npx tsc --noEmit` limpo (sem erros, só aviso de versão do npm).
+
+## 2026-09-28 (cont.) — Road Map: troca a regra de filtro dos Epics (Custom.Produto → "Item de Road Map Estratégico" = Sim)
+
+Heder pediu pra substituir a regra de consulta dos Epics: em vez de olhar `Custom.Produto`, olhar
+só o campo de negócio "Item de Road Map Estratégico" marcado como "Sim".
+
+**Campo confirmado por Heder (não dava pra adivinhar):** é um campo do tipo **picklist de
+string**, e por isso o nome de referência é um **GUID**, não um nome legível:
+`Custom.44b378c0-6c3f-4478-8693-c16e44f9928b`. Guardado como constante
+`CAMPO_ITEM_ROADMAP_ESTRATEGICO` no topo de `lib/devops-client.ts`, perto de `getEpicIds`.
+
+**`getEpicIds` reescrita:**
+- Assinatura mudou de `(produtos, projetos)` pra só `(projetos)` — não recebe mais lista de
+  produtos, porque a regra não depende mais de `Custom.Produto`.
+- WIQL agora é: `WorkItemType = 'Epic'`, `State NOT IN ('Removed')`, e
+  `[Custom.44b378c0-6c3f-4478-8693-c16e44f9928b] = 'Sim'` — roda por TeamProject em `projetos`,
+  igual antes (mesmo padrão `queryWorkItems` já testado, sem WIQL de organização).
+
+**`app/api/roadmap/epicos/route.ts`:** como a regra de negócio (Custom.Produto) saiu da consulta,
+o seletor de produto do header (`?produto=`) agora tem outro papel aqui: em vez de filtrar por
+`Custom.Produto`, ele restringe **quais TeamProjects são consultados** — "KMM4" só olha o
+TeamProject KMM4, "KMM5" só KMM5, "AMBOS" olha os dois. **Decisão minha (não pedida
+explicitamente):** o Heder só pediu pra trocar a regra do campo; a escolha de continuar
+respeitando o seletor de produto do header (agora via TeamProject em vez de Custom.Produto) foi
+pra não quebrar o comportamento existente da tela. Se ele quiser que a aba Road Map ignore o
+seletor de produto e sempre traga TUDO que estiver marcado "Sim" (nos dois projetos, sempre),
+é só avisar que reverto essa parte.
+
+O campo `produto` (Custom.Produto) continua sendo retornado por `getEpicComFeatures` e exibido
+na sub-linha do Epic na tela — só parou de ser critério de filtro, não sumiu do dado.
+
+**Verificado:** `npx tsc --noEmit` limpo.

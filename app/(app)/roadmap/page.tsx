@@ -1,9 +1,18 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Calendar, ChevronDown, ChevronUp, Clock, Download, Flag, Gauge, Maximize2, X } from "lucide-react";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { BarChart3, Calendar, ChevronDown, ChevronUp, Clock, Download, Flag, Gauge, Maximize2, X } from "lucide-react";
 import { useProduto } from "@/components/ProdutoContext";
-import { C, corDaArea, corDeEstadoDevOps, corDeStatus, estadoIndicaConcluido } from "@/lib/kmm-theme";
+import { C, corDaArea, corDeEstadoDevOps, corDeStatus, corDoDev, estadoIndicaConcluido } from "@/lib/kmm-theme";
+
+// Estilo dos eixos/tooltip do recharts, igual ao já usado em app/(app)/page.tsx — mantém os
+// gráficos do app com a mesma cara (usado no painel "Esforço alocado por Sprint").
+const axisTick = { fill: C.muted, fontSize: 10, fontFamily: "'Hanken Grotesk',sans-serif" };
+const tipStyle = {
+  background: "#fff", border: `1px solid ${C.border}`, borderRadius: 8, color: C.text,
+  fontFamily: "'Hanken Grotesk',sans-serif", fontSize: 12, boxShadow: "0 6px 18px rgba(0,0,0,.08)",
+};
 
 type FeatureRoadmap = {
   id: number;
@@ -158,6 +167,7 @@ export default function RoadmapPage() {
   const [erroSprints, setErroSprints] = useState<string | null>(null);
   const [sprintSelecionada, setSprintSelecionada] = useState("todas");
   const [areaSelecionadaSprints, setAreaSelecionadaSprints] = useState("todas");
+  const [painelEsforcoAberto, setPainelEsforcoAberto] = useState(false);
 
   const [agora, setAgora] = useState<Date | null>(null);
   useEffect(() => setAgora(new Date()), []);
@@ -423,6 +433,11 @@ export default function RoadmapPage() {
                     <Download size={13} /> Exportar Excel
                   </span>
                 </button>
+                <button className="kmm-btn" onClick={() => setPainelEsforcoAberto(true)}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <BarChart3 size={13} /> Esforço por sprint
+                  </span>
+                </button>
               </div>
             </div>
             {carregandoSprints && <p style={{ color: C.muted }}>Carregando sprints do Azure DevOps…</p>}
@@ -440,6 +455,13 @@ export default function RoadmapPage() {
       </div>
 
       {epicDescricao && <ModalDescricaoEpic epic={epicDescricao} onFechar={() => setEpicDescricaoAberta(null)} />}
+      {painelEsforcoAberto && (
+        <PainelEsforcoPorSprint
+          tarefas={tarefas}
+          areasDisponiveis={areasDisponiveisSprints}
+          onFechar={() => setPainelEsforcoAberto(false)}
+        />
+      )}
     </div>
   );
 }
@@ -798,6 +820,134 @@ function ModalDescricaoEpic({ epic, onFechar }: { epic: EpicRoadmap; onFechar: (
         <div style={{ fontSize: 13, color: C.text, marginTop: 16, whiteSpace: "pre-line", lineHeight: 1.5 }}>
           {epic.descricao || "Sem descrição cadastrada no Azure DevOps."}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Painel "Esforço alocado por Sprint" (botão na aba Sprints, pedido em 2026-09-28): gráfico de
+ * barras lado a lado (não empilhadas — cada dev é uma barra própria dentro da sprint) com a soma
+ * do Effort (mesmo campo usado como "SP Estimados" na tabela de Sprints — não existe Story Points
+ * nativo em Task/Bug, decisão já registrada em 2026-09-23) por desenvolvedor, agrupado por
+ * Sprint. Só plota depois que uma Area é escolhida no filtro do canto superior esquerdo do
+ * painel — sem área selecionada, mostra um aviso em vez do gráfico (pedido explícito do Heder).
+ *
+ * Usa TODAS as tarefas carregadas pro produto do header (não as já filtradas por Sprint/Área da
+ * tabela por trás do botão) — assim o gráfico sempre mostra todas as sprints de uma vez, como no
+ * rascunho enviado, independente do filtro de Sprint que estiver ativo na tabela.
+ */
+function PainelEsforcoPorSprint({
+  tarefas,
+  areasDisponiveis,
+  onFechar,
+}: {
+  tarefas: TaskAlocada[];
+  areasDisponiveis: string[];
+  onFechar: () => void;
+}) {
+  const [area, setArea] = useState("");
+
+  const tarefasDaArea = useMemo(() => (area ? tarefas.filter((t) => t.areaPath === area) : []), [tarefas, area]);
+
+  const devs = useMemo(
+    () => Array.from(new Set(tarefasDaArea.map((t) => t.responsavel?.nome ?? "Sem responsável"))).sort(),
+    [tarefasDaArea]
+  );
+
+  const dadosGrafico = useMemo(() => {
+    const porSprint = new Map<string, Record<string, number>>();
+    for (const t of tarefasDaArea) {
+      const dev = t.responsavel?.nome ?? "Sem responsável";
+      const linha = porSprint.get(t.sprint) ?? {};
+      linha[dev] = (linha[dev] ?? 0) + (t.spEstimados ?? 0);
+      porSprint.set(t.sprint, linha);
+    }
+    return Array.from(porSprint.entries())
+      .sort(([a], [b]) => {
+        const [amaj, amin] = chaveOrdenacaoSprint(a);
+        const [bmaj, bmin] = chaveOrdenacaoSprint(b);
+        return amaj !== bmaj ? amaj - bmaj : amin - bmin;
+      })
+      .map(([sprint, valores]) => ({ sprint: sprint.replace(/^Sprint\s*/i, ""), ...valores }));
+  }, [tarefasDaArea]);
+
+  return (
+    <div
+      onClick={onFechar}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(22,19,15,.45)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 100,
+        padding: 20,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="kmm-card"
+        style={{ maxWidth: 820, width: "100%", maxHeight: "85vh", overflowY: "auto", padding: 22 }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+          <select className="kmm-input" style={{ width: "auto", minWidth: 240 }} value={area} onChange={(e) => setArea(e.target.value)}>
+            <option value="">Selecione uma área…</option>
+            {areasDisponiveis.map((a) => (
+              <option key={a} value={a}>
+                {a.split("\\").pop() || a}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={onFechar}
+            style={{ background: "none", border: "none", cursor: "pointer", color: C.muted, padding: 4 }}
+            aria-label="Fechar"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div style={{ marginTop: 16 }}>
+          <div style={{ fontFamily: "Sora,sans-serif", fontWeight: 800, fontSize: 18, color: C.text }}>
+            Esforço alocado por sprint{area ? ` — Área: ${area.split("\\").pop()}` : ""}
+          </div>
+          <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+            Soma do Effort por desenvolvedor, agrupado por Sprint.
+          </div>
+        </div>
+
+        {!area && (
+          <p style={{ color: C.muted, marginTop: 24 }}>Selecione uma área no filtro acima para visualizar o gráfico.</p>
+        )}
+        {area && dadosGrafico.length === 0 && (
+          <p style={{ color: C.muted, marginTop: 24 }}>Nenhum dado de esforço encontrado para essa área.</p>
+        )}
+        {area && dadosGrafico.length > 0 && (
+          <div style={{ height: 380, marginTop: 16 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={dadosGrafico} margin={{ top: 24, right: 16, left: -10, bottom: 0 }} barGap={4}>
+                <CartesianGrid stroke={C.grid} vertical={false} />
+                <XAxis dataKey="sprint" stroke={C.border} tick={axisTick} />
+                <YAxis stroke={C.border} tick={axisTick} allowDecimals={false} width={34} />
+                <Tooltip contentStyle={tipStyle} cursor={{ fill: "rgba(0,0,0,.03)" }} />
+                <Legend wrapperStyle={{ fontSize: 12, fontFamily: "'Hanken Grotesk',sans-serif", color: C.muted }} />
+                {devs.map((dev) => (
+                  <Bar
+                    key={dev}
+                    dataKey={dev}
+                    name={dev}
+                    fill={corDoDev(dev)}
+                    radius={[4, 4, 0, 0]}
+                    maxBarSize={24}
+                    label={{ position: "top", fill: C.muted, fontSize: 11 }}
+                  />
+                ))}
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1756,3 +1756,40 @@ O campo `produto` (Custom.Produto) continua sendo retornado por `getEpicComFeatu
 na sub-linha do Epic na tela — só parou de ser critério de filtro, não sumiu do dado.
 
 **Verificado:** `npx tsc --noEmit` limpo.
+
+## 2026-09-28 (cont. 2) — Painel "Esforço alocado por Sprint" (gráfico de barras por dev)
+
+Heder pediu um botão novo na aba Sprints, ao lado dos filtros, que abre um painel com um gráfico
+de esforço alocado por sprint (mandou um rascunho/mockup mostrando o resultado esperado).
+
+**Botão** "Esforço por sprint" (ícone `BarChart3`), ao lado do "Exportar Excel", na mesma barra de
+filtros da aba Sprints.
+
+**Painel `PainelEsforcoPorSprint`** (mesmo padrão visual/overlay do `ModalDescricaoEpic` já
+existente, clique fora fecha):
+- Filtro de Área no canto superior esquerdo do painel (`<select>`), começa vazio ("Selecione uma
+  área…"). **O gráfico só é plotado depois que uma área é escolhida** — sem área selecionada,
+  mostra um aviso no lugar do gráfico (pedido explícito).
+- Usa **todas** as tarefas carregadas pro produto do header (`tarefas`, não `tarefasExibidas`) —
+  ou seja, o gráfico sempre mostra todas as sprints de uma vez, igual ao rascunho enviado,
+  independente do filtro de Sprint que estiver ativo na tabela por trás do botão.
+- Gráfico de barras (recharts `BarChart`), eixo X = Sprint (rótulo sem o prefixo "Sprint ", só o
+  número — "8.17" em vez de "Sprint 8.17", pra bater com o rascunho), valor = soma do campo
+  Effort (`spEstimados`, mesmo campo já usado como "SP Estimados" na tabela — Task/Bug não tem
+  Story Points nativo, decisão de 2026-09-23) por desenvolvedor.
+- **Uma `<Bar>` por dev encontrado na área filtrada** — como cada `<Bar>` do recharts já renderiza
+  lado a lado (não empilhado) por padrão dentro de cada categoria do eixo X, isso já entrega
+  exatamente o pedido ("cada dev dentro da sprint deve ser uma barra, lado a lado, não
+  agrupada/empilhada"), sem precisar de configuração especial.
+- Sprints ordenadas numericamente (reaproveita `chaveOrdenacaoSprint`, mesma função já usada na
+  tabela de Sprints).
+- Valor numérico no topo de cada barra (`label` do recharts), igual ao rascunho enviado.
+
+**Cor por dev — `corDoDev()` nova em `lib/kmm-theme.ts`:** mesmo princípio de hash determinístico
+do `corDaArea()` já existente (mesmo dev sempre cai na mesma cor, mesmo trocando a Área/quantidade
+de devs no gráfico — "a cor segue a identidade, não a posição"), mas usando a paleta categórica
+de 8 cores validada pela skill de dataviz (ordem fixa blue/orange/aqua/yellow/magenta/green/
+violet/red, escolhida pra distinção sob daltonismo) em vez da paleta de 10 cores já usada pra Área
+(`PALETA_AREA`) — são conceitos diferentes (Área vs Dev) e não deveriam compartilhar a paleta.
+
+**Verificado:** `npx tsc --noEmit` limpo.

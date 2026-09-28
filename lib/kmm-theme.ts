@@ -93,3 +93,31 @@ export function corDaArea(areaPath: string): string {
   const idx = Math.abs(hash) % PALETA_AREA.length;
   return PALETA_AREA[idx];
 }
+
+/**
+ * Paleta categórica fixa pra colorir DEV (responsável) no gráfico de "Esforço alocado por
+ * Sprint" (painel da aba Sprints, pedido em 2026-09-28) — mesma ideia do hash de `corDaArea`
+ * (mesmo dev sempre cai na mesma cor, mesmo trocando o filtro de Area/quantidade de devs no
+ * gráfico), mas usando uma ordem de matiz validada pra leitura por pessoas com daltonismo
+ * (skill de dataviz: ordem fixa blue/orange/aqua/yellow/magenta/green/violet/red — nunca ciclar
+ * hue livremente).
+ */
+export const PALETA_CATEGORICA_DEV = [
+  "#2a78d6", // blue
+  "#eb6834", // orange
+  "#1baf7a", // aqua
+  "#eda100", // yellow
+  "#e87ba4", // magenta
+  "#008300", // green
+  "#4a3aa7", // violet
+  "#e34948", // red
+];
+
+export function corDoDev(nome: string): string {
+  let hash = 0;
+  for (let i = 0; i < nome.length; i++) {
+    hash = (hash * 31 + nome.charCodeAt(i)) | 0;
+  }
+  const idx = Math.abs(hash) % PALETA_CATEGORICA_DEV.length;
+  return PALETA_CATEGORICA_DEV[idx];
+}

@@ -1834,3 +1834,23 @@ outras rotas do roadmap, restringindo quais TeamProjects são consultados.
   Cliente / PO / Status (chip colorido via `corDeEstadoDevOps`) / Área.
 
 **Verificado:** `npx tsc --noEmit` limpo.
+
+## 2026-09-28 (cont. 4) — Legenda do painel "Esforço alocado por Sprint" agora filtra
+
+Heder pediu pra legenda do gráfico de esforço por sprint (dentro do painel aberto pelo botão
+"Esforço por sprint") virar um filtro: clicando num dev, só as barras dele aparecem.
+
+**Comportamento implementado — isolar/limpar, não multi-toggle:** clicar num nome isola ele
+(esconde os outros); clicar de novo no MESMO nome já isolado limpa o filtro e volta a mostrar
+todos. Não é um toggle independente por item (que exigiria clicar em N-1 devs pra sobrar só um) —
+uma única ação já produz exatamente o exemplo que o Heder deu ("deixar selecionado apenas David,
+exibir as barras dele"). Isolamento reseta ao trocar de Área (lista de devs muda).
+
+**Troquei a `<Legend>` nativa do recharts por um componente próprio (`LegendaFiltroDev`):** o
+`payload` da legenda nativa do recharts só reflete as `<Bar>` que estão de fato renderizadas no
+momento — se eu tivesse só filtrado quais `<Bar>` renderizar (pra sumir a barra oculta do
+gráfico), o próprio nome também sumiria da legenda, e o Heder não conseguiria clicar de novo pra
+voltar a ver todos. `LegendaFiltroDev` sempre lista TODOS os devs da área (com opacidade reduzida
+nos que estão ocultos no momento), garantindo que dá pra reverter o isolamento.
+
+**Verificado:** `npx tsc --noEmit` limpo.

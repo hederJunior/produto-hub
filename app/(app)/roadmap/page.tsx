@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { BarChart3, Calendar, ChevronDown, ChevronUp, Clock, Download, Flag, Gauge, Maximize2, X } from "lucide-react";
 import { useProduto } from "@/components/ProdutoContext";
 import { C, corDaArea, corDeEstadoDevOps, corDeStatus, corDoDev, estadoIndicaConcluido } from "@/lib/kmm-theme";
@@ -956,6 +956,10 @@ function PainelEsforcoPorSprint({
   onFechar: () => void;
 }) {
   const [area, setArea] = useState("");
+  // Isolamento de dev via clique na legenda (pedido em 2026-09-28): null = mostra todos; um nome =
+  // mostra só as barras desse dev. Clicar de novo no mesmo nome isolado limpa o filtro (volta a
+  // mostrar todos). Reseta ao trocar de Área, já que a lista de devs muda.
+  const [devIsolado, setDevIsolado] = useState<string | null>(null);
 
   const tarefasDaArea = useMemo(() => (area ? tarefas.filter((t) => t.areaPath === area) : []), [tarefas, area]);
 
@@ -963,6 +967,10 @@ function PainelEsforcoPorSprint({
     () => Array.from(new Set(tarefasDaArea.map((t) => t.responsavel?.nome ?? "Sem responsável"))).sort(),
     [tarefasDaArea]
   );
+
+  useEffect(() => setDevIsolado(null), [area]);
+
+  const devsVisiveis = devIsolado ? devs.filter((d) => d === devIsolado) : devs;
 
   const dadosGrafico = useMemo(() => {
     const porSprint = new Map<string, Record<string, number>>();
@@ -1041,8 +1049,7 @@ function PainelEsforcoPorSprint({
                 <XAxis dataKey="sprint" stroke={C.border} tick={axisTick} />
                 <YAxis stroke={C.border} tick={axisTick} allowDecimals={false} width={34} />
                 <Tooltip contentStyle={tipStyle} cursor={{ fill: "rgba(0,0,0,.03)" }} />
-                <Legend wrapperStyle={{ fontSize: 12, fontFamily: "'Hanken Grotesk',sans-serif", color: C.muted }} />
-                {devs.map((dev) => (
+                {devsVisiveis.map((dev) => (
                   <Bar
                     key={dev}
                     dataKey={dev}
@@ -1057,7 +1064,54 @@ function PainelEsforcoPorSprint({
             </ResponsiveContainer>
           </div>
         )}
+        {area && dadosGrafico.length > 0 && (
+          <LegendaFiltroDev devs={devs} devIsolado={devIsolado} onAlternar={(dev) => setDevIsolado((atual) => (atual === dev ? null : dev))} />
+        )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Legenda custom do painel "Esforço alocado por Sprint" que atua como filtro (pedido em
+ * 2026-09-28): clicar num dev isola ele (mostra só as barras dele no gráfico); clicar de novo no
+ * mesmo dev já isolado limpa o filtro e volta a mostrar todos. Lista SEMPRE todos os devs da área
+ * (mesmo os ocultos no momento), pra dar pra voltar/trocar o isolamento a qualquer clique — por
+ * isso não é a <Legend> nativa do recharts (o payload dela só reflete as <Bar> renderizadas no
+ * momento, e as ocultas somem da lista).
+ */
+function LegendaFiltroDev({
+  devs,
+  devIsolado,
+  onAlternar,
+}: {
+  devs: string[];
+  devIsolado: string | null;
+  onAlternar: (dev: string) => void;
+}) {
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12, justifyContent: "center" }}>
+      {devs.map((dev) => {
+        const ativo = !devIsolado || devIsolado === dev;
+        return (
+          <button
+            key={dev}
+            type="button"
+            onClick={() => onAlternar(dev)}
+            className="kmm-chip"
+            style={{
+              cursor: "pointer",
+              opacity: ativo ? 1 : 0.4,
+              fontWeight: devIsolado === dev ? 700 : 600,
+              borderColor: devIsolado === dev ? corDoDev(dev) : C.border,
+            }}
+            title={devIsolado === dev ? "Clique para mostrar todos" : `Clique para isolar ${dev}`}
+          >
+            <span style={{ width: 9, height: 9, borderRadius: 2, background: corDoDev(dev), display: "inline-block" }} />
+            {dev}
+          </button>
+        );
+      })}
     </div>
   );
 }

@@ -334,7 +334,9 @@ export default function RoadmapPage() {
     fetch(`/api/roadmap/tarefas?produto=${produto}`, { cache: "no-store" })
       .then((res) => res.json())
       .then((j) => {
-        if (j.erro) setErroSprints(j.erro);
+        // "detalhe" é diagnóstico temporário (Heder, 2026-09-30) — ver comentário em
+        // app/api/roadmap/tarefas/route.ts.
+        if (j.erro) setErroSprints(j.detalhe ? `${j.erro} (${j.detalhe})` : j.erro);
         setTarefas(j.tarefas ?? []);
       })
       .catch(() => setErroSprints("Não foi possível carregar as sprints do Azure DevOps."))

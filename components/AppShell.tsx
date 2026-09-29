@@ -104,11 +104,15 @@ function ShellInner({ children }: { children: React.ReactNode }) {
     <div className="kmm-root" style={{ display: "flex", minHeight: "100vh", background: C.bg, fontFamily: "Hanken Grotesk,sans-serif" }}>
       <style dangerouslySetInnerHTML={{ __html: FONTS }} />
       <Sidebar />
-      <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+      {/* minWidth: 0 é necessário pra essa coluna flex realmente respeitar a largura da tela — sem
+          isso, um filho largo (ex.: o Gantt do Road Map, com minWidth calculado pelo número de
+          meses) empurra a coluna inteira pra fora do viewport em vez de ficar contido com scroll
+          próprio (bug encontrado por Heder em 2026-09-29: tela cortada à direita). */}
+      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
         <header style={{ display: "flex", justifyContent: "flex-end", padding: "18px 28px", borderBottom: `1px solid ${C.border}` }}>
           <ProdutoSwitcher />
         </header>
-        <main style={{ flex: 1, padding: 28 }}>{children}</main>
+        <main style={{ flex: 1, minWidth: 0, padding: 28 }}>{children}</main>
       </div>
     </div>
   );

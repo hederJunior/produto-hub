@@ -162,6 +162,15 @@ function infoPrioridade(p: number | null): { label: string; bg: string; fg: stri
 
 const LARGURA_COLUNA_LABEL = 300;
 
+/** Janelas fixas dos 4 trimestres de 2026 pro filtro por Quarter do Road Map (pedido por Heder em
+ * 2026-09-29) — lista fixa (só 2026), não derivada dos Epics carregados. */
+const QUARTERS_FILTRO: { id: string; label: string; inicio: Date; fim: Date }[] = [
+  { id: "2026-1", label: "Q1-2026", inicio: new Date(2026, 0, 1), fim: new Date(2026, 2, 31, 23, 59, 59) },
+  { id: "2026-2", label: "Q2-2026", inicio: new Date(2026, 3, 1), fim: new Date(2026, 5, 30, 23, 59, 59) },
+  { id: "2026-3", label: "Q3-2026", inicio: new Date(2026, 6, 1), fim: new Date(2026, 8, 30, 23, 59, 59) },
+  { id: "2026-4", label: "Q4-2026", inicio: new Date(2026, 9, 1), fim: new Date(2026, 11, 31, 23, 59, 59) },
+];
+
 /**
  * Dropdown de multi-seleção por checkbox (mesmo padrão do MultiSelectSquad em app/(app)/page.tsx,
  * generalizado aqui pros filtros de Área e Cliente da aba Comitês — pedido por Heder em
@@ -238,6 +247,26 @@ function MultiSelectFiltro({
   );
 }
 
+/**
+ * Filtro por trimestre do Road Map (toggle multi-seleção, pedido por Heder em 2026-09-29): cada
+ * botão liga/desliga aquele trimestre; com nenhum selecionado, mostra todos os Epics (sem filtro).
+ * Lista fixa de QUARTERS_FILTRO — não deriva dos dados carregados.
+ */
+function FiltroTrimestre({ selecionados, onChange }: { selecionados: string[]; onChange: (v: string[]) => void }) {
+  function alternar(id: string) {
+    onChange(selecionados.includes(id) ? selecionados.filter((s) => s !== id) : [...selecionados, id]);
+  }
+  return (
+    <div className="kmm-seg">
+      {QUARTERS_FILTRO.map((q) => (
+        <div key={q.id} className={`kmm-seg-item${selecionados.includes(q.id) ? " active" : ""}`} onClick={() => alternar(q.id)}>
+          {q.label}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 type Visao = "roadmap" | "sprints" | "comites";
 
 export default function RoadmapPage() {
@@ -248,6 +277,10 @@ export default function RoadmapPage() {
   const [carregandoRoadmap, setCarregandoRoadmap] = useState(true);
   const [erroRoadmap, setErroRoadmap] = useState<string | null>(null);
   const [areaSelecionada, setAreaSelecionada] = useState("todas");
+  // Filtro por trimestre do Road Map (pedido por Heder em 2026-09-29): toggle multi-seleção, só
+  // pros 4 trimestres de 2026 (não é derivado dos dados — lista fixa, como pedido). Vazio = sem
+  // filtro (mostra todos os Epics, de qualquer ano).
+  const [quartersSelecionados, setQuartersSelecionados] = useState<string[]>([]);
   const [epicDescricaoAberta, setEpicDescricaoAberta] = useState<number | null>(null);
   const [featuresAbertas, setFeaturesAbertas] = useState<Record<number, boolean>>({});
 
@@ -317,10 +350,22 @@ export default function RoadmapPage() {
 
   const areasDisponiveis = useMemo(() => Array.from(new Set(epicos.map((e) => e.areaPath))).sort(), [epicos]);
 
-  const epicosExibidos = useMemo(
-    () => (areaSelecionada === "todas" ? epicos : epicos.filter((e) => e.areaPath === areaSelecionada)),
-    [epicos, areaSelecionada]
-  );
+  const epicosExibidos = useMemo(() => {
+    let lista = areaSelecionada === "todas" ? epicos : epicos.filter((e) => e.areaPath === areaSelecionada);
+    if (quartersSelecionados.length) {
+      const janelas = QUARTERS_FILTRO.filter((q) => quartersSelecionados.includes(q.id));
+      lista = lista.filter((e) => {
+        // Epic sem Start/Target Date não tem como ser posicionado num trimestre — fica de fora
+        // quando o filtro está ativo (mesmo comportamento do "Sem Start/Target Date cadastrada"
+        // que já aparece pra Features sem data, só que aqui filtrando o Epic inteiro).
+        if (!e.startDate || !e.targetDate) return false;
+        const inicioEpic = new Date(e.startDate).getTime();
+        const fimEpic = new Date(e.targetDate).getTime();
+        return janelas.some((q) => inicioEpic <= q.fim.getTime() && fimEpic >= q.inicio.getTime());
+      });
+    }
+    return lista;
+  }, [epicos, areaSelecionada, quartersSelecionados]);
 
   const sprintsDisponiveis = useMemo(
     () =>
@@ -486,6 +531,7 @@ export default function RoadmapPage() {
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
                       <LegendaStatus />
+                      <FiltroTrimestre selecionados={quartersSelecionados} onChange={setQuartersSelecionados} />
                       <select
                         className="kmm-input"
                         style={{ width: "auto" }}
@@ -499,6 +545,20 @@ export default function RoadmapPage() {
                           </option>
                         ))}
                       </select>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button
+                          className="kmm-btn"
+                          onClick={() => setFeaturesAbertas(Object.fromEntries(epicosExibidos.map((e) => [e.id, true])))}
+                        >
+                          Expandir todos
+                        </button>
+                        <button
+                          className="kmm-btn"
+                          onClick={() => setFeaturesAbertas(Object.fromEntries(epicosExibidos.map((e) => [e.id, false])))}
+                        >
+                          Comprimir todos
+                        </button>
+                      </div>
                     </div>
                   </div>
 

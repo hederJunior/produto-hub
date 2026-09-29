@@ -85,14 +85,23 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
     setSprintInicial(sprint);
     if (!sprint) return;
     setAutoAlocando(true);
+    setErro(null);
     try {
       const itens = agruparAlocacoesPorDevSprint(tarefas, sprint, squads);
-      await fetch("/api/capacidade/auto-alocar", {
+      const res = await fetch("/api/capacidade/auto-alocar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ produto: PRODUTO, itens }),
       });
+      // Antes falhava em silêncio (sem checar res.ok) — uma falha aqui parecia "não trouxe
+      // ninguém" pro usuário, sem nenhuma pista do motivo. Achado por Heder em 2026-09-29.
+      if (!res.ok) {
+        const j = await res.json().catch(() => null);
+        setErro(j?.erro ?? "Não foi possível alocar automaticamente a partir do Azure DevOps.");
+      }
       carregarBoard();
+    } catch {
+      setErro("Não foi possível alocar automaticamente a partir do Azure DevOps.");
     } finally {
       setAutoAlocando(false);
     }

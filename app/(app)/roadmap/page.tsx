@@ -288,8 +288,10 @@ export default function RoadmapPage() {
   const [tarefas, setTarefas] = useState<TaskAlocada[]>([]);
   const [carregandoSprints, setCarregandoSprints] = useState(true);
   const [erroSprints, setErroSprints] = useState<string | null>(null);
-  const [sprintSelecionada, setSprintSelecionada] = useState("todas");
-  const [areaSelecionadaSprints, setAreaSelecionadaSprints] = useState("todas");
+  // Arrays vazios = "todas" (sem filtro). Multi-seleção pedida por Heder em 2026-09-29, mesmo
+  // padrão do MultiSelectFiltro já usado em Comitês.
+  const [sprintsSelecionadas, setSprintsSelecionadas] = useState<string[]>([]);
+  const [areasSelecionadasSprints, setAreasSelecionadasSprints] = useState<string[]>([]);
   const [painelEsforcoAberto, setPainelEsforcoAberto] = useState(false);
   const [painelCapacidadeAberto, setPainelCapacidadeAberto] = useState(false);
 
@@ -384,10 +386,10 @@ export default function RoadmapPage() {
     () =>
       tarefas.filter(
         (t) =>
-          (sprintSelecionada === "todas" || t.sprint === sprintSelecionada) &&
-          (areaSelecionadaSprints === "todas" || t.areaPath === areaSelecionadaSprints)
+          (sprintsSelecionadas.length === 0 || sprintsSelecionadas.includes(t.sprint)) &&
+          (areasSelecionadasSprints.length === 0 || areasSelecionadasSprints.includes(t.areaPath))
       ),
-    [tarefas, sprintSelecionada, areaSelecionadaSprints]
+    [tarefas, sprintsSelecionadas, areasSelecionadasSprints]
   );
 
   const areasDisponiveisComites = useMemo(() => Array.from(new Set(demandasComite.map((d) => d.areaPath))).sort(), [demandasComite]);
@@ -611,27 +613,19 @@ export default function RoadmapPage() {
                 </div>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                <select className="kmm-input" style={{ width: "auto" }} value={sprintSelecionada} onChange={(e) => setSprintSelecionada(e.target.value)}>
-                  <option value="todas">Todas as sprints</option>
-                  {sprintsDisponiveis.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  className="kmm-input"
-                  style={{ width: "auto" }}
-                  value={areaSelecionadaSprints}
-                  onChange={(e) => setAreaSelecionadaSprints(e.target.value)}
-                >
-                  <option value="todas">Todas as áreas</option>
-                  {areasDisponiveisSprints.map((a) => (
-                    <option key={a} value={a}>
-                      {a.split("\\").pop() || a}
-                    </option>
-                  ))}
-                </select>
+                <MultiSelectFiltro
+                  rotuloTodos="Todas as sprints"
+                  opcoes={sprintsDisponiveis}
+                  selecionados={sprintsSelecionadas}
+                  onChange={setSprintsSelecionadas}
+                />
+                <MultiSelectFiltro
+                  rotuloTodos="Todas as áreas"
+                  opcoes={areasDisponiveisSprints}
+                  selecionados={areasSelecionadasSprints}
+                  onChange={setAreasSelecionadasSprints}
+                  formatar={(a) => a.split("\\").pop() || a}
+                />
                 <button className="kmm-btn" onClick={exportarExcelSprints} disabled={!tarefasExibidas.length}>
                   <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <Download size={13} /> Exportar Excel
@@ -1386,8 +1380,92 @@ function chaveOrdenacaoSprint(label: string): [number, number] {
  * Resp. mostra só o nome (sem avatar, também pedido em 2026-09-28 — a versão anterior mostrava a
  * foto vinda do Azure DevOps).
  */
+type CampoAgrupamento = "nenhum" | "areaPath" | "responsavel" | "tipo";
+
+/** Chave/rótulo de agrupamento de uma Task/Bug pelo campo escolhido (pedido por Heder em
+ * 2026-09-29: Área, Resp. ou Tipo). Chave = valor bruto (pra ordenar/agrupar certo); rótulo = o
+ * texto exibido (Área usa só o último segmento do Area Path, igual ao resto da tela). */
+function chaveERotuloGrupo(t: TaskAlocada, campo: CampoAgrupamento): { chave: string; rotulo: string } {
+  if (campo === "areaPath") {
+    const rotulo = t.areaPath.split("\\").pop() || t.areaPath || "—";
+    return { chave: t.areaPath || "—", rotulo };
+  }
+  if (campo === "responsavel") {
+    const rotulo = t.responsavel?.nome ?? "Sem responsável";
+    return { chave: rotulo, rotulo };
+  }
+  if (campo === "tipo") return { chave: t.tipo, rotulo: t.tipo };
+  return { chave: "", rotulo: "" };
+}
+
+function LinhaTarefa({ t }: { t: TaskAlocada }) {
+  const prio = infoPrioridade(t.prioridade);
+  const status = corDeEstadoDevOps(t.state);
+  const tipo = infoTipo(t.tipo);
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: COLUNAS_SPRINT,
+        alignItems: "center",
+        gap: 10,
+        padding: "10px 18px",
+        borderTop: `1px solid ${C.grid}`,
+        borderLeft: `4px solid ${prio.fg}`,
+      }}
+    >
+      <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{t.titulo}</div>
+      <div style={{ fontSize: 12, color: C.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {t.areaPath.split("\\").pop() || t.areaPath || "—"}
+      </div>
+      <div style={{ fontSize: 12, color: C.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {t.responsavel?.nome ?? "Sem responsável"}
+      </div>
+      <span className="kmm-chip" style={{ background: status.bg, color: status.fg, borderColor: "transparent" }}>
+        {t.state}
+      </span>
+      <span className="kmm-chip" style={{ background: prio.bg, color: prio.fg, borderColor: "transparent" }}>
+        {prio.label}
+      </span>
+      <span className="kmm-chip" style={{ background: tipo.bg, color: tipo.fg, borderColor: "transparent" }}>
+        {t.tipo}
+      </span>
+      <div style={{ textAlign: "right", fontSize: 13, fontWeight: 700, color: C.text }}>{t.spEstimados ?? "—"}</div>
+      <div style={{ textAlign: "right", fontSize: 13, fontWeight: 700, color: C.text }}>{t.spReal ?? "—"}</div>
+    </div>
+  );
+}
+
+/** Linha de soma (rodapé da sprint, ou subtotal de um grupo) — sempre arredondada pra inteiro
+ * (pedido por Heder em 2026-09-29: a soma de Effort/Completed Work vem com muitas casas decimais
+ * do Azure DevOps, e somar várias em ponto flutuante no JS gera artefatos tipo
+ * "290314.09000000000003" em vez de um número redondo). */
+function LinhaSoma({ rotulo, somaEstimados, somaReal, destaque }: { rotulo: string; somaEstimados: number; somaReal: number; destaque?: boolean }) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: COLUNAS_SPRINT,
+        padding: "10px 18px",
+        borderTop: `1px solid ${C.border}`,
+        background: destaque ? C.soft : "transparent",
+      }}
+    >
+      <div />
+      <div />
+      <div />
+      <div />
+      <div />
+      <div style={{ fontSize: 11, color: C.muted, textAlign: "right", fontWeight: 700, alignSelf: "center" }}>{rotulo}</div>
+      <div style={{ textAlign: "right", fontSize: 13, fontWeight: 800, color: C.text }}>{Math.round(somaEstimados)}</div>
+      <div style={{ textAlign: "right", fontSize: 13, fontWeight: 800, color: C.text }}>{Math.round(somaReal)}</div>
+    </div>
+  );
+}
+
 function SprintsAlocadas({ tarefas }: { tarefas: TaskAlocada[] }) {
   const [abertos, setAbertos] = useState<Record<string, boolean>>({});
+  const [agruparPor, setAgruparPor] = useState<CampoAgrupamento>("nenhum");
 
   const porSprint = useMemo(() => {
     const grupos: Record<string, TaskAlocada[]> = {};
@@ -1410,11 +1488,42 @@ function SprintsAlocadas({ tarefas }: { tarefas: TaskAlocada[] }) {
 
   return (
     <div>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>Agrupar por</span>
+          <select
+            className="kmm-input"
+            style={{ width: "auto" }}
+            value={agruparPor}
+            onChange={(e) => setAgruparPor(e.target.value as CampoAgrupamento)}
+          >
+            <option value="nenhum">Nenhum</option>
+            <option value="areaPath">Área</option>
+            <option value="responsavel">Resp.</option>
+            <option value="tipo">Tipo</option>
+          </select>
+        </div>
+      </div>
+
       {nomesSprints.map((sprint) => {
         const itens = porSprint[sprint];
         const somaEstimados = itens.reduce((acc, t) => acc + (t.spEstimados ?? 0), 0);
         const somaReal = itens.reduce((acc, t) => acc + (t.spReal ?? 0), 0);
         const aberto = abertos[sprint] ?? true;
+
+        // Sem agrupamento: 1 grupo só, sem rótulo/subtotal (mesmo visual de antes). Com
+        // agrupamento: 1 bloco por valor distinto do campo escolhido, ordenado alfabeticamente.
+        const grupos =
+          agruparPor === "nenhum"
+            ? [{ chave: "", rotulo: "", itens }]
+            : Object.values(
+                itens.reduce<Record<string, { rotulo: string; itens: TaskAlocada[] }>>((acc, t) => {
+                  const { chave, rotulo } = chaveERotuloGrupo(t, agruparPor);
+                  acc[chave] ??= { rotulo, itens: [] };
+                  acc[chave].itens.push(t);
+                  return acc;
+                }, {})
+              ).sort((a, b) => a.rotulo.localeCompare(b.rotulo));
 
         return (
           <div key={sprint} className="kmm-card" style={{ padding: 0, overflow: "hidden", marginBottom: 20 }}>
@@ -1463,63 +1572,36 @@ function SprintsAlocadas({ tarefas }: { tarefas: TaskAlocada[] }) {
                   <div style={{ textAlign: "right" }}>SP Real</div>
                 </div>
 
-                {itens.map((t) => {
-                  const prio = infoPrioridade(t.prioridade);
-                  const status = corDeEstadoDevOps(t.state);
-                  const tipo = infoTipo(t.tipo);
+                {grupos.map((grupo) => {
+                  const somaGrupoEstimados = grupo.itens.reduce((acc, t) => acc + (t.spEstimados ?? 0), 0);
+                  const somaGrupoReal = grupo.itens.reduce((acc, t) => acc + (t.spReal ?? 0), 0);
                   return (
-                    <div
-                      key={t.id}
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: COLUNAS_SPRINT,
-                        alignItems: "center",
-                        gap: 10,
-                        padding: "10px 18px",
-                        borderTop: `1px solid ${C.grid}`,
-                        borderLeft: `4px solid ${prio.fg}`,
-                      }}
-                    >
-                      <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{t.titulo}</div>
-                      <div style={{ fontSize: 12, color: C.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {t.areaPath.split("\\").pop() || t.areaPath || "—"}
-                      </div>
-                      <div style={{ fontSize: 12, color: C.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {t.responsavel?.nome ?? "Sem responsável"}
-                      </div>
-                      <span className="kmm-chip" style={{ background: status.bg, color: status.fg, borderColor: "transparent" }}>
-                        {t.state}
-                      </span>
-                      <span className="kmm-chip" style={{ background: prio.bg, color: prio.fg, borderColor: "transparent" }}>
-                        {prio.label}
-                      </span>
-                      <span className="kmm-chip" style={{ background: tipo.bg, color: tipo.fg, borderColor: "transparent" }}>
-                        {t.tipo}
-                      </span>
-                      <div style={{ textAlign: "right", fontSize: 13, fontWeight: 700, color: C.text }}>{t.spEstimados ?? "—"}</div>
-                      <div style={{ textAlign: "right", fontSize: 13, fontWeight: 700, color: C.text }}>{t.spReal ?? "—"}</div>
+                    <div key={grupo.rotulo}>
+                      {agruparPor !== "nenhum" && (
+                        <div
+                          style={{
+                            padding: "8px 18px",
+                            fontSize: 12,
+                            fontWeight: 700,
+                            color: C.text,
+                            background: C.grid,
+                            borderTop: `1px solid ${C.border}`,
+                          }}
+                        >
+                          {grupo.rotulo} <span style={{ color: C.muted, fontWeight: 600 }}>({grupo.itens.length})</span>
+                        </div>
+                      )}
+                      {grupo.itens.map((t) => (
+                        <LinhaTarefa key={t.id} t={t} />
+                      ))}
+                      {agruparPor !== "nenhum" && (
+                        <LinhaSoma rotulo="Subtotal" somaEstimados={somaGrupoEstimados} somaReal={somaGrupoReal} />
+                      )}
                     </div>
                   );
                 })}
 
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: COLUNAS_SPRINT,
-                    padding: "10px 18px",
-                    borderTop: `1px solid ${C.border}`,
-                    background: C.soft,
-                  }}
-                >
-                  <div />
-                  <div />
-                  <div />
-                  <div />
-                  <div />
-                  <div style={{ fontSize: 11, color: C.muted, textAlign: "right", fontWeight: 700, alignSelf: "center" }}>Soma</div>
-                  <div style={{ textAlign: "right", fontSize: 13, fontWeight: 800, color: C.text }}>{somaEstimados}</div>
-                  <div style={{ textAlign: "right", fontSize: 13, fontWeight: 800, color: C.text }}>{somaReal}</div>
-                </div>
+                <LinhaSoma rotulo="Soma" somaEstimados={somaEstimados} somaReal={somaReal} destaque />
               </div>
             </div>
           </div>

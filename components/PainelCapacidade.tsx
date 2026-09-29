@@ -34,6 +34,13 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
   const [sprintInicial, setSprintInicial] = useState("");
   const [autoAlocando, setAutoAlocando] = useState(false);
   const [ultimoResultado, setUltimoResultado] = useState<string | null>(null);
+  // Diagnóstico do GET em si (pedido por Heder em 2026-09-29, depois do board continuar vazio
+  // mesmo com "ultimoResultado" mostrando que o POST gravou certo): "ultimoResultado" só reflete
+  // o que o POST /auto-alocar disse que gravou — nunca provou que o GET seguinte realmente leu
+  // esses dados de volta. Esta linha mostra o que o GET MAIS RECENTE (o que passou pela guarda de
+  // corrida abaixo) de fato devolveu, pra distinguir "o servidor não devolveu os dados" (bug no
+  // GET/corrida) de "devolveu certo, mas a tela não desenhou" (bug de renderização).
+  const [ultimaLeitura, setUltimaLeitura] = useState<string | null>(null);
 
   const dragRef = useRef<{ devId: string; sprintOrigem: string | null } | null>(null);
   // Guarda de corrida (achado por Heder em 2026-09-29): carregarBoard() é chamado tanto ao abrir
@@ -51,10 +58,16 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
     fetch(`/api/capacidade?produto=${PRODUTO}`, { cache: "no-store" })
       .then((res) => res.json())
       .then((j) => {
-        if (minhaSeq !== cargaSeqRef.current) return;
+        if (minhaSeq !== cargaSeqRef.current) {
+          setUltimaLeitura(
+            `[chamada #${minhaSeq} descartada — já havia uma mais recente (#${cargaSeqRef.current}) em andamento] devolveu ${(j.devs ?? []).length} devs / ${(j.alocacoes ?? []).length} alocações.`
+          );
+          return;
+        }
         if (j.erro) setErro(j.erro);
         setDevs(j.devs ?? []);
         setAlocacoes(j.alocacoes ?? []);
+        setUltimaLeitura(`GET #${minhaSeq} (aplicado): ${(j.devs ?? []).length} devs / ${(j.alocacoes ?? []).length} alocações recebidos do servidor.`);
       })
       .catch(() => {
         if (minhaSeq === cargaSeqRef.current) setErro("Não foi possível carregar o planejamento de capacidade.");
@@ -219,6 +232,12 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
               <span className="kmm-chip">{idsAlocados.size} alocados</span>
               <span className="kmm-chip">{devsDisponiveis.length} disponíveis</span>
+              {/* Botão de diagnóstico (pedido por Heder em 2026-09-29): força uma nova leitura sem
+                  precisar reabrir o painel nem reselecionar a sprint — ajuda a isolar se os dados
+                  aparecem numa leitura manual, feita bem depois da escrita (sem corrida possível). */}
+              <button className="kmm-btn" style={{ padding: "6px 10px", fontSize: 12 }} onClick={carregarBoard}>
+                Atualizar
+              </button>
               <button onClick={onFechar} aria-label="Fechar" style={{ background: "none", border: "none", cursor: "pointer", color: C.muted, padding: 4 }}>
                 <X size={18} />
               </button>
@@ -261,6 +280,11 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
           {ultimoResultado && !erro && (
             <div className="kmm-card" style={{ color: C.muted, fontSize: 12 }}>
               {ultimoResultado}
+            </div>
+          )}
+          {ultimaLeitura && !erro && (
+            <div className="kmm-card" style={{ color: C.muted, fontSize: 12 }}>
+              {ultimaLeitura}
             </div>
           )}
 

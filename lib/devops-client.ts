@@ -189,10 +189,14 @@ export async function fetchPbisParaSnapshot(project: string, areaPaths: string[]
 
   const items: WorkItem[] = [];
   for (const lote of lotes) {
+    // errorPolicy:"Omit" (achado por Heder em 2026-09-30, ver comentário igual em
+    // getTasksAlocadas): sem isso, 1 id excluído/inacessível no meio do lote (ex.: item apagado
+    // no Azure DevOps entre o WIQL e esta chamada) derruba o LOTE INTEIRO com 404
+    // "TF401232: Work item X does not exist" — "Omit" faz a API só pular esse id, sem falhar tudo.
     const res = await fetch(`${base}/wit/workitemsbatch?api-version=${API_VERSION}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...authHeader(pat) },
-      body: JSON.stringify({ ids: lote, fields: CAMPOS_SNAPSHOT }),
+      body: JSON.stringify({ ids: lote, fields: CAMPOS_SNAPSHOT, errorPolicy: "Omit" }),
     });
     if (!res.ok) {
       throw new Error(`Falha ao buscar lote de work items para snapshot (${res.status}): ${await res.text()}`);
@@ -549,19 +553,25 @@ export async function getTasksAlocadas(project: string, sprintMinima: SprintMini
   const lotes: number[][] = [];
   for (let i = 0; i < ids.length; i += 200) lotes.push(ids.slice(i, i + 200));
 
-  // Lotes em paralelo, não mais sequenciais (achado por Heder em 2026-09-30: aba Sprints com erro
-  // recorrente "Não foi possível carregar" em produção — projeto grande o bastante (KMM5 sozinho
-  // já passa de 1300 Task/Bug, 7 lotes) pra 7 round-trips sequenciais ao Azure DevOps se somarem a
-  // um tempo alto o bastante pra estourar o teto de execução da function na Vercel, mesmo cada
-  // lote individualmente sendo rápido — nunca reproduzido testando direto contra o Azure DevOps,
-  // que não tem esse teto). Paralelo corta o tempo total de ~N×latência pra ~1×latência.
+  // Lotes em paralelo (não mais sequenciais) — melhora o tempo total de ~N×latência pra
+  // ~1×latência, útil pro KMM5 sozinho já passar de 1300 Task/Bug (7 lotes).
+  //
+  // errorPolicy:"Omit" — causa raiz REAL do erro "Não foi possível carregar as sprints"
+  // reportado por Heder em 2026-09-30 (a paralelização acima, feita antes de achar esta causa,
+  // ajuda mas não resolve sozinha): a WIQL lista ids num instante e o workitemsbatch busca os
+  // detalhes num instante seguinte — se QUALQUER item foi excluído (ou ficou sem permissão) nesse
+  // intervalo, a API do Azure DevOps derruba o LOTE INTEIRO com 404 "TF401232: Work item X does
+  // not exist, or you do not have permissions to read it." (confirmado com o item #27814).
+  // "errorPolicy: Omit" faz a API só pular o id problemático em vez de falhar o lote inteiro —
+  // mesmo comportamento intermitente explicaria por que nunca reproduzia testando manualmente
+  // (só falha se um item específico tiver sido excluído bem naquela janela de tempo).
   const todos = (
     await Promise.all(
       lotes.map(async (lote) => {
         const res = await fetch(`${base}/wit/workitemsbatch?api-version=${API_VERSION}`, {
           method: "POST",
           headers: { "Content-Type": "application/json", ...authHeader(pat) },
-          body: JSON.stringify({ ids: lote, fields: CAMPOS_SPRINT_TASK }),
+          body: JSON.stringify({ ids: lote, fields: CAMPOS_SPRINT_TASK, errorPolicy: "Omit" }),
         });
         if (!res.ok) {
           throw new Error(`Falha ao buscar lote de Tasks/Bugs alocados (${res.status}): ${await res.text()}`);
@@ -699,10 +709,12 @@ export async function getDemandasComite(projetos: string[]): Promise<DemandaComi
 
       const todos: WorkItem[] = [];
       for (const lote of lotes) {
+        // errorPolicy:"Omit" — mesmo fix de getTasksAlocadas (achado por Heder em 2026-09-30): sem
+        // isso, 1 item excluído/inacessível entre o WIQL e esta chamada derruba o lote inteiro.
         const res = await fetch(`${base}/wit/workitemsbatch?api-version=${API_VERSION}`, {
           method: "POST",
           headers: { "Content-Type": "application/json", ...authHeader(pat) },
-          body: JSON.stringify({ ids: lote, fields: CAMPOS_DEMANDA_COMITE }),
+          body: JSON.stringify({ ids: lote, fields: CAMPOS_DEMANDA_COMITE, errorPolicy: "Omit" }),
         });
         if (!res.ok) {
           throw new Error(`Falha ao buscar lote de Demandas de Comitê (${project}) (${res.status}): ${await res.text()}`);

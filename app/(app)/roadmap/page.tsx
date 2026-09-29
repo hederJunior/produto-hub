@@ -820,7 +820,7 @@ function CabecalhoMeses({ meses, gruposTrimestre }: { meses: Date[]; gruposTrime
   return (
     <div>
       <div style={{ display: "flex" }}>
-        <div style={{ width: LARGURA_COLUNA_LABEL, flexShrink: 0 }} />
+        <div style={{ width: LARGURA_COLUNA_LABEL, flexShrink: 0, position: "sticky", left: 0, zIndex: 2, background: C.panel }} />
         <div style={{ flex: 1, display: "flex" }}>
           {gruposTrimestre.map((g, i) => (
             <div
@@ -843,7 +843,17 @@ function CabecalhoMeses({ meses, gruposTrimestre }: { meses: Date[]; gruposTrime
         </div>
       </div>
       <div style={{ display: "flex", borderBottom: `1px solid ${C.border}` }}>
-        <div style={{ width: LARGURA_COLUNA_LABEL, flexShrink: 0, borderRight: `1px solid ${C.border}` }} />
+        <div
+          style={{
+            width: LARGURA_COLUNA_LABEL,
+            flexShrink: 0,
+            borderRight: `1px solid ${C.border}`,
+            position: "sticky",
+            left: 0,
+            zIndex: 2,
+            background: C.panel,
+          }}
+        />
         <div style={{ flex: 1, display: "flex" }}>
           {meses.map((m, i) => (
             <div
@@ -901,7 +911,7 @@ function EpicRow({
   const corStatus = corDeStatus(statusPrazo);
 
   return (
-    <div style={{ position: "relative", borderTop: `1px solid ${C.border}`, borderLeft: `5px solid ${cor}` }}>
+    <div style={{ position: "relative", borderTop: `1px solid ${C.border}` }}>
       <button
         onClick={onExpandirDescricao}
         title="Ver descrição do Epic"
@@ -926,7 +936,22 @@ function EpicRow({
       </button>
 
       <div style={{ display: "flex" }}>
-        <div style={{ width: LARGURA_COLUNA_LABEL, flexShrink: 0, padding: "14px 14px 12px", borderRight: `1px solid ${C.border}` }}>
+        <div
+          style={{
+            width: LARGURA_COLUNA_LABEL,
+            flexShrink: 0,
+            padding: "14px 14px 12px",
+            borderRight: `1px solid ${C.border}`,
+            borderLeft: `5px solid ${cor}`,
+            // Coluna "congelada" (pedido por Heder em 2026-09-29, igual coluna fixada no Excel):
+            // fica parada na borda esquerda da área com scroll horizontal do Gantt, por cima das
+            // barras que passam por baixo dela ao rolar (zIndex + fundo opaco).
+            position: "sticky",
+            left: 0,
+            zIndex: 2,
+            background: C.panel,
+          }}
+        >
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span style={{ fontWeight: 700, fontSize: 13.5, color: C.text }}>{epic.titulo}</span>
             <span className="kmm-chip" style={{ background: corStatus.bg, color: corStatus.fg, borderColor: "transparent", fontSize: 11 }}>
@@ -985,6 +1010,10 @@ function EpicRow({
                   borderLeft: `4px solid ${cor}`,
                   fontSize: 12.5,
                   color: C.text,
+                  position: "sticky",
+                  left: 0,
+                  zIndex: 2,
+                  background: C.panel,
                 }}
               >
                 {f.titulo}

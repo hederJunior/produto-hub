@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { BarChart3, Calendar, ChevronDown, ChevronUp, Clock, Download, Eraser, Flag, Gauge, Maximize2, X } from "lucide-react";
+import { BarChart3, Calendar, ChevronDown, ChevronUp, Clock, Download, Eraser, Flag, Gauge, Maximize2, Users, X } from "lucide-react";
 import { useProduto } from "@/components/ProdutoContext";
 import { C, corDaArea, corDeEstadoDevOps, corDeStatus, corDoDev, estadoIndicaConcluido } from "@/lib/kmm-theme";
+import PainelCapacidade from "@/components/PainelCapacidade";
 
 // Estilo dos eixos/tooltip do recharts, igual ao já usado em app/(app)/page.tsx — mantém os
 // gráficos do app com a mesma cara (usado no painel "Esforço alocado por Sprint").
@@ -290,6 +291,7 @@ export default function RoadmapPage() {
   const [sprintSelecionada, setSprintSelecionada] = useState("todas");
   const [areaSelecionadaSprints, setAreaSelecionadaSprints] = useState("todas");
   const [painelEsforcoAberto, setPainelEsforcoAberto] = useState(false);
+  const [painelCapacidadeAberto, setPainelCapacidadeAberto] = useState(false);
 
   const [demandasComite, setDemandasComite] = useState<DemandaComite[]>([]);
   const [carregandoComites, setCarregandoComites] = useState(true);
@@ -640,6 +642,11 @@ export default function RoadmapPage() {
                     <BarChart3 size={13} /> Esforço por sprint
                   </span>
                 </button>
+                <button className="kmm-btn" onClick={() => setPainelCapacidadeAberto(true)}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <Users size={13} /> Planejar capacidade
+                  </span>
+                </button>
               </div>
             </div>
             {carregandoSprints && <p style={{ color: C.muted }}>Carregando sprints do Azure DevOps…</p>}
@@ -762,6 +769,7 @@ export default function RoadmapPage() {
           onFechar={() => setPainelEsforcoAberto(false)}
         />
       )}
+      <PainelCapacidade aberto={painelCapacidadeAberto} onFechar={() => setPainelCapacidadeAberto(false)} />
     </div>
   );
 }

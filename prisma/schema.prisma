@@ -245,3 +245,37 @@ model IndicadorManual {
   @@unique([produto, painel, mes])
   @@index([produto, painel])
 }
+
+/// Roster de desenvolvedores do Planejamento de Capacidade (tela "Planejar capacidade" em
+/// Roadmap > Sprints, pedido por Heder em 2026-09-29). Populado automaticamente a partir do
+/// "Assigned To" de Task/Bug do Azure DevOps (ver getTasksAlocadas em lib/devops-client.ts) —
+/// sem cadastro manual. "papel" (Frontend/Backend/QA/Mobile/Full stack) não existe como campo no
+/// Azure DevOps, então fica nulo nos devs criados automaticamente (editável no futuro, se pedido).
+model DevCapacidade {
+  id           String               @id @default(uuid())
+  produto      Produto
+  nome         String
+  papel        String?
+  criadoEm     DateTime             @default(now())
+  atualizadoEm DateTime             @updatedAt
+  alocacoes    AlocacaoCapacidade[]
+
+  @@unique([produto, nome])
+}
+
+/// Alocação de 1 dev numa squad, numa sprint específica — cada linha representa 60h de
+/// capacidade (regra do produto: "cada pessoa representa 60 horas por sprint"). Um dev pode estar
+/// em squads diferentes em sprints diferentes; sem nenhuma linha para uma sprint, ele aparece no
+/// pool "Desenvolvedores disponíveis" da tela.
+model AlocacaoCapacidade {
+  id       String        @id @default(uuid())
+  devId    String
+  dev      DevCapacidade @relation(fields: [devId], references: [id], onDelete: Cascade)
+  produto  Produto
+  sprint   String // mesmo formato de TaskAlocada.sprint (IterationLevel3), ex.: "Sprint 8.16"
+  squad    String // Area Path completo (DEVOPS_PROJETOS[produto].areaPaths)
+  criadoEm DateTime      @default(now())
+
+  @@unique([devId, sprint])
+  @@index([produto, sprint])
+}

@@ -12,20 +12,24 @@ export const dynamic = "force-dynamic";
 /**
  * Detalhe dos itens por trás do número "ENCERRADAS" do painel Fluxo de Demandas — botão
  * "Demandas Encerradas" (pedido por Heder em 2026-09-20, espelhando o "Demandas Abertas" já
- * existente — mesmo layout e nível de detalhe). Lê de DemandaAtual, aplica os mesmos filtros de
- * Produto/Cliente/Squad/Data já usados na tela (o filtro de Data continua sendo por Created Date,
- * igual ao resto da tela — não por Closed Date), e filtra em memória por mês de Closed Date
- * (`mes`, obrigatório) + State classificado como "encerrada" via `classificarEncerramento` — a
- * mesma regra que `calcularFluxoDemandas` usa pra contar "encerradas". Não inclui canceladas
- * (essas já têm o próprio número "NEGADAS/CANC." separado no painel).
+ * existente — mesmo layout e nível de detalhe). Lê de DemandaAtual, aplica os filtros de
+ * Produto/Cliente/Squad já usados na tela, e filtra em memória por mês de Closed Date (`mes`,
+ * obrigatório) + State classificado como "encerrada" via `classificarEncerramento` — a mesma regra
+ * que `calcularFluxoDemandas` usa pra contar "encerradas". Não inclui canceladas (essas já têm o
+ * próprio número "NEGADAS/CANC." separado no painel).
+ *
+ * NÃO filtra por Created Date (bug corrigido em 2026-09-28, achado por Heder: itens #7841/#8180,
+ * criados em jan/26 e encerrados em set/26, sumiam da lista com o filtro de Data "a partir de
+ * mar/26" ativo — mesma causa documentada em lib/demandas-agregacao.ts). O `mes` já vem de um
+ * ponto da série "encerradas" de calcularFluxoDemandas, que agora só inclui meses dentro do
+ * intervalo de Data filtrado em Closed Date — então não precisa (e não deve) filtrar de novo por
+ * Created Date aqui.
  */
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
   const produto = params.get("produto")?.toUpperCase();
   const cliente = params.get("cliente");
   const squadsFiltro = params.getAll("squad");
-  const dataInicio = params.get("dataInicio");
-  const dataFim = params.get("dataFim");
   const mes = params.get("mes");
 
   if (!mes) {
@@ -41,8 +45,6 @@ export async function GET(request: NextRequest) {
   if (cliente === SEM_CLIENTE) query = query.is("cliente", null);
   else if (cliente) query = query.eq("cliente", cliente);
   if (squadsFiltro.length) query = query.in("squad", squadsFiltro);
-  if (dataInicio) query = query.gte("createdDate", dataInicio);
-  if (dataFim) query = query.lte("createdDate", dataFim);
 
   const { data, error } = await query;
   if (error) {

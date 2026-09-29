@@ -59,10 +59,35 @@ function mesesOrdenados(chaves: Iterable<string>): string[] {
 export type ItemAtualFluxo = { createdDate: string; closedDate: string | null; state: string };
 export type SerieFluxo = { meses: string[]; abertas: number[]; encerradas: number[]; canceladas: number[] };
 
-/** Painel "Fluxo de demandas" (REQ02.02-06): abertas por mês de Created Date, encerradas/canceladas
+/** "YYYY-MM-DD" >= dataInicio (se houver) e <= dataFim (se houver), comparando só a parte de
+ * data — mesma convenção do filtro de Data de Comitê em app/(app)/roadmap/page.tsx: ignora
+ * horário pra não excluir o próprio dia final por causa dele. `data` pode vir com horário (ISO). */
+function dentroDoIntervalo(data: string, dataInicio?: string | null, dataFim?: string | null): boolean {
+  const diaISO = data.slice(0, 10);
+  if (dataInicio && diaISO < dataInicio) return false;
+  if (dataFim && diaISO > dataFim) return false;
+  return true;
+}
+
+/**
+ * Painel "Fluxo de demandas" (REQ02.02-06): abertas por mês de Created Date, encerradas/canceladas
  * por mês de Closed Date. Recebe linhas de DemandaAtual (1 por item) — createdDate/closedDate não
- * mudam depois de definidos, então o item mais atual já basta pro histórico completo. */
-export function calcularFluxoDemandas(itens: ItemAtualFluxo[]): SerieFluxo {
+ * mudam depois de definidos, então o item mais atual já basta pro histórico completo.
+ *
+ * `dataInicio`/`dataFim` (opcionais) aplicam o filtro de Data do dashboard — mas cada série no seu
+ * próprio campo de data, não em Created Date pras três (bug encontrado por Heder em 2026-09-28):
+ * "abertas" respeita o intervalo em Created Date, "encerradas"/"canceladas" em Closed Date. Antes,
+ * o filtro de Data restringia o item ANTES de chegar aqui (via Created Date na query em
+ * app/api/demandas/route.ts), então um item aberto antes do início do intervalo mas encerrado
+ * dentro dele nunca entrava na contagem de "encerradas" — ficava invisível mesmo tendo Closed Date
+ * no período certo (ex.: #7841/#8180, criados em jan/26, fechados em set/26, com filtro de Data
+ * "a partir de mar/26" ativo).
+ */
+export function calcularFluxoDemandas(
+  itens: ItemAtualFluxo[],
+  dataInicio?: string | null,
+  dataFim?: string | null
+): SerieFluxo {
   const abertasPorMes = new Map<string, number>();
   const encerradasPorMes = new Map<string, number>();
   const canceladasPorMes = new Map<string, number>();
@@ -74,12 +99,12 @@ export function calcularFluxoDemandas(itens: ItemAtualFluxo[]): SerieFluxo {
     // bloco não filtra por state (diferente de encerradas/canceladas, que dependem de
     // classificarEncerramento). NÃO adicionar filtro de state aqui — já foi confirmado com
     // Heder que essa é a regra correta pro indicador, não um bug.
-    if (item.createdDate) {
+    if (item.createdDate && dentroDoIntervalo(item.createdDate, dataInicio, dataFim)) {
       const mes = chaveMes(item.createdDate);
       abertasPorMes.set(mes, (abertasPorMes.get(mes) ?? 0) + 1);
     }
     const categoria = classificarEncerramento(item.state);
-    if (categoria && item.closedDate) {
+    if (categoria && item.closedDate && dentroDoIntervalo(item.closedDate, dataInicio, dataFim)) {
       const mes = chaveMes(item.closedDate);
       const alvo = categoria === "encerrada" ? encerradasPorMes : canceladasPorMes;
       alvo.set(mes, (alvo.get(mes) ?? 0) + 1);

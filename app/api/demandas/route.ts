@@ -33,6 +33,11 @@ export async function GET(request: NextRequest) {
 
   const supabase = getServiceClient();
 
+  // NÃO filtra por Created Date aqui (diferente da versão anterior) — o filtro de Data é aplicado
+  // dentro de calcularFluxoDemandas, cada série no seu próprio campo (abertas em Created Date,
+  // encerradas/canceladas em Closed Date). Filtrar já nesta query por Created Date excluía itens
+  // abertos antes do início do intervalo mas encerrados dentro dele (bug encontrado por Heder em
+  // 2026-09-28 — ver comentário em lib/demandas-agregacao.ts).
   let queryAtual = supabase
     .from("DemandaAtual")
     .select("workItemId, cliente, squad, state, createdDate, closedDate, agingDias");
@@ -40,8 +45,6 @@ export async function GET(request: NextRequest) {
   if (cliente === SEM_CLIENTE) queryAtual = queryAtual.is("cliente", null);
   else if (cliente) queryAtual = queryAtual.eq("cliente", cliente);
   if (squadsFiltro.length) queryAtual = queryAtual.in("squad", squadsFiltro);
-  if (dataInicio) queryAtual = queryAtual.gte("createdDate", dataInicio);
-  if (dataFim) queryAtual = queryAtual.lte("createdDate", dataFim);
 
   const { data: atuaisData, error: erroAtual } = await queryAtual;
   if (erroAtual) {
@@ -67,19 +70,26 @@ export async function GET(request: NextRequest) {
   const dataMin = datasCriacao[0]?.slice(0, 10) ?? null;
   const dataMax = datasCriacao[datasCriacao.length - 1]?.slice(0, 10) ?? null;
 
-  const fluxoDemandas = calcularFluxoDemandas(itensAtuais);
+  const fluxoDemandas = calcularFluxoDemandas(itensAtuais, dataInicio, dataFim);
 
   // Histórico mensal (Aging/Backlog de Viabilidade), a partir de DemandaMensal. Filtra por
-  // produto/cliente/squad diretamente; o filtro de Data (Created Date) não existe nessa tabela,
-  // então só é aplicado (via lista de ids já filtrados acima) quando o usuário de fato o usa —
-  // no caso comum (sem filtro de data), evita um IN com centenas/milhares de ids.
+  // produto/cliente/squad diretamente; o filtro de Data (Created Date — Aging/Backlog de
+  // Viabilidade não tem relação com Closed Date, então aqui continua sendo só Created Date, sem
+  // a mudança feita acima pro Fluxo de Demandas) não existe nessa tabela, então só é aplicado (via
+  // lista de ids filtrados por Created Date abaixo) quando o usuário de fato o usa — no caso comum
+  // (sem filtro de data), evita um IN com centenas/milhares de ids.
   let queryMensal = supabase.from("DemandaMensal").select("mes, cliente, squad, state, agingDias");
   if (produto && produto !== "AMBOS") queryMensal = queryMensal.eq("produto", produto);
   if (cliente === SEM_CLIENTE) queryMensal = queryMensal.is("cliente", null);
   else if (cliente) queryMensal = queryMensal.eq("cliente", cliente);
   if (squadsFiltro.length) queryMensal = queryMensal.in("squad", squadsFiltro);
   if (dataInicio || dataFim) {
-    const idsFiltrados = itensAtuais.map((i) => i.workItemId);
+    const idsFiltrados = itensAtuais
+      .filter((i) => {
+        const dia = i.createdDate?.slice(0, 10);
+        return (!dataInicio || (dia && dia >= dataInicio)) && (!dataFim || (dia && dia <= dataFim));
+      })
+      .map((i) => i.workItemId);
     queryMensal = queryMensal.in("workItemId", idsFiltrados.length ? idsFiltrados : [-1]);
   }
 

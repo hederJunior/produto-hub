@@ -42,5 +42,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ erro: erroAlocacoes.message }, { status: 500 });
   }
 
-  return NextResponse.json({ devs: devs ?? [], alocacoes: alocacoes ?? [] });
+  // Cabeçalho explícito de no-cache (achado por Heder em 2026-09-29): confirmado que o POST de
+  // auto-alocar grava certo no Supabase (conferido direto no banco), mas o GET seguinte, em
+  // produção, devolvia 0 devs / 0 alocações mesmo sendo a chamada mais recente (não descartada
+  // pela guarda de corrida do frontend) — só reproduzível em produção, nunca localmente, o que
+  // aponta pra alguma camada de cache HTTP (CDN/edge da Vercel) na frente da function, já que
+  // `dynamic = "force-dynamic"` evita cache do próprio Next.js mas não necessariamente da CDN.
+  return NextResponse.json(
+    { devs: devs ?? [], alocacoes: alocacoes ?? [] },
+    { headers: { "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" } }
+  );
 }

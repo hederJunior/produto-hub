@@ -140,6 +140,24 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
   const idsAlocados = useMemo(() => new Set(alocacoes.map((a) => a.devId)), [alocacoes]);
   const devsDisponiveis = useMemo(() => devs.filter((d) => !idsAlocados.has(d.id)), [devs, idsAlocados]);
 
+  // Horas já alocadas por dev+sprint (pedido por Heder em 2026-09-29): soma o SP Estimados
+  // (Effort, mesmo campo usado como "SP Estimados" na aba Sprints — Task/Bug não tem Story Points
+  // nativo, decisão já registrada nessa aba) de todas as Task/Bug do dev naquela sprint. Chave
+  // "nome|sprint" pra achar em O(1) no card, sem refazer o filtro/soma a cada render.
+  const horasAlocadasPorDevSprint = useMemo(() => {
+    const mapa = new Map<string, number>();
+    for (const t of tarefas) {
+      if (!t.responsavel?.nome) continue;
+      const chave = `${t.responsavel.nome}|${t.sprint}`;
+      mapa.set(chave, (mapa.get(chave) ?? 0) + (t.spEstimados ?? 0));
+    }
+    return mapa;
+  }, [tarefas]);
+
+  function horasAlocadas(nome: string, sprint: string): number {
+    return Math.round(horasAlocadasPorDevSprint.get(`${nome}|${sprint}`) ?? 0);
+  }
+
   const sprintsParaExibir = useMemo(() => {
     const doAlocacoes = new Set(alocacoes.map((a) => a.sprint));
     if (sprintInicial) doAlocacoes.add(sprintInicial);
@@ -338,7 +356,7 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                         <div style={{ fontWeight: 700, fontSize: 14, color: C.text }}>{sprint}</div>
                         <div style={{ textAlign: "right" }}>
-                          <div style={{ fontWeight: 700, fontSize: 14, color: C.text }}>{totalPessoas * 60}h</div>
+                          <div style={{ fontWeight: 700, fontSize: 14, color: C.text }}>{totalPessoas * HORAS_POR_PESSOA_SPRINT}h</div>
                           <div style={{ fontSize: 11, color: C.muted }}>capacidade total</div>
                         </div>
                       </div>
@@ -349,6 +367,12 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
                             .map((a) => devs.find((d) => d.id === a.devId))
                             .filter((d): d is { id: string; nome: string; papel: string | null } => Boolean(d));
                           const nomeCurto = squad.split("\\").pop() || squad;
+                          // Saldo da squad (pedido por Heder em 2026-09-29): antes mostrava a
+                          // capacidade bruta (pessoas × 60h); agora mostra só o saldo — capacidade
+                          // menos o que já está alocado em Task/Bug de cada dev nessa sprint.
+                          // Negativo = squad com mais trabalho alocado do que capacidade.
+                          const totalAlocadoSquad = devsDaSquad.reduce((acc, d) => acc + horasAlocadas(d.nome, sprint), 0);
+                          const saldoSquad = devsDaSquad.length * HORAS_POR_PESSOA_SPRINT - totalAlocadoSquad;
                           return (
                             <div
                               key={squad}
@@ -363,8 +387,17 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
                                     {devsDaSquad.length} pessoa{devsDaSquad.length === 1 ? "" : "s"}
                                   </div>
                                 </div>
-                                <span className="kmm-chip" style={{ fontSize: 10.5, padding: "2px 8px" }}>
-                                  {devsDaSquad.length * 60}h
+                                <span
+                                  className="kmm-chip"
+                                  style={{
+                                    fontSize: 10.5,
+                                    padding: "2px 8px",
+                                    color: saldoSquad < 0 ? C.red : C.text,
+                                    borderColor: saldoSquad < 0 ? C.red : C.border,
+                                  }}
+                                  title="Saldo: capacidade (pessoas × 60h) menos horas já alocadas"
+                                >
+                                  {saldoSquad}h
                                 </span>
                               </div>
                               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -374,6 +407,7 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
                                     dev={d}
                                     sprintOrigem={sprint}
                                     dragRef={dragRef}
+                                    horasAlocadas={horasAlocadas(d.nome, sprint)}
                                     onAbrirDetalhe={() => setDetalheDev({ nome: d.nome, sprint })}
                                   />
                                 ))}
@@ -425,15 +459,23 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
   );
 }
 
+/** Capacidade fixa por pessoa/sprint (regra do produto: "cada pessoa representa 60 horas por
+ * sprint") — mesmo valor usado no card da squad e no cabeçalho de cada sprint. */
+const HORAS_POR_PESSOA_SPRINT = 60;
+
 function CartaoDev({
   dev,
   sprintOrigem,
   dragRef,
+  horasAlocadas,
   onAbrirDetalhe,
 }: {
   dev: { id: string; nome: string; papel: string | null };
   sprintOrigem: string | null;
   dragRef: React.MutableRefObject<{ devId: string; sprintOrigem: string | null } | null>;
+  /** Soma de SP Estimados das Task/Bug do dev nessa sprint — omitido pros cards do pool
+   * "Desenvolvedores disponíveis" (não tem uma sprint específica pra calcular). */
+  horasAlocadas?: number;
   onAbrirDetalhe?: () => void;
 }) {
   const iniciais = dev.nome
@@ -443,6 +485,7 @@ function CartaoDev({
     .map((p) => p[0]?.toUpperCase())
     .join("");
   const cor = corDoDev(dev.nome);
+  const sobrecarregado = horasAlocadas != null && horasAlocadas > HORAS_POR_PESSOA_SPRINT;
 
   return (
     <div
@@ -454,7 +497,10 @@ function CartaoDev({
       onClick={onAbrirDetalhe}
       className="kmm-chip"
       style={{ display: "flex", alignItems: "center", gap: 8, cursor: onAbrirDetalhe ? "pointer" : "grab", padding: "6px 10px" }}
-      title={onAbrirDetalhe ? `${dev.nome} — clique para ver as tasks nesta sprint` : dev.nome}
+      title={
+        (onAbrirDetalhe ? `${dev.nome} — clique para ver as tasks nesta sprint` : dev.nome) +
+        (horasAlocadas != null ? ` · ${HORAS_POR_PESSOA_SPRINT}h disponíveis / ${horasAlocadas}h alocadas` : "")
+      }
     >
       <span
         style={{
@@ -473,11 +519,18 @@ function CartaoDev({
       >
         {iniciais}
       </span>
-      <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.25 }}>
-        <span style={{ fontSize: 12.5, fontWeight: 600, color: C.text }}>{dev.nome}</span>
+      <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.25, minWidth: 0, flex: 1 }}>
+        <span style={{ fontSize: 12.5, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {dev.nome}
+        </span>
         {dev.papel && <span style={{ fontSize: 10.5, color: C.muted }}>{dev.papel}</span>}
       </span>
-      <GripVertical size={13} color={C.faint} style={{ marginLeft: 2 }} />
+      {horasAlocadas != null && (
+        <span style={{ fontSize: 11, fontWeight: 700, color: sobrecarregado ? C.red : C.text, flexShrink: 0, whiteSpace: "nowrap" }}>
+          {HORAS_POR_PESSOA_SPRINT} / {horasAlocadas}
+        </span>
+      )}
+      <GripVertical size={13} color={C.faint} style={{ marginLeft: 2, flexShrink: 0 }} />
     </div>
   );
 }

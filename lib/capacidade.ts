@@ -23,6 +23,7 @@ export type TarefaParaCapacidade = {
   state: string;
   sprint: string;
   areaPath: string;
+  spEstimados: number | null;
   responsavel: { nome: string } | null;
 };
 

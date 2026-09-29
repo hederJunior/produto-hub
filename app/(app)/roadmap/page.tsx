@@ -292,6 +292,9 @@ export default function RoadmapPage() {
   // padrão do MultiSelectFiltro já usado em Comitês.
   const [sprintsSelecionadas, setSprintsSelecionadas] = useState<string[]>([]);
   const [areasSelecionadasSprints, setAreasSelecionadasSprints] = useState<string[]>([]);
+  // Levantado pra cá (antes vivia dentro de SprintsAlocadas) pra entrar no mesmo bloco de filtros
+  // do cabeçalho da aba — pedido por Heder em 2026-09-29 (reposicionamento dos filtros).
+  const [agruparSprintsPor, setAgruparSprintsPor] = useState<CampoAgrupamento>("nenhum");
   const [painelEsforcoAberto, setPainelEsforcoAberto] = useState(false);
   const [painelCapacidadeAberto, setPainelCapacidadeAberto] = useState(false);
 
@@ -597,7 +600,6 @@ export default function RoadmapPage() {
             <div
               style={{
                 display: "flex",
-                justifyContent: "space-between",
                 alignItems: "flex-end",
                 flexWrap: "wrap",
                 gap: 12,
@@ -612,7 +614,13 @@ export default function RoadmapPage() {
                   Tasks e Bugs da Sprint 8.16 em diante.
                 </div>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              {/* marginLeft:"auto" em vez de justifyContent:"space-between" no pai (achado por
+                  Heder em 2026-09-29): com space-between, quando esse bloco não cabia ao lado do
+                  título e quebrava pra própria linha, ficava alinhado à ESQUERDA (só há 1 item
+                  nessa "linha" depois de quebrar — space-between não tem o que distribuir com 1
+                  item só). margin-left:auto empurra pra direita tanto colado no título quanto
+                  numa linha própria depois de quebrar. */}
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginLeft: "auto" }}>
                 <MultiSelectFiltro
                   rotuloTodos="Todas as sprints"
                   opcoes={sprintsDisponiveis}
@@ -641,6 +649,20 @@ export default function RoadmapPage() {
                     <Users size={13} /> Planejar capacidade
                   </span>
                 </button>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>Agrupar por</span>
+                  <select
+                    className="kmm-input"
+                    style={{ width: "auto" }}
+                    value={agruparSprintsPor}
+                    onChange={(e) => setAgruparSprintsPor(e.target.value as CampoAgrupamento)}
+                  >
+                    <option value="nenhum">Nenhum</option>
+                    <option value="areaPath">Área</option>
+                    <option value="responsavel">Resp.</option>
+                    <option value="tipo">Tipo</option>
+                  </select>
+                </div>
               </div>
             </div>
             {carregandoSprints && <p style={{ color: C.muted }}>Carregando sprints do Azure DevOps…</p>}
@@ -652,7 +674,9 @@ export default function RoadmapPage() {
             {!carregandoSprints && !erroSprints && tarefasExibidas.length === 0 && (
               <p style={{ color: C.muted }}>Nenhuma Task ou Bug encontrada para os filtros selecionados.</p>
             )}
-            {!carregandoSprints && !erroSprints && tarefasExibidas.length > 0 && <SprintsAlocadas tarefas={tarefasExibidas} />}
+            {!carregandoSprints && !erroSprints && tarefasExibidas.length > 0 && (
+              <SprintsAlocadas tarefas={tarefasExibidas} agruparPor={agruparSprintsPor} />
+            )}
           </>
         ) : (
           <>
@@ -1463,9 +1487,14 @@ function LinhaSoma({ rotulo, somaEstimados, somaReal, destaque }: { rotulo: stri
   );
 }
 
-function SprintsAlocadas({ tarefas }: { tarefas: TaskAlocada[] }) {
+function SprintsAlocadas({
+  tarefas,
+  agruparPor,
+}: {
+  tarefas: TaskAlocada[];
+  agruparPor: CampoAgrupamento;
+}) {
   const [abertos, setAbertos] = useState<Record<string, boolean>>({});
-  const [agruparPor, setAgruparPor] = useState<CampoAgrupamento>("nenhum");
 
   const porSprint = useMemo(() => {
     const grupos: Record<string, TaskAlocada[]> = {};
@@ -1488,23 +1517,6 @@ function SprintsAlocadas({ tarefas }: { tarefas: TaskAlocada[] }) {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>Agrupar por</span>
-          <select
-            className="kmm-input"
-            style={{ width: "auto" }}
-            value={agruparPor}
-            onChange={(e) => setAgruparPor(e.target.value as CampoAgrupamento)}
-          >
-            <option value="nenhum">Nenhum</option>
-            <option value="areaPath">Área</option>
-            <option value="responsavel">Resp.</option>
-            <option value="tipo">Tipo</option>
-          </select>
-        </div>
-      </div>
-
       {nomesSprints.map((sprint) => {
         const itens = porSprint[sprint];
         const somaEstimados = itens.reduce((acc, t) => acc + (t.spEstimados ?? 0), 0);

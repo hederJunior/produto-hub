@@ -36,19 +36,32 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
   const [ultimoResultado, setUltimoResultado] = useState<string | null>(null);
 
   const dragRef = useRef<{ devId: string; sprintOrigem: string | null } | null>(null);
+  // Guarda de corrida (achado por Heder em 2026-09-29): carregarBoard() é chamado tanto ao abrir
+  // o painel quanto logo depois de auto-alocar/mover — se a chamada MAIS ANTIGA demorar mais (ex.:
+  // cold start da function na Vercel) e responder DEPOIS da mais recente, ela sobrescrevia o board
+  // certo com um snapshot velho (geralmente vazio, de antes da auto-alocação escrever no banco) —
+  // os dados ficavam gravados certinho no Supabase, mas a tela mostrava vazio. Só aplica a resposta
+  // se ela ainda for a chamada mais recente.
+  const cargaSeqRef = useRef(0);
 
   function carregarBoard() {
+    const minhaSeq = ++cargaSeqRef.current;
     setCarregando(true);
     setErro(null);
     fetch(`/api/capacidade?produto=${PRODUTO}`, { cache: "no-store" })
       .then((res) => res.json())
       .then((j) => {
+        if (minhaSeq !== cargaSeqRef.current) return;
         if (j.erro) setErro(j.erro);
         setDevs(j.devs ?? []);
         setAlocacoes(j.alocacoes ?? []);
       })
-      .catch(() => setErro("Não foi possível carregar o planejamento de capacidade."))
-      .finally(() => setCarregando(false));
+      .catch(() => {
+        if (minhaSeq === cargaSeqRef.current) setErro("Não foi possível carregar o planejamento de capacidade.");
+      })
+      .finally(() => {
+        if (minhaSeq === cargaSeqRef.current) setCarregando(false);
+      });
   }
 
   useEffect(() => {

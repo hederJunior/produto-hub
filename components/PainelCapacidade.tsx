@@ -30,8 +30,10 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
   const [erro, setErro] = useState<string | null>(null);
 
   const [tarefas, setTarefas] = useState<TarefaParaCapacidade[]>([]);
+  const [carregandoTarefas, setCarregandoTarefas] = useState(true);
   const [sprintInicial, setSprintInicial] = useState("");
   const [autoAlocando, setAutoAlocando] = useState(false);
+  const [ultimoResultado, setUltimoResultado] = useState<string | null>(null);
 
   const dragRef = useRef<{ devId: string; sprintOrigem: string | null } | null>(null);
 
@@ -52,10 +54,19 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
   useEffect(() => {
     if (!aberto) return;
     carregarBoard();
+    setCarregandoTarefas(true);
     fetch(`/api/roadmap/tarefas?produto=${PRODUTO}`, { cache: "no-store" })
       .then((res) => res.json())
-      .then((j) => setTarefas(j.tarefas ?? []))
-      .catch(() => {});
+      .then((j) => {
+        // Achado por Heder em 2026-09-29: essa chamada tinha o mesmo problema que a de
+        // auto-alocar tinha antes de eu corrigir — um erro do Azure DevOps aqui (a rota devolve
+        // {erro, tarefas: []} com status 502) passava batido, e a auto-alocação rodava "com
+        // sucesso" processando zero itens, sem nenhuma pista do motivo real.
+        if (j.erro) setErro(j.erro);
+        setTarefas(j.tarefas ?? []);
+      })
+      .catch(() => setErro("Não foi possível carregar as tasks/bugs do Azure DevOps (KMM5)."))
+      .finally(() => setCarregandoTarefas(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aberto]);
 
@@ -86,8 +97,14 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
     if (!sprint) return;
     setAutoAlocando(true);
     setErro(null);
+    setUltimoResultado(null);
     try {
       const itens = agruparAlocacoesPorDevSprint(tarefas, sprint, squads);
+      // Diagnóstico visível (pedido implícito por Heder em 2026-09-29, depois de "sprint inicial"
+      // rodar sem trazer ninguém sem nenhuma pista do motivo): mostra o que foi calculado ANTES de
+      // saber se o servidor gravou — se "itens calculados" já vier 0 aqui, o problema é
+      // tarefas/squads carregados no navegador (ver useEffect acima); se vier > 0 mas o board
+      // continuar vazio depois, o problema é no servidor (upsert).
       const res = await fetch("/api/capacidade/auto-alocar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -98,6 +115,11 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
       if (!res.ok) {
         const j = await res.json().catch(() => null);
         setErro(j?.erro ?? "Não foi possível alocar automaticamente a partir do Azure DevOps.");
+      } else {
+        const j = await res.json().catch(() => null);
+        setUltimoResultado(
+          `${tarefas.length} tasks/bugs carregados do Azure DevOps · ${itens.length} trios (dev+sprint) calculados · ${j?.devsProcessados ?? "?"} devs e ${j?.alocacoesProcessadas ?? "?"} alocações gravados no servidor.`
+        );
       }
       carregarBoard();
     } catch {
@@ -192,14 +214,19 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
 
           <div style={{ marginTop: 14 }}>
             <div style={{ fontSize: 12, color: C.muted, fontWeight: 600, marginBottom: 4 }}>
-              Sprint inicial {autoAlocando && "— alocando a partir do Azure DevOps…"}
+              Sprint inicial{" "}
+              {carregandoTarefas
+                ? "— carregando tasks/bugs do Azure DevOps…"
+                : autoAlocando
+                  ? "— alocando a partir do Azure DevOps…"
+                  : null}
             </div>
             <select
               className="kmm-input"
               style={{ width: "auto", minWidth: 220 }}
               value={sprintInicial}
               onChange={(e) => aoSelecionarSprintInicial(e.target.value)}
-              disabled={autoAlocando || carregando}
+              disabled={autoAlocando || carregando || carregandoTarefas}
             >
               <option value="">Selecione uma sprint…</option>
               {sprintsDevOps.map((s) => (
@@ -216,6 +243,11 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
           {erro && (
             <div className="kmm-card" style={{ color: C.red, fontSize: 13 }}>
               {erro}
+            </div>
+          )}
+          {ultimoResultado && !erro && (
+            <div className="kmm-card" style={{ color: C.muted, fontSize: 12 }}>
+              {ultimoResultado}
             </div>
           )}
 

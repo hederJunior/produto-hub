@@ -42,6 +42,12 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
   // dentro de uma squad/sprint abre a lista de Task/Bug dele naquela sprint específica.
   const [detalheDev, setDetalheDev] = useState<{ nome: string; sprint: string } | null>(null);
 
+  // Cadastro manual de disponibilidade (pedido por Heder em 2026-09-30): antes o único jeito de um
+  // dev aparecer no board era ter Task/Bug alocada no Azure DevOps; essa tela permite vincular
+  // qualquer dev do roster (cadastrado em Administração > Cadastro de devs) numa squad/sprint sem
+  // depender disso, e listar/excluir os vínculos existentes.
+  const [dispAberto, setDispAberto] = useState(false);
+
   const dragRef = useRef<{ devId: string; sprintOrigem: string | null } | null>(null);
   // Guarda de corrida: carregarBoard() é chamado tanto ao abrir o painel quanto logo depois de
   // auto-alocar/mover — se a chamada mais antiga responder depois da mais recente, só aplica a
@@ -246,6 +252,9 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
               <span className="kmm-chip">{idsAlocados.size} alocados</span>
               <span className="kmm-chip">{devsDisponiveis.length} disponíveis</span>
+              <button className="kmm-btn" style={{ padding: "6px 10px", fontSize: 12 }} onClick={() => setDispAberto(true)}>
+                Cadastrar disponibilidade
+              </button>
               <button className="kmm-btn" style={{ padding: "6px 10px", fontSize: 12 }} onClick={carregarBoard} title="Recarregar">
                 Atualizar
               </button>
@@ -457,6 +466,18 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
           onFechar={() => setDetalheDev(null)}
         />
       )}
+
+      {dispAberto && (
+        <ModalDisponibilidade
+          devs={devs}
+          squads={squads}
+          sprints={sprintsDevOps}
+          alocacoes={alocacoes}
+          onVincular={(devId, sprint, squad) => mover(devId, null, sprint, squad)}
+          onRemover={(devId, sprint) => mover(devId, sprint, null, null)}
+          onFechar={() => setDispAberto(false)}
+        />
+      )}
     </div>
   );
 }
@@ -606,6 +627,179 @@ function ModalTasksDev({
               </div>
             );
           })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * "Cadastrar disponibilidade" (pedido por Heder em 2026-09-30): vincular manualmente um dev do
+ * roster (cadastrado em Administração > Cadastro de devs) numa squad/sprint, sem depender de ele
+ * já ter Task/Bug atribuída no Azure DevOps — único jeito que existia até então de um card de dev
+ * aparecer no board. Insere via a mesma função `mover` do drag-and-drop (upsert em
+ * AlocacaoCapacidade), então o card criado aqui se comporta igual a qualquer outro no board: pode
+ * ser arrastado, clicado pra ver tasks, etc. Lista embaixo mostra TODAS as alocações atuais
+ * (manuais ou vindas de auto-alocação — não há distinção no dado, as duas origens convivem na
+ * mesma tabela) com opção de excluir.
+ */
+function ModalDisponibilidade({
+  devs,
+  squads,
+  sprints,
+  alocacoes,
+  onVincular,
+  onRemover,
+  onFechar,
+}: {
+  devs: { id: string; nome: string; papel: string | null }[];
+  squads: string[];
+  sprints: string[];
+  alocacoes: { id: string; devId: string; sprint: string; squad: string }[];
+  onVincular: (devId: string, sprint: string, squad: string) => void;
+  onRemover: (devId: string, sprint: string) => void;
+  onFechar: () => void;
+}) {
+  const [devId, setDevId] = useState("");
+  const [sprint, setSprint] = useState("");
+  const [squad, setSquad] = useState("");
+  const [mensagem, setMensagem] = useState<string | null>(null);
+
+  function vincular() {
+    if (!devId || !sprint || !squad) {
+      setMensagem("Selecione dev, sprint e squad.");
+      return;
+    }
+    onVincular(devId, sprint, squad);
+    setMensagem(null);
+    setDevId("");
+    setSprint("");
+    setSquad("");
+  }
+
+  const linhas = [...alocacoes]
+    .map((a) => ({ ...a, dev: devs.find((d) => d.id === a.devId) }))
+    .filter((a): a is typeof a & { dev: { id: string; nome: string; papel: string | null } } => Boolean(a.dev))
+    .sort((a, b) => a.sprint.localeCompare(b.sprint) || a.dev.nome.localeCompare(b.dev.nome));
+
+  return (
+    <div
+      onClick={onFechar}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(22,19,15,.45)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 300,
+        padding: 20,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="kmm-card"
+        style={{ maxWidth: 640, width: "100%", maxHeight: "85vh", overflowY: "auto", padding: 20 }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+          <div>
+            <div style={{ fontFamily: "Sora,sans-serif", fontWeight: 800, fontSize: 16, color: C.text }}>
+              Cadastrar disponibilidade
+            </div>
+            <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+              Vincula um dev do roster numa squad/sprint — ele passa a aparecer como card no board, mesmo sem
+              nenhuma Task/Bug atribuída no Azure DevOps.
+            </div>
+          </div>
+          <button onClick={onFechar} aria-label="Fechar" style={{ background: "none", border: "none", cursor: "pointer", color: C.muted, padding: 4 }}>
+            <X size={18} />
+          </button>
+        </div>
+
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end", marginTop: 16 }}>
+          <div>
+            <div style={{ fontSize: 12, color: C.muted, fontWeight: 600, marginBottom: 4 }}>Dev</div>
+            <select className="kmm-input" style={{ width: 200 }} value={devId} onChange={(e) => setDevId(e.target.value)}>
+              <option value="">Selecione…</option>
+              {devs.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.nome}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <div style={{ fontSize: 12, color: C.muted, fontWeight: 600, marginBottom: 4 }}>Sprint</div>
+            <select className="kmm-input" style={{ width: 140 }} value={sprint} onChange={(e) => setSprint(e.target.value)}>
+              <option value="">Selecione…</option>
+              {sprints.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <div style={{ fontSize: 12, color: C.muted, fontWeight: 600, marginBottom: 4 }}>Squad</div>
+            <select className="kmm-input" style={{ width: 200 }} value={squad} onChange={(e) => setSquad(e.target.value)}>
+              <option value="">Selecione…</option>
+              {squads.map((s) => (
+                <option key={s} value={s}>
+                  {s.split("\\").pop() || s}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button className="kmm-btn" onClick={vincular}>
+            Vincular
+          </button>
+        </div>
+        {mensagem && <p style={{ color: C.red, fontSize: 12.5, marginTop: 8 }}>{mensagem}</p>}
+        {devs.length === 0 && (
+          <p style={{ color: C.muted, fontSize: 12.5, marginTop: 8 }}>
+            Nenhum dev cadastrado ainda — cadastre em Administração &gt; Cadastro de devs.
+          </p>
+        )}
+
+        <div style={{ marginTop: 20, borderTop: `1px solid ${C.border}`, paddingTop: 14 }}>
+          <div style={{ fontWeight: 700, fontSize: 13, color: C.text, marginBottom: 8 }}>
+            Disponibilidades cadastradas ({linhas.length})
+          </div>
+          {linhas.length === 0 ? (
+            <p style={{ color: C.muted, fontSize: 12.5 }}>Nenhuma disponibilidade cadastrada ainda.</p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {linhas.map((l) => (
+                <div
+                  key={l.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 8,
+                    padding: "6px 10px",
+                    border: `1px solid ${C.border}`,
+                    borderRadius: 8,
+                    fontSize: 12.5,
+                  }}
+                >
+                  <span style={{ fontWeight: 600, color: C.text }}>{l.dev.nome}</span>
+                  <span className="kmm-chip" style={{ fontSize: 11 }}>{l.sprint}</span>
+                  <span style={{ flex: 1, color: C.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {l.squad.split("\\").pop() || l.squad}
+                  </span>
+                  <button
+                    className="kmm-btn"
+                    style={{ padding: 6, flexShrink: 0 }}
+                    onClick={() => onRemover(l.devId, l.sprint)}
+                    title="Excluir disponibilidade"
+                  >
+                    <X size={13} color={C.red} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

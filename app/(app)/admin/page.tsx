@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { RefreshCw, ClipboardEdit, ChevronRight } from "lucide-react";
+import { RefreshCw, ClipboardEdit, Users, ChevronRight } from "lucide-react";
 import { C } from "@/lib/kmm-theme";
 
 const FERRAMENTAS = [
@@ -16,6 +16,12 @@ const FERRAMENTAS = [
     icon: ClipboardEdit,
     titulo: "Indicadores manuais",
     descricao: "Lançamento de valores mensais por fora do JOB — histórico retroativo e correções pontuais.",
+  },
+  {
+    href: "/admin/devs",
+    icon: Users,
+    titulo: "Cadastro de devs",
+    descricao: "Base de desenvolvedores usada no Planejamento de capacidade (Roadmap e entregas > Sprints).",
   },
 ];
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { GripVertical, X } from "lucide-react";
-import { C, corDoDev } from "@/lib/kmm-theme";
+import { C, corDoDev, corDeEstadoDevOps } from "@/lib/kmm-theme";
 import { agruparAlocacoesPorDevSprint, type TarefaParaCapacidade } from "@/lib/capacidade";
 
 /**
@@ -33,22 +33,19 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
   const [carregandoTarefas, setCarregandoTarefas] = useState(true);
   const [sprintInicial, setSprintInicial] = useState("");
   const [autoAlocando, setAutoAlocando] = useState(false);
-  const [ultimoResultado, setUltimoResultado] = useState<string | null>(null);
-  // Diagnóstico do GET em si (pedido por Heder em 2026-09-29, depois do board continuar vazio
-  // mesmo com "ultimoResultado" mostrando que o POST gravou certo): "ultimoResultado" só reflete
-  // o que o POST /auto-alocar disse que gravou — nunca provou que o GET seguinte realmente leu
-  // esses dados de volta. Esta linha mostra o que o GET MAIS RECENTE (o que passou pela guarda de
-  // corrida abaixo) de fato devolveu, pra distinguir "o servidor não devolveu os dados" (bug no
-  // GET/corrida) de "devolveu certo, mas a tela não desenhou" (bug de renderização).
-  const [ultimaLeitura, setUltimaLeitura] = useState<string | null>(null);
+
+  // Filtro por squad (toggle, pedido por Heder em 2026-09-29): vazio = nenhuma squad visível — o
+  // board pode ter muitas squads (13 em KMM5) e a maioria não interessa pra todo planejamento.
+  const [squadsSelecionadas, setSquadsSelecionadas] = useState<string[]>([]);
+
+  // Detalhe de tasks de 1 dev numa sprint (pedido por Heder em 2026-09-29): clicar no card do dev
+  // dentro de uma squad/sprint abre a lista de Task/Bug dele naquela sprint específica.
+  const [detalheDev, setDetalheDev] = useState<{ nome: string; sprint: string } | null>(null);
 
   const dragRef = useRef<{ devId: string; sprintOrigem: string | null } | null>(null);
-  // Guarda de corrida (achado por Heder em 2026-09-29): carregarBoard() é chamado tanto ao abrir
-  // o painel quanto logo depois de auto-alocar/mover — se a chamada MAIS ANTIGA demorar mais (ex.:
-  // cold start da function na Vercel) e responder DEPOIS da mais recente, ela sobrescrevia o board
-  // certo com um snapshot velho (geralmente vazio, de antes da auto-alocação escrever no banco) —
-  // os dados ficavam gravados certinho no Supabase, mas a tela mostrava vazio. Só aplica a resposta
-  // se ela ainda for a chamada mais recente.
+  // Guarda de corrida: carregarBoard() é chamado tanto ao abrir o painel quanto logo depois de
+  // auto-alocar/mover — se a chamada mais antiga responder depois da mais recente, só aplica a
+  // resposta se ela ainda for a mais recente (evita sobrescrever o board com um snapshot velho).
   const cargaSeqRef = useRef(0);
 
   function carregarBoard() {
@@ -58,19 +55,10 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
     fetch(`/api/capacidade?produto=${PRODUTO}`, { cache: "no-store" })
       .then((res) => res.json())
       .then((j) => {
-        if (minhaSeq !== cargaSeqRef.current) {
-          setUltimaLeitura(
-            `[chamada #${minhaSeq} descartada — já havia uma mais recente (#${cargaSeqRef.current}) em andamento] devolveu ${(j.devs ?? []).length} devs / ${(j.alocacoes ?? []).length} alocações.`
-          );
-          return;
-        }
+        if (minhaSeq !== cargaSeqRef.current) return;
         if (j.erro) setErro(j.erro);
         setDevs(j.devs ?? []);
         setAlocacoes(j.alocacoes ?? []);
-        const d = j.debug
-          ? ` [debug: produto=${j.debug.produtoUsado} · host=${j.debug.supabaseUrlHost} · totalDevsSemFiltro=${j.debug.contagemTotalDevsSemFiltro} · vercelEnv=${j.debug.vercelEnv} · amostra=${JSON.stringify(j.debug.amostraLinhaCrua)}]`
-          : "";
-        setUltimaLeitura(`GET #${minhaSeq} (aplicado): ${(j.devs ?? []).length} devs / ${(j.alocacoes ?? []).length} alocações recebidos do servidor.${d}`);
       })
       .catch(() => {
         if (minhaSeq === cargaSeqRef.current) setErro("Não foi possível carregar o planejamento de capacidade.");
@@ -87,10 +75,6 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
     fetch(`/api/roadmap/tarefas?produto=${PRODUTO}`, { cache: "no-store" })
       .then((res) => res.json())
       .then((j) => {
-        // Achado por Heder em 2026-09-29: essa chamada tinha o mesmo problema que a de
-        // auto-alocar tinha antes de eu corrigir — um erro do Azure DevOps aqui (a rota devolve
-        // {erro, tarefas: []} com status 502) passava batido, e a auto-alocação rodava "com
-        // sucesso" processando zero itens, sem nenhuma pista do motivo real.
         if (j.erro) setErro(j.erro);
         setTarefas(j.tarefas ?? []);
       })
@@ -100,14 +84,18 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
   }, [aberto]);
 
   // Colunas de squad = Area Path real dos Task/Bug carregados (mesma fonte que a aba Sprints usa
-  // pro filtro de área), em vez da lista fixa DEVOPS_PROJETOS — ver comentário em
-  // app/api/capacidade/route.ts sobre por que essa lista fixa não serve aqui. União com o squad
-  // das alocações já salvas, pra nunca esconder uma alocação existente mesmo que o Area Path dela
-  // não apareça na leva atual de tarefas carregadas.
+  // pro filtro de área), em vez da lista fixa DEVOPS_PROJETOS — essa lista fixa é usada só nos
+  // WIQL de Epics/PBI e excluiria squads reais de Task/Bug (ex. "Cabotagem - Maersk"). União com o
+  // squad das alocações já salvas, pra nunca esconder uma alocação existente.
   const squads = useMemo(
     () =>
       Array.from(new Set([...tarefas.map((t) => t.areaPath), ...alocacoes.map((a) => a.squad)])).sort(),
     [tarefas, alocacoes]
+  );
+
+  const squadsExibidas = useMemo(
+    () => squads.filter((s) => squadsSelecionadas.includes(s)),
+    [squads, squadsSelecionadas]
   );
 
   const sprintsDevOps = useMemo(
@@ -126,29 +114,16 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
     if (!sprint) return;
     setAutoAlocando(true);
     setErro(null);
-    setUltimoResultado(null);
     try {
       const itens = agruparAlocacoesPorDevSprint(tarefas, sprint, squads);
-      // Diagnóstico visível (pedido implícito por Heder em 2026-09-29, depois de "sprint inicial"
-      // rodar sem trazer ninguém sem nenhuma pista do motivo): mostra o que foi calculado ANTES de
-      // saber se o servidor gravou — se "itens calculados" já vier 0 aqui, o problema é
-      // tarefas/squads carregados no navegador (ver useEffect acima); se vier > 0 mas o board
-      // continuar vazio depois, o problema é no servidor (upsert).
       const res = await fetch("/api/capacidade/auto-alocar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ produto: PRODUTO, itens }),
       });
-      // Antes falhava em silêncio (sem checar res.ok) — uma falha aqui parecia "não trouxe
-      // ninguém" pro usuário, sem nenhuma pista do motivo. Achado por Heder em 2026-09-29.
       if (!res.ok) {
         const j = await res.json().catch(() => null);
         setErro(j?.erro ?? "Não foi possível alocar automaticamente a partir do Azure DevOps.");
-      } else {
-        const j = await res.json().catch(() => null);
-        setUltimoResultado(
-          `${tarefas.length} tasks/bugs carregados do Azure DevOps · ${itens.length} trios (dev+sprint) calculados · ${j?.devsProcessados ?? "?"} devs e ${j?.alocacoesProcessadas ?? "?"} alocações gravados no servidor.`
-        );
       }
       carregarBoard();
     } catch {
@@ -156,6 +131,10 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
     } finally {
       setAutoAlocando(false);
     }
+  }
+
+  function alternarSquad(squad: string) {
+    setSquadsSelecionadas((atual) => (atual.includes(squad) ? atual.filter((s) => s !== squad) : [...atual, squad]));
   }
 
   const idsAlocados = useMemo(() => new Set(alocacoes.map((a) => a.devId)), [alocacoes]);
@@ -203,6 +182,11 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
     };
   }
 
+  const tarefasDoDetalhe = useMemo(() => {
+    if (!detalheDev) return [];
+    return tarefas.filter((t) => t.responsavel?.nome === detalheDev.nome && t.sprint === detalheDev.sprint);
+  }, [tarefas, detalheDev]);
+
   if (!aberto) return null;
 
   return (
@@ -235,10 +219,7 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
               <span className="kmm-chip">{idsAlocados.size} alocados</span>
               <span className="kmm-chip">{devsDisponiveis.length} disponíveis</span>
-              {/* Botão de diagnóstico (pedido por Heder em 2026-09-29): força uma nova leitura sem
-                  precisar reabrir o painel nem reselecionar a sprint — ajuda a isolar se os dados
-                  aparecem numa leitura manual, feita bem depois da escrita (sem corrida possível). */}
-              <button className="kmm-btn" style={{ padding: "6px 10px", fontSize: 12 }} onClick={carregarBoard}>
+              <button className="kmm-btn" style={{ padding: "6px 10px", fontSize: 12 }} onClick={carregarBoard} title="Recarregar">
                 Atualizar
               </button>
               <button onClick={onFechar} aria-label="Fechar" style={{ background: "none", border: "none", cursor: "pointer", color: C.muted, padding: 4 }}>
@@ -271,6 +252,37 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
               ))}
             </select>
           </div>
+
+          {squads.length > 0 && (
+            <div style={{ marginTop: 14 }}>
+              <div style={{ fontSize: 12, color: C.muted, fontWeight: 600, marginBottom: 4 }}>
+                Squads visíveis {squadsSelecionadas.length === 0 && "— nenhuma selecionada"}
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {squads.map((squad) => {
+                  const ativa = squadsSelecionadas.includes(squad);
+                  const nomeCurto = squad.split("\\").pop() || squad;
+                  return (
+                    <button
+                      key={squad}
+                      type="button"
+                      onClick={() => alternarSquad(squad)}
+                      className="kmm-chip"
+                      style={{
+                        cursor: "pointer",
+                        background: ativa ? C.orange : "transparent",
+                        color: ativa ? "#fff" : C.text,
+                        borderColor: ativa ? C.orange : C.border,
+                        fontWeight: ativa ? 700 : 600,
+                      }}
+                    >
+                      {nomeCurto}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         <div style={{ flex: 1, overflowY: "auto", padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
@@ -278,16 +290,6 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
           {erro && (
             <div className="kmm-card" style={{ color: C.red, fontSize: 13 }}>
               {erro}
-            </div>
-          )}
-          {ultimoResultado && !erro && (
-            <div className="kmm-card" style={{ color: C.muted, fontSize: 12 }}>
-              {ultimoResultado}
-            </div>
-          )}
-          {ultimaLeitura && !erro && (
-            <div className="kmm-card" style={{ color: C.muted, fontSize: 12 }}>
-              {ultimaLeitura}
             </div>
           )}
 
@@ -316,71 +318,82 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
                 </div>
               </div>
 
-              {sprintsParaExibir.map((sprint) => {
-                const alocacoesDaSprint = alocacoes.filter((a) => a.sprint === sprint);
-                const totalPessoas = alocacoesDaSprint.length;
-                return (
-                  <div key={sprint} className="kmm-card" style={{ padding: 16 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                      <div style={{ fontWeight: 700, fontSize: 14, color: C.text }}>{sprint}</div>
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{ fontWeight: 700, fontSize: 14, color: C.text }}>{totalPessoas * 60}h</div>
-                        <div style={{ fontSize: 11, color: C.muted }}>capacidade total</div>
+              {squadsExibidas.length === 0 && (
+                <p style={{ color: C.muted }}>Selecione ao menos uma squad acima ("Squads visíveis") pra ver o planejamento por sprint.</p>
+              )}
+
+              {squadsExibidas.length > 0 &&
+                sprintsParaExibir.map((sprint) => {
+                  const alocacoesDaSprint = alocacoes.filter((a) => a.sprint === sprint && squadsExibidas.includes(a.squad));
+                  const totalPessoas = alocacoesDaSprint.length;
+                  return (
+                    <div key={sprint} className="kmm-card" style={{ padding: 16 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                        <div style={{ fontWeight: 700, fontSize: 14, color: C.text }}>{sprint}</div>
+                        <div style={{ textAlign: "right" }}>
+                          <div style={{ fontWeight: 700, fontSize: 14, color: C.text }}>{totalPessoas * 60}h</div>
+                          <div style={{ fontSize: 11, color: C.muted }}>capacidade total</div>
+                        </div>
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: `repeat(${squadsExibidas.length}, minmax(180px, 1fr))`, gap: 12, overflowX: "auto" }}>
+                        {squadsExibidas.map((squad) => {
+                          const devsDaSquad = alocacoesDaSprint
+                            .filter((a) => a.squad === squad)
+                            .map((a) => devs.find((d) => d.id === a.devId))
+                            .filter((d): d is { id: string; nome: string; papel: string | null } => Boolean(d));
+                          const nomeCurto = squad.split("\\").pop() || squad;
+                          return (
+                            <div
+                              key={squad}
+                              onDragOver={(e) => e.preventDefault()}
+                              onDrop={onDropEm(sprint, squad)}
+                              style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 10, minHeight: 90 }}
+                            >
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8, gap: 6 }}>
+                                <div>
+                                  <div style={{ fontWeight: 700, fontSize: 12.5, color: C.text }}>{nomeCurto}</div>
+                                  <div style={{ fontSize: 11, color: C.muted }}>
+                                    {devsDaSquad.length} pessoa{devsDaSquad.length === 1 ? "" : "s"}
+                                  </div>
+                                </div>
+                                <span className="kmm-chip" style={{ fontSize: 10.5, padding: "2px 8px" }}>
+                                  {devsDaSquad.length * 60}h
+                                </span>
+                              </div>
+                              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                {devsDaSquad.map((d) => (
+                                  <CartaoDev
+                                    key={d.id}
+                                    dev={d}
+                                    sprintOrigem={sprint}
+                                    dragRef={dragRef}
+                                    onAbrirDetalhe={() => setDetalheDev({ nome: d.nome, sprint })}
+                                  />
+                                ))}
+                                {devsDaSquad.length === 0 && (
+                                  <div
+                                    style={{
+                                      border: `1px dashed ${C.border}`,
+                                      borderRadius: 8,
+                                      padding: "14px 8px",
+                                      textAlign: "center",
+                                      fontSize: 11.5,
+                                      color: C.faint,
+                                    }}
+                                  >
+                                    Arraste ou selecione uma pessoa para alocar
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
-                    <div style={{ display: "grid", gridTemplateColumns: `repeat(${squads.length}, minmax(180px, 1fr))`, gap: 12, overflowX: "auto" }}>
-                      {squads.map((squad) => {
-                        const devsDaSquad = alocacoesDaSprint
-                          .filter((a) => a.squad === squad)
-                          .map((a) => devs.find((d) => d.id === a.devId))
-                          .filter((d): d is { id: string; nome: string; papel: string | null } => Boolean(d));
-                        const nomeCurto = squad.split("\\").pop() || squad;
-                        return (
-                          <div
-                            key={squad}
-                            onDragOver={(e) => e.preventDefault()}
-                            onDrop={onDropEm(sprint, squad)}
-                            style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 10, minHeight: 90 }}
-                          >
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8, gap: 6 }}>
-                              <div>
-                                <div style={{ fontWeight: 700, fontSize: 12.5, color: C.text }}>{nomeCurto}</div>
-                                <div style={{ fontSize: 11, color: C.muted }}>
-                                  {devsDaSquad.length} pessoa{devsDaSquad.length === 1 ? "" : "s"}
-                                </div>
-                              </div>
-                              <span className="kmm-chip" style={{ fontSize: 10.5, padding: "2px 8px" }}>
-                                {devsDaSquad.length * 60}h
-                              </span>
-                            </div>
-                            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                              {devsDaSquad.map((d) => (
-                                <CartaoDev key={d.id} dev={d} sprintOrigem={sprint} dragRef={dragRef} />
-                              ))}
-                              {devsDaSquad.length === 0 && (
-                                <div
-                                  style={{
-                                    border: `1px dashed ${C.border}`,
-                                    borderRadius: 8,
-                                    padding: "14px 8px",
-                                    textAlign: "center",
-                                    fontSize: 11.5,
-                                    color: C.faint,
-                                  }}
-                                >
-                                  Arraste ou selecione uma pessoa para alocar
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
 
-              {sprintsParaExibir.length === 0 && (
+              {squadsExibidas.length > 0 && sprintsParaExibir.length === 0 && (
                 <p style={{ color: C.muted }}>Selecione uma Sprint inicial acima pra montar o planejamento.</p>
               )}
             </>
@@ -388,10 +401,19 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
         </div>
 
         <div style={{ padding: "10px 24px", borderTop: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", fontSize: 11.5, color: C.muted }}>
-          <span>Arraste uma pessoa e solte-a no destino desejado.</span>
+          <span>Arraste uma pessoa e solte-a no destino desejado. Clique num nome pra ver as tasks dela na sprint.</span>
           <span>60h por pessoa / sprint</span>
         </div>
       </div>
+
+      {detalheDev && (
+        <ModalTasksDev
+          nome={detalheDev.nome}
+          sprint={detalheDev.sprint}
+          tarefas={tarefasDoDetalhe}
+          onFechar={() => setDetalheDev(null)}
+        />
+      )}
     </div>
   );
 }
@@ -400,10 +422,12 @@ function CartaoDev({
   dev,
   sprintOrigem,
   dragRef,
+  onAbrirDetalhe,
 }: {
   dev: { id: string; nome: string; papel: string | null };
   sprintOrigem: string | null;
   dragRef: React.MutableRefObject<{ devId: string; sprintOrigem: string | null } | null>;
+  onAbrirDetalhe?: () => void;
 }) {
   const iniciais = dev.nome
     .split(" ")
@@ -420,9 +444,10 @@ function CartaoDev({
         dragRef.current = { devId: dev.id, sprintOrigem };
         e.dataTransfer.effectAllowed = "move";
       }}
+      onClick={onAbrirDetalhe}
       className="kmm-chip"
-      style={{ display: "flex", alignItems: "center", gap: 8, cursor: "grab", padding: "6px 10px" }}
-      title={dev.nome}
+      style={{ display: "flex", alignItems: "center", gap: 8, cursor: onAbrirDetalhe ? "pointer" : "grab", padding: "6px 10px" }}
+      title={onAbrirDetalhe ? `${dev.nome} — clique para ver as tasks nesta sprint` : dev.nome}
     >
       <span
         style={{
@@ -446,6 +471,81 @@ function CartaoDev({
         {dev.papel && <span style={{ fontSize: 10.5, color: C.muted }}>{dev.papel}</span>}
       </span>
       <GripVertical size={13} color={C.faint} style={{ marginLeft: 2 }} />
+    </div>
+  );
+}
+
+/** Modal com as Task/Bug de 1 dev numa sprint específica (pedido por Heder em 2026-09-29): abre
+ * ao clicar no nome do dev dentro de uma squad/sprint no board de capacidade. */
+function ModalTasksDev({
+  nome,
+  sprint,
+  tarefas,
+  onFechar,
+}: {
+  nome: string;
+  sprint: string;
+  tarefas: TarefaParaCapacidade[];
+  onFechar: () => void;
+}) {
+  return (
+    <div
+      onClick={onFechar}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(22,19,15,.45)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 300,
+        padding: 20,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="kmm-card"
+        style={{ maxWidth: 560, width: "100%", maxHeight: "80vh", overflowY: "auto", padding: 20 }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+          <div>
+            <div style={{ fontFamily: "Sora,sans-serif", fontWeight: 800, fontSize: 16, color: C.text }}>{nome}</div>
+            <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+              {sprint} · {tarefas.length} item{tarefas.length === 1 ? "" : "s"}
+            </div>
+          </div>
+          <button onClick={onFechar} aria-label="Fechar" style={{ background: "none", border: "none", cursor: "pointer", color: C.muted, padding: 4 }}>
+            <X size={18} />
+          </button>
+        </div>
+
+        <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+          {tarefas.length === 0 && <p style={{ color: C.muted, fontSize: 13 }}>Nenhuma Task ou Bug encontrada.</p>}
+          {tarefas.map((t) => {
+            const status = corDeEstadoDevOps(t.state);
+            const tipoBug = t.tipo.toLowerCase() === "bug";
+            return (
+              <div key={t.id} style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 12px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                  <span style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{t.titulo}</span>
+                  <span
+                    className="kmm-chip"
+                    style={{ fontSize: 10.5, flexShrink: 0, background: tipoBug ? "#FBE7E4" : "#E7F0FA", color: tipoBug ? C.red : C.blue, borderColor: "transparent" }}
+                  >
+                    {t.tipo}
+                  </span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
+                  <span className="kmm-chip" style={{ fontSize: 10.5, background: status.bg, color: status.fg, borderColor: "transparent" }}>
+                    {t.state}
+                  </span>
+                  <span style={{ fontSize: 11, color: C.muted }}>{t.areaPath.split("\\").pop() || t.areaPath}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

@@ -42,39 +42,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ erro: erroAlocacoes.message }, { status: 500 });
   }
 
-  // Diagnóstico temporário (Heder, 2026-09-29): o POST de auto-alocar grava certo (conferido
-  // direto no banco), mas esse GET devolve 0/0 em produção — sem erro, ou seja, a query RODOU e
-  // não achou nada, não é falha de conexão. Nem cache explicava (já testado). "debug" aqui expõe
-  // pra que host do Supabase esta function está de fato apontando e uma contagem SEM filtro de
-  // produto, pra distinguir "banco errado" (contagemTotal também 0) de "algo no filtro" (
-  // contagemTotal > 0 mas o filtrado por produto = 0). Remover depois de achar a causa.
-  const { count: contagemTotalDevs } = await supabase.from("DevCapacidade").select("*", { count: "exact", head: true });
-  // totalDevsSemFiltro veio 39 (bate) mas o filtrado por produto veio 0 — próximo suspeito: o
-  // valor de fato gravado na coluna "produto" não é a string "KMM5" que a gente espera. Mostra 1
-  // linha crua (sem where nenhum) pra ver o valor exato, byte a byte, em JSON.
-  const { data: linhaCrua } = await supabase.from("DevCapacidade").select("produto, nome").limit(1);
-  const debug = {
-    produtoUsado: produto,
-    supabaseUrlHost: (() => {
-      try {
-        return new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").host;
-      } catch {
-        return "inválida:" + process.env.NEXT_PUBLIC_SUPABASE_URL;
-      }
-    })(),
-    contagemTotalDevsSemFiltro: contagemTotalDevs,
-    vercelEnv: process.env.VERCEL_ENV ?? null,
-    amostraLinhaCrua: linhaCrua,
-  };
-
-  // Cabeçalho explícito de no-cache (achado por Heder em 2026-09-29): confirmado que o POST de
-  // auto-alocar grava certo no Supabase (conferido direto no banco), mas o GET seguinte, em
-  // produção, devolvia 0 devs / 0 alocações mesmo sendo a chamada mais recente (não descartada
-  // pela guarda de corrida do frontend) — só reproduzível em produção, nunca localmente, o que
-  // aponta pra alguma camada de cache HTTP (CDN/edge da Vercel) na frente da function, já que
-  // `dynamic = "force-dynamic"` evita cache do próprio Next.js mas não necessariamente da CDN.
+  // Cache-Control explícito (achado por Heder em 2026-09-29, ver comentário em
+  // lib/supabase.ts::getServiceClient): o board ficava vazio em produção porque o fetch interno
+  // do client do Supabase era cacheado pelo Next.js — corrigido na raiz, mas mantém este cabeçalho
+  // aqui também como reforço específico pra esta rota.
   return NextResponse.json(
-    { devs: devs ?? [], alocacoes: alocacoes ?? [], debug },
+    { devs: devs ?? [], alocacoes: alocacoes ?? [] },
     { headers: { "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" } }
   );
 }

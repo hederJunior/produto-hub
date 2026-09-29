@@ -13,7 +13,10 @@ function sprintEhIgualOuPosterior(sprint: string, minima: string): boolean {
 }
 
 export type TarefaParaCapacidade = {
+  id: number;
+  titulo: string;
   tipo: string;
+  state: string;
   sprint: string;
   areaPath: string;
   responsavel: { nome: string } | null;

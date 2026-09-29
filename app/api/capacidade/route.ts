@@ -49,6 +49,10 @@ export async function GET(request: NextRequest) {
   // produto, pra distinguir "banco errado" (contagemTotal também 0) de "algo no filtro" (
   // contagemTotal > 0 mas o filtrado por produto = 0). Remover depois de achar a causa.
   const { count: contagemTotalDevs } = await supabase.from("DevCapacidade").select("*", { count: "exact", head: true });
+  // totalDevsSemFiltro veio 39 (bate) mas o filtrado por produto veio 0 — próximo suspeito: o
+  // valor de fato gravado na coluna "produto" não é a string "KMM5" que a gente espera. Mostra 1
+  // linha crua (sem where nenhum) pra ver o valor exato, byte a byte, em JSON.
+  const { data: linhaCrua } = await supabase.from("DevCapacidade").select("produto, nome").limit(1);
   const debug = {
     produtoUsado: produto,
     supabaseUrlHost: (() => {
@@ -60,6 +64,7 @@ export async function GET(request: NextRequest) {
     })(),
     contagemTotalDevsSemFiltro: contagemTotalDevs,
     vercelEnv: process.env.VERCEL_ENV ?? null,
+    amostraLinhaCrua: linhaCrua,
   };
 
   // Cabeçalho explícito de no-cache (achado por Heder em 2026-09-29): confirmado que o POST de

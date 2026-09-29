@@ -253,7 +253,8 @@ model IndicadorManual {
 /// Azure DevOps, então fica nulo nos devs criados automaticamente (editável no futuro, se pedido).
 model DevCapacidade {
   id           String               @id @default(uuid())
-  produto      Produto
+  produto      String // TEXT, não o enum Produto (achado em 2026-09-29: ver comentário em
+                       // AlocacaoCapacidade.produto)
   nome         String
   papel        String?
   criadoEm     DateTime             @default(now())
@@ -271,7 +272,14 @@ model AlocacaoCapacidade {
   id       String        @id @default(uuid())
   devId    String
   dev      DevCapacidade @relation(fields: [devId], references: [id], onDelete: Cascade)
-  produto  Produto
+  // TEXT, não o enum Produto usado no resto do schema — achado em 2026-09-29 depurando o board de
+  // capacidade ficando vazio em produção mesmo com o dado certo gravado: contagem SEM filtro de
+  // produto batia (39), mas `.eq("produto", "KMM5")` via PostgREST devolvia 0 SÓ na function da
+  // Vercel (nunca localmente, mesmo projeto Supabase, mesmo valor byte a byte confirmado) —
+  // sintoma raro de cast/schema-cache de tipo enum custom via PostgREST em ambientes diferentes.
+  // TEXT elimina esse cast por completo; o app já só grava "KMM4"/"KMM5" aqui mesmo (validado na
+  // aplicação, não no banco).
+  produto  String
   sprint   String // mesmo formato de TaskAlocada.sprint (IterationLevel3), ex.: "Sprint 8.16"
   squad    String // Area Path completo (DEVOPS_PROJETOS[produto].areaPaths)
   criadoEm DateTime      @default(now())

@@ -68,7 +68,7 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
         setDevs(j.devs ?? []);
         setAlocacoes(j.alocacoes ?? []);
         const d = j.debug
-          ? ` [debug: produto=${j.debug.produtoUsado} · host=${j.debug.supabaseUrlHost} · totalDevsSemFiltro=${j.debug.contagemTotalDevsSemFiltro} · vercelEnv=${j.debug.vercelEnv}]`
+          ? ` [debug: produto=${j.debug.produtoUsado} · host=${j.debug.supabaseUrlHost} · totalDevsSemFiltro=${j.debug.contagemTotalDevsSemFiltro} · vercelEnv=${j.debug.vercelEnv} · amostra=${JSON.stringify(j.debug.amostraLinhaCrua)}]`
           : "";
         setUltimaLeitura(`GET #${minhaSeq} (aplicado): ${(j.devs ?? []).length} devs / ${(j.alocacoes ?? []).length} alocações recebidos do servidor.${d}`);
       })

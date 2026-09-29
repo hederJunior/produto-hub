@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { GripVertical, X } from "lucide-react";
 import { C, corDoDev, corDeEstadoDevOps } from "@/lib/kmm-theme";
-import { agruparAlocacoesPorDevSprint, type TarefaParaCapacidade } from "@/lib/capacidade";
+import { agruparAlocacoesPorDevSprint, sprintEhIgualOuPosterior, type TarefaParaCapacidade } from "@/lib/capacidade";
 
 /**
  * Tela "Planejamento de capacidade" (Roadmap > Sprints, pedido por Heder em 2026-09-29): painel
@@ -143,7 +143,14 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
   const sprintsParaExibir = useMemo(() => {
     const doAlocacoes = new Set(alocacoes.map((a) => a.sprint));
     if (sprintInicial) doAlocacoes.add(sprintInicial);
-    return Array.from(doAlocacoes).sort((a, b) => {
+    // Só sprints >= Sprint inicial (achado por Heder em 2026-09-29): antes juntava TODA sprint que
+    // já tivesse alguma alocação, mesmo anterior à sprint inicial escolhida — ex.: Sprint 8.16
+    // aparecendo no board mesmo com 8.17 selecionada, porque uma alocação antiga (de um "Sprint
+    // inicial" escolhido antes, numa sessão anterior) ainda estava na tabela.
+    const lista = sprintInicial
+      ? Array.from(doAlocacoes).filter((s) => sprintEhIgualOuPosterior(s, sprintInicial))
+      : Array.from(doAlocacoes);
+    return lista.sort((a, b) => {
       const pa = /(\d+)\.(\d+)/.exec(a);
       const pb = /(\d+)\.(\d+)/.exec(b);
       if (!pa || !pb) return a.localeCompare(b);

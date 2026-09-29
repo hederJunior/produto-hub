@@ -5,7 +5,11 @@ function parseSprint(label: string): { major: number; minor: number } | null {
   return m ? { major: Number(m[1]), minor: Number(m[2]) } : null;
 }
 
-function sprintEhIgualOuPosterior(sprint: string, minima: string): boolean {
+/** Exportada (além de usada aqui) pra PainelCapacidade.tsx filtrar o board pela mesma regra da
+ * auto-alocação — achado por Heder em 2026-09-29: o board mostrava sprints anteriores à "Sprint
+ * inicial" escolhida (ex. Sprint 8.16 aparecendo mesmo com 8.17 selecionada), porque só unia os
+ * sprints já alocados sem checar se cada um era >= à sprint inicial. */
+export function sprintEhIgualOuPosterior(sprint: string, minima: string): boolean {
   const s = parseSprint(sprint);
   const m = parseSprint(minima);
   if (!s || !m) return false;

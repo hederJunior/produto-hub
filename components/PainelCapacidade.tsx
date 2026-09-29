@@ -67,7 +67,10 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
         if (j.erro) setErro(j.erro);
         setDevs(j.devs ?? []);
         setAlocacoes(j.alocacoes ?? []);
-        setUltimaLeitura(`GET #${minhaSeq} (aplicado): ${(j.devs ?? []).length} devs / ${(j.alocacoes ?? []).length} alocações recebidos do servidor.`);
+        const d = j.debug
+          ? ` [debug: produto=${j.debug.produtoUsado} · host=${j.debug.supabaseUrlHost} · totalDevsSemFiltro=${j.debug.contagemTotalDevsSemFiltro} · vercelEnv=${j.debug.vercelEnv}]`
+          : "";
+        setUltimaLeitura(`GET #${minhaSeq} (aplicado): ${(j.devs ?? []).length} devs / ${(j.alocacoes ?? []).length} alocações recebidos do servidor.${d}`);
       })
       .catch(() => {
         if (minhaSeq === cargaSeqRef.current) setErro("Não foi possível carregar o planejamento de capacidade.");

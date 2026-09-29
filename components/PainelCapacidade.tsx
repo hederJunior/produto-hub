@@ -75,7 +75,9 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
     fetch(`/api/roadmap/tarefas?produto=${PRODUTO}`, { cache: "no-store" })
       .then((res) => res.json())
       .then((j) => {
-        if (j.erro) setErro(j.erro);
+        // "detalhe" é diagnóstico temporário (Heder, 2026-09-30) — ver comentário em
+        // app/api/roadmap/tarefas/route.ts.
+        if (j.erro) setErro(j.detalhe ? `${j.erro} (${j.detalhe})` : j.erro);
         setTarefas(j.tarefas ?? []);
       })
       .catch(() => setErro("Não foi possível carregar as tasks/bugs do Azure DevOps (KMM5)."))

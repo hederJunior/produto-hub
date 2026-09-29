@@ -549,19 +549,28 @@ export async function getTasksAlocadas(project: string, sprintMinima: SprintMini
   const lotes: number[][] = [];
   for (let i = 0; i < ids.length; i += 200) lotes.push(ids.slice(i, i + 200));
 
-  const todos: WorkItem[] = [];
-  for (const lote of lotes) {
-    const res = await fetch(`${base}/wit/workitemsbatch?api-version=${API_VERSION}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeader(pat) },
-      body: JSON.stringify({ ids: lote, fields: CAMPOS_SPRINT_TASK }),
-    });
-    if (!res.ok) {
-      throw new Error(`Falha ao buscar lote de Tasks/Bugs alocados (${res.status}): ${await res.text()}`);
-    }
-    const { value } = (await res.json()) as { value: WorkItem[] };
-    todos.push(...value);
-  }
+  // Lotes em paralelo, não mais sequenciais (achado por Heder em 2026-09-30: aba Sprints com erro
+  // recorrente "Não foi possível carregar" em produção — projeto grande o bastante (KMM5 sozinho
+  // já passa de 1300 Task/Bug, 7 lotes) pra 7 round-trips sequenciais ao Azure DevOps se somarem a
+  // um tempo alto o bastante pra estourar o teto de execução da function na Vercel, mesmo cada
+  // lote individualmente sendo rápido — nunca reproduzido testando direto contra o Azure DevOps,
+  // que não tem esse teto). Paralelo corta o tempo total de ~N×latência pra ~1×latência.
+  const todos = (
+    await Promise.all(
+      lotes.map(async (lote) => {
+        const res = await fetch(`${base}/wit/workitemsbatch?api-version=${API_VERSION}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeader(pat) },
+          body: JSON.stringify({ ids: lote, fields: CAMPOS_SPRINT_TASK }),
+        });
+        if (!res.ok) {
+          throw new Error(`Falha ao buscar lote de Tasks/Bugs alocados (${res.status}): ${await res.text()}`);
+        }
+        const { value } = (await res.json()) as { value: WorkItem[] };
+        return value;
+      })
+    )
+  ).flat();
 
   return todos
     .map((w) => {

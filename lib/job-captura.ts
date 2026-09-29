@@ -146,6 +146,24 @@ export async function executarCaptura(): Promise<ResultadoCaptura[]> {
       await upsertEmLotes(supabase, "DemandaMensal", linhasMensal, "workItemId,mes");
     }
 
+    // Poda itens que deixaram de ser PBI (reclassificados pra Bug/Task, ou movidos pra fora do
+    // Area Path do produto) — sem isso, a linha upsertada na última captura em que o item ainda
+    // era PBI fica pra sempre em DemandaAtual/DemandaMensal, contando indevidamente no Fluxo de
+    // Demandas e nos painéis de Aging/Backlog de Viabilidade (achado por Heder em 2026-09-28: PBI
+    // reclassificado como Bug, #43972, continuava aparecendo em "Demandas Abertas" dias depois).
+    // NÃO mexe em DemandaSnapshot (log bruto de auditoria, propositalmente append-only).
+    const idsValidos = items.map((item) => item.id);
+    const filtroProduto = supabase.from("DemandaAtual").delete().eq("produto", produto);
+    const filtroProdutoMensal = supabase.from("DemandaMensal").delete().eq("produto", produto);
+    const { error: erroPodaAtual } = idsValidos.length
+      ? await filtroProduto.not("workItemId", "in", `(${idsValidos.join(",")})`)
+      : await filtroProduto;
+    const { error: erroPodaMensal } = idsValidos.length
+      ? await filtroProdutoMensal.not("workItemId", "in", `(${idsValidos.join(",")})`)
+      : await filtroProdutoMensal;
+    if (erroPodaAtual) throw new Error(`Falha ao podar DemandaAtual órfã (${produto}): ${erroPodaAtual.message}`);
+    if (erroPodaMensal) throw new Error(`Falha ao podar DemandaMensal órfã (${produto}): ${erroPodaMensal.message}`);
+
     resultados.push({ produto, itens: items.length, avisoTruncamento: possivelTruncamento });
   }
 

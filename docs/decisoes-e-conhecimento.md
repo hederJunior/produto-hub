@@ -1927,3 +1927,31 @@ mesmo cadastrado em `AllowedUser` sem precisar abrir o Supabase manualmente:
 ```
 node --env-file=.env scripts/verificar-acesso.mjs rodrigo.sampaio@nstech.com.br
 ```
+
+## 2026-10-10 — Cabeçalho único por página: filtros padrão + filtros da página na mesma linha
+
+Pedido de Heder (com mockup da tela Road Map): juntar o seletor padrão KMM4/KMM5/Ambos com os
+filtros de cada página, saindo do formato de filtros empilhados (barra global no topo + filtros
+da página abaixo do título + filtros dentro de cards). Regra dele: **nenhum filtro removido,
+só reposicionado**.
+
+Como ficou:
+- `components/ProdutoSwitcher.tsx` (extraído do AppShell) e `components/PageHeader.tsx` (novo):
+  título/subtítulo à esquerda; à direita, na mesma linha e com wrap, o seletor de produto +
+  os controles da página (`children`). A barra global `<header>` do `AppShell` foi removida.
+- Road Map: Visão (Road Map/Sprints/Comitês) + filtros da aba ativa no cabeçalho — Trimestre,
+  Área, Expandir/Comprimir (Road Map); Sprints, Áreas, Agrupar por, Exportar Excel, Esforço por
+  sprint, Planejar capacidade (Sprints); Data de Comitê (inline, 2 inputs + limpar), Áreas,
+  Clientes (Comitês). `LegendaStatus` continua no card do Gantt (é legenda, não filtro).
+- Painel de indicadores: Created date (agora popover com os mesmos 2 inputs + slider), Cliente,
+  Squad, Salvar/Limpar filtros no cabeçalho.
+- Clientes: Importar Excel / Novo cliente no cabeçalho. Alertas, Administração e JOB: só o
+  cabeçalho (o seletor de produto continua aparecendo, como antes, mesmo sendo no-op nelas).
+- Cadastro de devs e Indicadores manuais: têm seletor de produto PRÓPRIO (estado local,
+  independente do global). Ele virou o seletor do cabeçalho e o global foi ocultado
+  (`mostrarProduto={false}`) pra não ter 2 seletores de produto na mesma tela.
+
+Único comportamento removido: o botão de recolher/expandir do card de data (Comitês e Painel) —
+não faz mais sentido com os controles inline/popover; o filtro em si foi mantido.
+Verificado só com `tsc --noEmit` (limpo) + contagem de controles antes/depois; falta olhar no
+navegador (larguras estreitas fazem o cabeçalho quebrar em mais de uma linha, por design).

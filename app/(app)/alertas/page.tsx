@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, Info, AlertOctagon } from "lucide-react";
 import { C } from "@/lib/kmm-theme";
+import PageHeader from "@/components/PageHeader";
 
 type ItemAviso = {
   titulo: string;
@@ -35,8 +36,7 @@ export default function AlertasPage() {
 
   return (
     <div>
-      <h1 style={{ fontFamily: "Sora,sans-serif", fontSize: 26, margin: 0, color: C.text }}>Alertas e avisos</h1>
-      <p style={{ color: C.muted, marginTop: 4, marginBottom: 24 }}>O que o time de Produto precisa olhar primeiro nesta semana.</p>
+      <PageHeader titulo="Alertas e avisos" subtitulo="O que o time de Produto precisa olhar primeiro nesta semana." />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 24 }}>
         {(["CRITICO", "ATENCAO", "INFORMATIVO"] as const).map((sev) => (

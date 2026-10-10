@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Upload, Plus } from "lucide-react";
 import { useProduto } from "@/components/ProdutoContext";
 import { C, corDeStatus } from "@/lib/kmm-theme";
+import PageHeader from "@/components/PageHeader";
 
 type Cliente = {
   id: string;
@@ -83,29 +84,26 @@ export default function ClientesPage() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
-        <div>
-          <h1 style={{ fontFamily: "Sora,sans-serif", fontSize: 26, margin: 0, color: C.text }}>Gestão de clientes</h1>
-          <p style={{ color: C.muted, marginTop: 4 }}>Carteira do time de Produto, com responsável, situação e último contato.</p>
-        </div>
-        <div style={{ display: "flex", gap: 10 }}>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".xlsx,.xls"
-            style={{ display: "none" }}
-            onChange={(e) => e.target.files?.[0] && importarArquivo(e.target.files[0])}
-          />
-          <button className="kmm-btn" onClick={() => fileInputRef.current?.click()} disabled={importando}>
-            <Upload size={14} style={{ marginRight: 6, verticalAlign: -2 }} />
-            {importando ? "Importando…" : "Importar Excel"}
-          </button>
-          <button className="kmm-btn primary" onClick={() => setFormAberto((v) => !v)}>
-            <Plus size={14} style={{ marginRight: 6, verticalAlign: -2 }} />
-            Novo cliente
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        titulo="Gestão de clientes"
+        subtitulo="Carteira do time de Produto, com responsável, situação e último contato."
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".xlsx,.xls"
+          style={{ display: "none" }}
+          onChange={(e) => e.target.files?.[0] && importarArquivo(e.target.files[0])}
+        />
+        <button className="kmm-btn" onClick={() => fileInputRef.current?.click()} disabled={importando}>
+          <Upload size={14} style={{ marginRight: 6, verticalAlign: -2 }} />
+          {importando ? "Importando…" : "Importar Excel"}
+        </button>
+        <button className="kmm-btn primary" onClick={() => setFormAberto((v) => !v)}>
+          <Plus size={14} style={{ marginRight: 6, verticalAlign: -2 }} />
+          Novo cliente
+        </button>
+      </PageHeader>
 
       {mensagemImport && (
         <div className="kmm-card" style={{ marginBottom: 16, fontSize: 13 }}>{mensagemImport}</div>

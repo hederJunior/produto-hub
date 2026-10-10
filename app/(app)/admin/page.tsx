@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { RefreshCw, ClipboardEdit, Users, ChevronRight } from "lucide-react";
 import { C } from "@/lib/kmm-theme";
+import PageHeader from "@/components/PageHeader";
 
 const FERRAMENTAS = [
   {
@@ -29,10 +30,7 @@ const FERRAMENTAS = [
 export default function AdminPage() {
   return (
     <div>
-      <h1 style={{ fontFamily: "Sora,sans-serif", fontSize: 26, margin: 0, color: C.text }}>Administração</h1>
-      <p style={{ color: C.muted, marginTop: 4, marginBottom: 20 }}>
-        Ferramentas restritas a administradores do Produto Hub.
-      </p>
+      <PageHeader titulo="Administração" subtitulo="Ferramentas restritas a administradores do Produto Hub." />
 
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {FERRAMENTAS.map(({ href, icon: Icon, titulo, descricao }) => (

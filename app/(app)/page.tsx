@@ -6,6 +6,7 @@ import {
 } from "recharts";
 import { X, ChevronDown, Eraser } from "lucide-react";
 import { useProduto } from "@/components/ProdutoContext";
+import PageHeader from "@/components/PageHeader";
 import { C } from "@/lib/kmm-theme";
 import { mesLabel, classificarEncerramento } from "@/lib/demandas-agregacao";
 
@@ -80,6 +81,76 @@ function Chip({ ativo, cor, label, onClick }: { ativo: boolean; cor: string; lab
       <span style={{ width: 8, height: 8, borderRadius: "50%", background: ativo ? cor : C.faint, display: "inline-block" }} />
       {label}
     </button>
+  );
+}
+
+/**
+ * Filtro "Created date" como popover no cabeçalho (antes: card CREATED DATE colapsável, com par de
+ * inputs + slider, ocupando uma linha própria abaixo do título). Mesmos controles, só
+ * reposicionados — pedido por Heder em 2026-10-10.
+ */
+function FiltroCreatedDate({
+  dataInicio,
+  dataFim,
+  setDataInicio,
+  setDataFim,
+  min,
+  max,
+}: {
+  dataInicio: string;
+  dataFim: string;
+  setDataInicio: (v: string) => void;
+  setDataFim: (v: string) => void;
+  min: string;
+  max: string;
+}) {
+  const [aberto, setAberto] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function aoClicarFora(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setAberto(false);
+    }
+    document.addEventListener("mousedown", aoClicarFora);
+    return () => document.removeEventListener("mousedown", aoClicarFora);
+  }, []);
+
+  const fmt = (d: string) => d.split("-").reverse().join("/");
+  const rotulo = dataInicio || dataFim ? `${dataInicio ? fmt(dataInicio) : "…"} – ${dataFim ? fmt(dataFim) : "…"}` : "Todo o período";
+
+  return (
+    <div ref={ref} style={{ position: "relative", display: "flex", alignItems: "center", gap: 6 }}>
+      <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>Created date</span>
+      <button
+        type="button"
+        className="kmm-input"
+        onClick={() => setAberto((a) => !a)}
+        style={{ textAlign: "left", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, minWidth: 170, cursor: "pointer" }}
+      >
+        <span style={{ whiteSpace: "nowrap" }}>{rotulo}</span>
+        <ChevronDown size={14} color={C.muted} style={{ flexShrink: 0 }} />
+      </button>
+      {(dataInicio || dataFim) && (
+        <button className="kmm-btn" style={{ padding: 6 }} title="Limpar período" onClick={() => { setDataInicio(""); setDataFim(""); }}>
+          <Eraser size={13} />
+        </button>
+      )}
+      {aberto && (
+        <div className="kmm-card" style={{ position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 30, width: 380 }}>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input type="date" className="kmm-input" style={{ flex: 1 }} value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} />
+            <input type="date" className="kmm-input" style={{ flex: 1 }} value={dataFim} onChange={(e) => setDataFim(e.target.value)} />
+          </div>
+          <SliderData
+            min={min}
+            max={max}
+            dataInicio={dataInicio}
+            dataFim={dataFim}
+            onChange={(inicio, fim) => { setDataInicio(inicio); setDataFim(fim); }}
+          />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -478,7 +549,6 @@ export default function PainelIndicadoresAutomaticoPage() {
   const [encerradasItens, setEncerradasItens] = useState<ItemFluxoDetalhe[]>([]);
   const [carregandoEncerradas, setCarregandoEncerradas] = useState(false);
   const [salvandoFiltros, setSalvandoFiltros] = useState(false);
-  const [dataColapsada, setDataColapsada] = useState(false);
   const [mensagemFiltro, setMensagemFiltro] = useState<string | null>(null);
 
   // Carrega o setup de filtros salvo (uma vez, ao abrir a tela) e aplica como ponto de partida.
@@ -618,81 +688,44 @@ export default function PainelIndicadoresAutomaticoPage() {
 
   return (
     <div>
-      <h1 style={{ fontFamily: "Sora,sans-serif", fontSize: 26, margin: 0, color: C.text }}>Painel de indicadores</h1>
-      <p style={{ color: C.muted, marginTop: 4, marginBottom: 20 }}>
-        Fluxo, aging e backlog de viabilidade de {produto === "AMBOS" ? "KMM4 e KMM5" : produto}, a partir da captura diária do Azure DevOps.
-      </p>
-
-      {/* Barra de Data + barra de Cliente/Squad lado a lado, alinhadas horizontalmente (pedido
-          por Heder em 2026-09-20 — antes ficavam empilhadas verticalmente). */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "flex-start", marginBottom: 20 }}>
-        <div className="kmm-card" style={{ maxWidth: 380 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <span style={{ fontSize: 11, color: C.muted, fontWeight: 700, letterSpacing: ".04em" }}>CREATED DATE</span>
-            <div style={{ display: "flex", gap: 4 }}>
-              {(dataInicio || dataFim) && (
-                <button
-                  className="kmm-btn"
-                  style={{ padding: 6 }}
-                  title="Limpar período"
-                  onClick={() => { setDataInicio(""); setDataFim(""); }}
-                >
-                  <Eraser size={13} />
-                </button>
-              )}
-              <button
-                className="kmm-btn"
-                style={{ padding: 6 }}
-                title={dataColapsada ? "Expandir" : "Recolher"}
-                onClick={() => setDataColapsada((v) => !v)}
-              >
-                <ChevronDown size={13} style={{ transform: dataColapsada ? "rotate(-90deg)" : "none", transition: "transform .15s" }} />
-              </button>
-            </div>
-          </div>
-
-          {!dataColapsada && (
-            <>
-              <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                <input type="date" className="kmm-input" style={{ flex: 1 }} value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} />
-                <input type="date" className="kmm-input" style={{ flex: 1 }} value={dataFim} onChange={(e) => setDataFim(e.target.value)} />
-              </div>
-              <SliderData
-                min={dados?.filtros.dataMin ?? dataMinPadrao}
-                max={dados?.filtros.dataMax ?? dataMaxPadrao}
-                dataInicio={dataInicio}
-                dataFim={dataFim}
-                onChange={(inicio, fim) => { setDataInicio(inicio); setDataFim(fim); }}
-              />
-            </>
-          )}
+      <PageHeader
+        titulo="Painel de indicadores"
+        subtitulo={`Fluxo, aging e backlog de viabilidade de ${produto === "AMBOS" ? "KMM4 e KMM5" : produto}, a partir da captura diária do Azure DevOps.`}
+      >
+        {/* Filtros da página no mesmo cabeçalho do título/seletor de produto (antes: dois cards
+            empilhados abaixo do título — pedido por Heder em 2026-10-10). O card CREATED DATE
+            (inputs + slider) virou um popover pra não ocupar uma linha própria. */}
+        <FiltroCreatedDate
+          dataInicio={dataInicio}
+          dataFim={dataFim}
+          setDataInicio={setDataInicio}
+          setDataFim={setDataFim}
+          min={dados?.filtros.dataMin ?? dataMinPadrao}
+          max={dados?.filtros.dataMax ?? dataMaxPadrao}
+        />
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>Cliente</span>
+          <select className="kmm-input" style={{ width: "auto" }} value={cliente} onChange={(e) => setCliente(e.target.value)}>
+            <option value="">Todos</option>
+            {dados?.filtros.clientes.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
         </div>
-
-        <div className="kmm-card" style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "flex-end" }}>
-          <div>
-            <div style={{ fontSize: 12, color: C.muted, fontWeight: 600, marginBottom: 4 }}>Cliente</div>
-            <select className="kmm-input" value={cliente} onChange={(e) => setCliente(e.target.value)}>
-              <option value="">Todos</option>
-              {dados?.filtros.clientes.map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <div style={{ fontSize: 12, color: C.muted, fontWeight: 600, marginBottom: 4 }}>Squad</div>
-            <MultiSelectSquad opcoes={dados?.filtros.squads ?? []} selecionados={squads} onChange={setSquads} />
-          </div>
-          <button className="kmm-btn" onClick={salvarFiltros} disabled={salvandoFiltros}>
-            {salvandoFiltros ? "Salvando…" : "Salvar Filtros"}
-          </button>
-          {(cliente || squads.length > 0 || dataInicio || dataFim) && (
-            <button className="kmm-btn" onClick={limparFiltros}>Limpar filtros</button>
-          )}
-          {mensagemFiltro && (
-            <span style={{ fontSize: 12.5, color: C.green, alignSelf: "center" }}>{mensagemFiltro}</span>
-          )}
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>Squad</span>
+          <MultiSelectSquad opcoes={dados?.filtros.squads ?? []} selecionados={squads} onChange={setSquads} />
         </div>
-      </div>
+        <button className="kmm-btn" onClick={salvarFiltros} disabled={salvandoFiltros}>
+          {salvandoFiltros ? "Salvando…" : "Salvar Filtros"}
+        </button>
+        {(cliente || squads.length > 0 || dataInicio || dataFim) && (
+          <button className="kmm-btn" onClick={limparFiltros}>Limpar filtros</button>
+        )}
+        {mensagemFiltro && (
+          <span style={{ fontSize: 12.5, color: C.green }}>{mensagemFiltro}</span>
+        )}
+      </PageHeader>
 
       {carregando ? (
         <p style={{ color: C.muted }}>Carregando indicadores…</p>

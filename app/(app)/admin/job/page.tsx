@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { RefreshCw, CheckCircle2, XCircle, Loader2 } from "lucide-react";
 import { C } from "@/lib/kmm-theme";
+import PageHeader from "@/components/PageHeader";
 
 type Execucao = {
   id: string;
@@ -88,10 +89,7 @@ export default function JobPage() {
 
   return (
     <div>
-      <h1 style={{ fontFamily: "Sora,sans-serif", fontSize: 26, margin: 0, color: C.text }}>JOB de captura</h1>
-      <p style={{ color: C.muted, marginTop: 4, marginBottom: 24 }}>
-        Captura diária dos Product Backlog Items do Azure DevOps (KMM4/KMM5) para os indicadores.
-      </p>
+      <PageHeader titulo="JOB de captura" subtitulo="Captura diária dos Product Backlog Items do Azure DevOps (KMM4/KMM5) para os indicadores." />
 
       <div className="kmm-card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 16 }}>
         <div>

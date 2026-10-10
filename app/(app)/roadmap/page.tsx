@@ -6,6 +6,7 @@ import { BarChart3, Calendar, ChevronDown, ChevronUp, Clock, Download, Eraser, F
 import { useProduto } from "@/components/ProdutoContext";
 import { C, corDaArea, corDeEstadoDevOps, corDeStatus, corDoDev, estadoIndicaConcluido } from "@/lib/kmm-theme";
 import PainelCapacidade from "@/components/PainelCapacidade";
+import PageHeader from "@/components/PageHeader";
 
 // Estilo dos eixos/tooltip do recharts, igual ao já usado em app/(app)/page.tsx — mantém os
 // gráficos do app com a mesma cara (usado no painel "Esforço alocado por Sprint").
@@ -309,7 +310,6 @@ export default function RoadmapPage() {
   // indicadores (app/(app)/page.tsx) — pedido por Heder em 2026-09-28.
   const [dataInicioComites, setDataInicioComites] = useState("");
   const [dataFimComites, setDataFimComites] = useState("");
-  const [dataComitesColapsada, setDataComitesColapsada] = useState(false);
 
   const [agora, setAgora] = useState<Date | null>(null);
   useEffect(() => setAgora(new Date()), []);
@@ -499,19 +499,146 @@ export default function RoadmapPage() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
-        <div>
-          <h1 style={{ fontFamily: "Sora,sans-serif", fontSize: 26, margin: 0, color: C.text }}>Roadmap e entregas</h1>
-          <p style={{ color: C.muted, marginTop: 4, marginBottom: 0 }}>
-            {visao === "roadmap"
-              ? "Cronograma estratégico de desenvolvimento, marcos e entregas do time de Produto."
-              : "Sincronizado com o Azure DevOps."}
-          </p>
-        </div>
+      <PageHeader
+        titulo="Roadmap e entregas"
+        subtitulo={
+          visao === "roadmap"
+            ? "Cronograma estratégico de desenvolvimento, marcos e entregas do time de Produto."
+            : "Sincronizado com o Azure DevOps."
+        }
+      >
         <VisaoFiltro visao={visao} setVisao={setVisao} />
-      </div>
 
-      <div style={{ marginTop: 24 }}>
+        {visao === "roadmap" && (
+          <>
+            <FiltroTrimestre selecionados={quartersSelecionados} onChange={setQuartersSelecionados} />
+            <select
+              className="kmm-input"
+              style={{ width: "auto" }}
+              value={areaSelecionada}
+              onChange={(e) => setAreaSelecionada(e.target.value)}
+            >
+              <option value="todas">Todas as áreas</option>
+              {areasDisponiveis.map((a) => (
+                <option key={a} value={a}>
+                  {a.split("\\").pop() || a}
+                </option>
+              ))}
+            </select>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                className="kmm-btn"
+                onClick={() => setFeaturesAbertas(Object.fromEntries(epicosExibidos.map((e) => [e.id, true])))}
+              >
+                Expandir todos
+              </button>
+              <button
+                className="kmm-btn"
+                onClick={() => setFeaturesAbertas(Object.fromEntries(epicosExibidos.map((e) => [e.id, false])))}
+              >
+                Comprimir todos
+              </button>
+            </div>
+          </>
+        )}
+
+        {visao === "sprints" && (
+          <>
+            <MultiSelectFiltro
+              rotuloTodos="Todas as sprints"
+              opcoes={sprintsDisponiveis}
+              selecionados={sprintsSelecionadas}
+              onChange={setSprintsSelecionadas}
+            />
+            <MultiSelectFiltro
+              rotuloTodos="Todas as áreas"
+              opcoes={areasDisponiveisSprints}
+              selecionados={areasSelecionadasSprints}
+              onChange={setAreasSelecionadasSprints}
+              formatar={(a) => a.split("\\").pop() || a}
+            />
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>Agrupar por</span>
+              <select
+                className="kmm-input"
+                style={{ width: "auto" }}
+                value={agruparSprintsPor}
+                onChange={(e) => setAgruparSprintsPor(e.target.value as CampoAgrupamento)}
+              >
+                <option value="nenhum">Nenhum</option>
+                <option value="areaPath">Área</option>
+                <option value="responsavel">Resp.</option>
+                <option value="tipo">Tipo</option>
+              </select>
+            </div>
+            <button className="kmm-btn" onClick={exportarExcelSprints} disabled={!tarefasExibidas.length}>
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <Download size={13} /> Exportar Excel
+              </span>
+            </button>
+            <button className="kmm-btn" onClick={() => setPainelEsforcoAberto(true)}>
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <BarChart3 size={13} /> Esforço por sprint
+              </span>
+            </button>
+            <button className="kmm-btn" onClick={() => setPainelCapacidadeAberto(true)}>
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <Users size={13} /> Planejar capacidade
+              </span>
+            </button>
+          </>
+        )}
+
+        {visao === "comites" && (
+          <>
+            {/* Data de Comitê: antes um card colapsável próprio acima da lista (estilo "CREATED DATE"
+                do painel de indicadores); agora inline no cabeçalho, junto dos demais filtros
+                (reposicionamento pedido por Heder em 2026-10-10). */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>Data de Comitê</span>
+              <input
+                type="date"
+                className="kmm-input"
+                style={{ width: "auto" }}
+                value={dataInicioComites}
+                onChange={(e) => setDataInicioComites(e.target.value)}
+              />
+              <input
+                type="date"
+                className="kmm-input"
+                style={{ width: "auto" }}
+                value={dataFimComites}
+                onChange={(e) => setDataFimComites(e.target.value)}
+              />
+              {(dataInicioComites || dataFimComites) && (
+                <button
+                  className="kmm-btn"
+                  style={{ padding: 6 }}
+                  title="Limpar período"
+                  onClick={() => { setDataInicioComites(""); setDataFimComites(""); }}
+                >
+                  <Eraser size={13} />
+                </button>
+              )}
+            </div>
+            <MultiSelectFiltro
+              rotuloTodos="Todas as áreas"
+              opcoes={areasDisponiveisComites}
+              selecionados={areasSelecionadasComites}
+              onChange={setAreasSelecionadasComites}
+              formatar={(a) => a.split("\\").pop() || a}
+            />
+            <MultiSelectFiltro
+              rotuloTodos="Todos os clientes"
+              opcoes={clientesDisponiveis}
+              selecionados={clientesSelecionadosComites}
+              onChange={setClientesSelecionadosComites}
+            />
+          </>
+        )}
+      </PageHeader>
+
+      <div>
         {visao === "roadmap" ? (
           <>
             {carregandoRoadmap && <p style={{ color: C.muted }}>Carregando roadmap do Azure DevOps…</p>}
@@ -540,34 +667,6 @@ export default function RoadmapPage() {
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
                       <LegendaStatus />
-                      <FiltroTrimestre selecionados={quartersSelecionados} onChange={setQuartersSelecionados} />
-                      <select
-                        className="kmm-input"
-                        style={{ width: "auto" }}
-                        value={areaSelecionada}
-                        onChange={(e) => setAreaSelecionada(e.target.value)}
-                      >
-                        <option value="todas">Todas as áreas</option>
-                        {areasDisponiveis.map((a) => (
-                          <option key={a} value={a}>
-                            {a.split("\\").pop() || a}
-                          </option>
-                        ))}
-                      </select>
-                      <div style={{ display: "flex", gap: 8 }}>
-                        <button
-                          className="kmm-btn"
-                          onClick={() => setFeaturesAbertas(Object.fromEntries(epicosExibidos.map((e) => [e.id, true])))}
-                        >
-                          Expandir todos
-                        </button>
-                        <button
-                          className="kmm-btn"
-                          onClick={() => setFeaturesAbertas(Object.fromEntries(epicosExibidos.map((e) => [e.id, false])))}
-                        >
-                          Comprimir todos
-                        </button>
-                      </div>
                     </div>
                   </div>
 
@@ -599,72 +698,12 @@ export default function RoadmapPage() {
           </>
         ) : visao === "sprints" ? (
           <>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "flex-end",
-                flexWrap: "wrap",
-                gap: 12,
-                marginBottom: 16,
-              }}
-            >
-              <div>
-                <div style={{ fontFamily: "Sora,sans-serif", fontWeight: 800, fontSize: 20, color: C.text }}>
-                  Sprints {produtoLabelFooter}
-                </div>
-                <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
-                  Tasks e Bugs da Sprint 8.16 em diante.
-                </div>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontFamily: "Sora,sans-serif", fontWeight: 800, fontSize: 20, color: C.text }}>
+                Sprints {produtoLabelFooter}
               </div>
-              {/* marginLeft:"auto" em vez de justifyContent:"space-between" no pai (achado por
-                  Heder em 2026-09-29): com space-between, quando esse bloco não cabia ao lado do
-                  título e quebrava pra própria linha, ficava alinhado à ESQUERDA (só há 1 item
-                  nessa "linha" depois de quebrar — space-between não tem o que distribuir com 1
-                  item só). margin-left:auto empurra pra direita tanto colado no título quanto
-                  numa linha própria depois de quebrar. */}
-              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginLeft: "auto" }}>
-                <MultiSelectFiltro
-                  rotuloTodos="Todas as sprints"
-                  opcoes={sprintsDisponiveis}
-                  selecionados={sprintsSelecionadas}
-                  onChange={setSprintsSelecionadas}
-                />
-                <MultiSelectFiltro
-                  rotuloTodos="Todas as áreas"
-                  opcoes={areasDisponiveisSprints}
-                  selecionados={areasSelecionadasSprints}
-                  onChange={setAreasSelecionadasSprints}
-                  formatar={(a) => a.split("\\").pop() || a}
-                />
-                <button className="kmm-btn" onClick={exportarExcelSprints} disabled={!tarefasExibidas.length}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <Download size={13} /> Exportar Excel
-                  </span>
-                </button>
-                <button className="kmm-btn" onClick={() => setPainelEsforcoAberto(true)}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <BarChart3 size={13} /> Esforço por sprint
-                  </span>
-                </button>
-                <button className="kmm-btn" onClick={() => setPainelCapacidadeAberto(true)}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <Users size={13} /> Planejar capacidade
-                  </span>
-                </button>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>Agrupar por</span>
-                  <select
-                    className="kmm-input"
-                    style={{ width: "auto" }}
-                    value={agruparSprintsPor}
-                    onChange={(e) => setAgruparSprintsPor(e.target.value as CampoAgrupamento)}
-                  >
-                    <option value="nenhum">Nenhum</option>
-                    <option value="areaPath">Área</option>
-                    <option value="responsavel">Resp.</option>
-                    <option value="tipo">Tipo</option>
-                  </select>
-                </div>
+              <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+                Tasks e Bugs da Sprint 8.16 em diante.
               </div>
             </div>
             {carregandoSprints && <p style={{ color: C.muted }}>Carregando sprints do Azure DevOps…</p>}
@@ -682,89 +721,12 @@ export default function RoadmapPage() {
           </>
         ) : (
           <>
-            {/* Bloco de filtro por Data de Comitê, no mesmo estilo do card "CREATED DATE" do
-                painel de indicadores (app/(app)/page.tsx: kmm-card colapsável + par de inputs
-                de data + botão de limpar) — pedido por Heder em 2026-09-28. */}
-            <div className="kmm-card" style={{ maxWidth: 380, marginBottom: 16 }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <span style={{ fontSize: 11, color: C.muted, fontWeight: 700, letterSpacing: ".04em" }}>
-                  DATA DE COMITÊ
-                </span>
-                <div style={{ display: "flex", gap: 4 }}>
-                  {(dataInicioComites || dataFimComites) && (
-                    <button
-                      className="kmm-btn"
-                      style={{ padding: 6 }}
-                      title="Limpar período"
-                      onClick={() => { setDataInicioComites(""); setDataFimComites(""); }}
-                    >
-                      <Eraser size={13} />
-                    </button>
-                  )}
-                  <button
-                    className="kmm-btn"
-                    style={{ padding: 6 }}
-                    title={dataComitesColapsada ? "Expandir" : "Recolher"}
-                    onClick={() => setDataComitesColapsada((v) => !v)}
-                  >
-                    <ChevronDown
-                      size={13}
-                      style={{ transform: dataComitesColapsada ? "rotate(-90deg)" : "none", transition: "transform .15s" }}
-                    />
-                  </button>
-                </div>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontFamily: "Sora,sans-serif", fontWeight: 800, fontSize: 20, color: C.text }}>
+                Comitês {produtoLabelFooter}
               </div>
-              {!dataComitesColapsada && (
-                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                  <input
-                    type="date"
-                    className="kmm-input"
-                    style={{ flex: 1 }}
-                    value={dataInicioComites}
-                    onChange={(e) => setDataInicioComites(e.target.value)}
-                  />
-                  <input
-                    type="date"
-                    className="kmm-input"
-                    style={{ flex: 1 }}
-                    value={dataFimComites}
-                    onChange={(e) => setDataFimComites(e.target.value)}
-                  />
-                </div>
-              )}
-            </div>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "flex-end",
-                flexWrap: "wrap",
-                gap: 12,
-                marginBottom: 16,
-              }}
-            >
-              <div>
-                <div style={{ fontFamily: "Sora,sans-serif", fontWeight: 800, fontSize: 20, color: C.text }}>
-                  Comitês {produtoLabelFooter}
-                </div>
-                <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
-                  Demandas (PBIs) com Data de Comitê marcada no Azure DevOps.
-                </div>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                <MultiSelectFiltro
-                  rotuloTodos="Todas as áreas"
-                  opcoes={areasDisponiveisComites}
-                  selecionados={areasSelecionadasComites}
-                  onChange={setAreasSelecionadasComites}
-                  formatar={(a) => a.split("\\").pop() || a}
-                />
-                <MultiSelectFiltro
-                  rotuloTodos="Todos os clientes"
-                  opcoes={clientesDisponiveis}
-                  selecionados={clientesSelecionadosComites}
-                  onChange={setClientesSelecionadosComites}
-                />
+              <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+                Demandas (PBIs) com Data de Comitê marcada no Azure DevOps.
               </div>
             </div>
             {carregandoComites && <p style={{ color: C.muted }}>Carregando demandas de comitê do Azure DevOps…</p>}

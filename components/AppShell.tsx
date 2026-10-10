@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Users, Map, Bell, ShieldCheck } from "lucide-react";
-import { ProdutoProvider, useProduto, type ProdutoSelecionado } from "./ProdutoContext";
+import { ProdutoProvider } from "./ProdutoContext";
 import { C, FONTS } from "@/lib/kmm-theme";
 
 const NAV_ITEMS = [
@@ -29,28 +29,6 @@ function useTipoUsuario() {
   }, []);
 
   return tipo;
-}
-
-function ProdutoSwitcher() {
-  const { produto, setProduto } = useProduto();
-  const opcoes: { valor: ProdutoSelecionado; label: string }[] = [
-    { valor: "KMM4", label: "KMM4" },
-    { valor: "KMM5", label: "KMM5" },
-    { valor: "AMBOS", label: "Ambos" },
-  ];
-  return (
-    <div className="kmm-seg">
-      {opcoes.map((o) => (
-        <div
-          key={o.valor}
-          className={`kmm-seg-item${produto === o.valor ? " active" : ""}`}
-          onClick={() => setProduto(o.valor)}
-        >
-          {o.label}
-        </div>
-      ))}
-    </div>
-  );
 }
 
 function Sidebar() {
@@ -109,9 +87,6 @@ function ShellInner({ children }: { children: React.ReactNode }) {
           meses) empurra a coluna inteira pra fora do viewport em vez de ficar contido com scroll
           próprio (bug encontrado por Heder em 2026-09-29: tela cortada à direita). */}
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
-        <header style={{ display: "flex", justifyContent: "flex-end", padding: "18px 28px", borderBottom: `1px solid ${C.border}` }}>
-          <ProdutoSwitcher />
-        </header>
         <main style={{ flex: 1, minWidth: 0, padding: 28 }}>{children}</main>
       </div>
     </div>

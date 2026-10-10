@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Trash2, Pencil, X } from "lucide-react";
 import { C } from "@/lib/kmm-theme";
+import PageHeader from "@/components/PageHeader";
 
 type Dev = { id: string; nome: string; papel: string | null; produto: "KMM4" | "KMM5" };
 
@@ -92,20 +93,27 @@ export default function CadastroDevsPage() {
 
   return (
     <div>
-      <h1 style={{ fontFamily: "Sora,sans-serif", fontSize: 26, margin: 0, color: C.text }}>Cadastro de devs</h1>
-      <p style={{ color: C.muted, marginTop: 4, marginBottom: 20 }}>
-        Base de desenvolvedores usada no Planejamento de capacidade (Roadmap e entregas &gt; Sprints). Um dev
-        cadastrado aqui fica disponível pra vincular manualmente numa squad/sprint (função "Cadastrar
-        disponibilidade"), mesmo antes de ter qualquer Task/Bug atribuída no Azure DevOps.
-      </p>
+      <PageHeader
+        titulo="Cadastro de devs"
+        mostrarProduto={false}
+        subtitulo={
+          <>
+            Base de desenvolvedores usada no Planejamento de capacidade (Roadmap e entregas &gt; Sprints). Um dev cadastrado aqui fica disponível pra vincular manualmente numa squad/sprint (função "Cadastrar disponibilidade"), mesmo antes de ter qualquer Task/Bug atribuída no Azure DevOps.
+          </>
+        }
+      >
+        {/* Seletor de produto desta tela (independente do global) agora no cabeçalho — antes ficava
+            dentro do card de cadastro. Pedido por Heder em 2026-10-10. */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>Produto</span>
+          <select className="kmm-input" style={{ width: "auto" }} value={produto} onChange={(e) => setProduto(e.target.value as "KMM4" | "KMM5")}>
+            <option value="KMM4">KMM4</option>
+            <option value="KMM5">KMM5</option>
+          </select>
+        </div>
+      </PageHeader>
 
       <div className="kmm-card" style={{ marginBottom: 20 }}>
-        <div style={{ fontSize: 12, color: C.muted, fontWeight: 600, marginBottom: 4 }}>Produto</div>
-        <select className="kmm-input" style={{ width: "auto", marginBottom: 14 }} value={produto} onChange={(e) => setProduto(e.target.value as "KMM4" | "KMM5")}>
-          <option value="KMM4">KMM4</option>
-          <option value="KMM5">KMM5</option>
-        </select>
-
         <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end" }}>
           <div>
             <div style={{ fontSize: 12, color: C.muted, fontWeight: 600, marginBottom: 4 }}>Nome</div>

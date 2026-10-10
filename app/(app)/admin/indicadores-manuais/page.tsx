@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Trash2, Pencil, X } from "lucide-react";
 import { C } from "@/lib/kmm-theme";
 import { mesLabel } from "@/lib/demandas-agregacao";
+import PageHeader from "@/components/PageHeader";
 
 type Painel = "FLUXO_DEMANDAS" | "AGGING_VIABILIDADE" | "BACKLOG_VIABILIDADE";
 
@@ -134,22 +135,27 @@ export default function IndicadoresManuaisPage() {
 
   return (
     <div>
-      <h1 style={{ fontFamily: "Sora,sans-serif", fontSize: 26, margin: 0, color: C.text }}>Indicadores manuais</h1>
-      <p style={{ color: C.muted, marginTop: 4, marginBottom: 20 }}>
-        Lançamento de valores mensais por fora do JOB automático — use pra preencher meses anteriores ao início da
-        captura, ou pra corrigir um mês específico. Um mês lançado aqui substitui o calculado automaticamente no
-        painel de indicadores, sempre pro produto e mês escolhidos (o dado manual não tem recorte de Cliente/Squad).
-      </p>
-
-      <div className="kmm-card" style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "flex-end", marginBottom: 20 }}>
-        <div>
-          <div style={{ fontSize: 12, color: C.muted, fontWeight: 600, marginBottom: 4 }}>Produto</div>
-          <select className="kmm-input" value={produto} onChange={(e) => setProduto(e.target.value as "KMM4" | "KMM5")}>
+      <PageHeader
+        titulo="Indicadores manuais"
+        mostrarProduto={false}
+        subtitulo={
+          <>
+            Lançamento de valores mensais por fora do JOB automático — use pra preencher meses anteriores ao início da captura, ou pra corrigir um mês específico. Um mês lançado aqui substitui o calculado automaticamente no painel de indicadores, sempre pro produto e mês escolhidos (o dado manual não tem recorte de Cliente/Squad).
+          </>
+        }
+      >
+        {/* Seletor de produto desta tela (independente do global) agora no cabeçalho — pedido por
+            Heder em 2026-10-10. */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>Produto</span>
+          <select className="kmm-input" style={{ width: "auto" }} value={produto} onChange={(e) => setProduto(e.target.value as "KMM4" | "KMM5")}>
             <option value="KMM4">KMM4</option>
             <option value="KMM5">KMM5</option>
           </select>
         </div>
+      </PageHeader>
 
+      <div className="kmm-card" style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "flex-end", marginBottom: 20 }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {ABAS.map((a) => (
             <button

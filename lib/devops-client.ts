@@ -618,7 +618,7 @@ export async function getTasksAlocadas(project: string, sprintMinima: SprintMini
 // grade Dev/QA × Iteration. Precisa de 2 dados que a aba Sprints não carregava: o título dos PBIs
 // pai das Tasks e as datas de início/fim de cada sprint. =====
 
-export type ItemTitulo = { titulo: string; tipo: string };
+export type ItemTitulo = { titulo: string; tipo: string; estado: string };
 
 /**
  * Título e tipo de uma lista de work items por id (ex.: os PBIs pai das Tasks). Usa o endpoint
@@ -641,7 +641,7 @@ export async function getTitulosPorIds(ids: number[]): Promise<Record<number, It
         const res = await fetch(`https://dev.azure.com/${org}/_apis/wit/workitemsbatch?api-version=${API_VERSION}`, {
           method: "POST",
           headers: { "Content-Type": "application/json", ...authHeader(pat) },
-          body: JSON.stringify({ ids: lote, fields: ["System.Title", "System.WorkItemType"], errorPolicy: "Omit" }),
+          body: JSON.stringify({ ids: lote, fields: ["System.Title", "System.WorkItemType", "System.State"], errorPolicy: "Omit" }),
         });
         if (!res.ok) {
           throw new Error(`Falha ao buscar títulos de work items (${res.status}): ${await res.text()}`);
@@ -658,6 +658,7 @@ export async function getTitulosPorIds(ids: number[]): Promise<Record<number, It
     resultado[w.id] = {
       titulo: String(w.fields["System.Title"] ?? `Item ${w.id}`),
       tipo: String(w.fields["System.WorkItemType"] ?? ""),
+      estado: String(w.fields["System.State"] ?? ""),
     };
   }
   return resultado;

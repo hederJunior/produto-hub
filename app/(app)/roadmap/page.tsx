@@ -289,6 +289,7 @@ function FiltroTrimestre({ selecionados, onChange }: { selecionados: string[]; o
 }
 
 type Visao = "roadmap" | "sprints" | "comites";
+type ModoSprints = "alocacao" | "lista";
 
 export default function RoadmapPage() {
   const { produto } = useProduto();
@@ -330,7 +331,8 @@ export default function RoadmapPage() {
   const [dataInicioComites, setDataInicioComites] = useState("");
   const [dataFimComites, setDataFimComites] = useState("");
 
-  const [painelAlocacaoAberto, setPainelAlocacaoAberto] = useState(false);
+  // Tela da seção Sprints: "alocacao" (grade Recurso × Iteration, padrão) ou "lista" (tabela por sprint).
+  const [modoSprints, setModoSprints] = useState<ModoSprints>("alocacao");
   const [agora, setAgora] = useState<Date | null>(null);
   useEffect(() => setAgora(new Date()), []);
 
@@ -565,38 +567,42 @@ export default function RoadmapPage() {
 
         {visao === "sprints" && (
           <>
-            <MultiSelectFiltro
-              rotuloTodos="Todas as sprints"
-              opcoes={sprintsDisponiveis}
-              selecionados={sprintsSelecionadas}
-              onChange={setSprintsSelecionadas}
-            />
-            <MultiSelectFiltro
-              rotuloTodos="Todas as áreas"
-              opcoes={areasDisponiveisSprints}
-              selecionados={areasSelecionadasSprints}
-              onChange={setAreasSelecionadasSprints}
-              formatar={(a) => a.split("\\").pop() || a}
-            />
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>Agrupar por</span>
-              <select
-                className="kmm-input"
-                style={{ width: "auto" }}
-                value={agruparSprintsPor}
-                onChange={(e) => setAgruparSprintsPor(e.target.value as CampoAgrupamento)}
-              >
-                <option value="nenhum">Nenhum</option>
-                <option value="areaPath">Área</option>
-                <option value="responsavel">Resp.</option>
-                <option value="tipo">Tipo</option>
-              </select>
-            </div>
-            <button className="kmm-btn" onClick={exportarExcelSprints} disabled={!tarefasExibidas.length}>
-              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <Download size={13} /> Exportar Excel
-              </span>
-            </button>
+            {modoSprints === "lista" && (
+              <>
+                <MultiSelectFiltro
+                  rotuloTodos="Todas as sprints"
+                  opcoes={sprintsDisponiveis}
+                  selecionados={sprintsSelecionadas}
+                  onChange={setSprintsSelecionadas}
+                />
+                <MultiSelectFiltro
+                  rotuloTodos="Todas as áreas"
+                  opcoes={areasDisponiveisSprints}
+                  selecionados={areasSelecionadasSprints}
+                  onChange={setAreasSelecionadasSprints}
+                  formatar={(a) => a.split("\\").pop() || a}
+                />
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>Agrupar por</span>
+                  <select
+                    className="kmm-input"
+                    style={{ width: "auto" }}
+                    value={agruparSprintsPor}
+                    onChange={(e) => setAgruparSprintsPor(e.target.value as CampoAgrupamento)}
+                  >
+                    <option value="nenhum">Nenhum</option>
+                    <option value="areaPath">Área</option>
+                    <option value="responsavel">Resp.</option>
+                    <option value="tipo">Tipo</option>
+                  </select>
+                </div>
+                <button className="kmm-btn" onClick={exportarExcelSprints} disabled={!tarefasExibidas.length}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <Download size={13} /> Exportar Excel
+                  </span>
+                </button>
+              </>
+            )}
             <button className="kmm-btn" onClick={() => setPainelEsforcoAberto(true)}>
               <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <BarChart3 size={13} /> Esforço por sprint
@@ -607,11 +613,23 @@ export default function RoadmapPage() {
                 <Users size={13} /> Planejar capacidade
               </span>
             </button>
-            <button className="kmm-btn" onClick={() => setPainelAlocacaoAberto(true)}>
-              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <CalendarRange size={13} /> Alocação por sprint
-              </span>
-            </button>
+            <div className="kmm-seg">
+              {(
+                [
+                  { valor: "alocacao", label: "Alocação por sprint", icone: <CalendarRange size={13} /> },
+                  { valor: "lista", label: "Lista por sprint", icone: <Calendar size={13} /> },
+                ] as { valor: ModoSprints; label: string; icone: React.ReactNode }[]
+              ).map((o) => (
+                <div
+                  key={o.valor}
+                  className={`kmm-seg-item${modoSprints === o.valor ? " active" : ""}`}
+                  style={{ display: "flex", alignItems: "center", gap: 6 }}
+                  onClick={() => setModoSprints(o.valor)}
+                >
+                  {o.icone} {o.label}
+                </div>
+              ))}
+            </div>
           </>
         )}
 
@@ -738,10 +756,13 @@ export default function RoadmapPage() {
                 {erroSprints}
               </div>
             )}
-            {!carregandoSprints && !erroSprints && tarefasExibidas.length === 0 && (
+            {modoSprints === "alocacao" && !carregandoSprints && !erroSprints && (
+              <PainelAlocacaoPorSprint tarefas={tarefas} produto={produto} areasDisponiveis={areasDisponiveisSprints} />
+            )}
+            {modoSprints === "lista" && !carregandoSprints && !erroSprints && tarefasExibidas.length === 0 && (
               <p style={{ color: C.muted }}>Nenhuma Task ou Bug encontrada para os filtros selecionados.</p>
             )}
-            {!carregandoSprints && !erroSprints && tarefasExibidas.length > 0 && (
+            {modoSprints === "lista" && !carregandoSprints && !erroSprints && tarefasExibidas.length > 0 && (
               <SprintsAlocadas tarefas={tarefasExibidas} agruparPor={agruparSprintsPor} />
             )}
           </>
@@ -775,14 +796,6 @@ export default function RoadmapPage() {
           tarefas={tarefas}
           areasDisponiveis={areasDisponiveisSprints}
           onFechar={() => setPainelEsforcoAberto(false)}
-        />
-      )}
-      {painelAlocacaoAberto && (
-        <PainelAlocacaoPorSprint
-          tarefas={tarefas}
-          produto={produto}
-          areasDisponiveis={areasDisponiveisSprints}
-          onFechar={() => setPainelAlocacaoAberto(false)}
         />
       )}
       <PainelCapacidade aberto={painelCapacidadeAberto} onFechar={() => setPainelCapacidadeAberto(false)} />
@@ -1805,20 +1818,19 @@ function PainelAlocacaoPorSprint({
   tarefas,
   produto,
   areasDisponiveis,
-  onFechar,
 }: {
   tarefas: TaskAlocada[];
   produto: string;
   areasDisponiveis: string[];
-  onFechar: () => void;
 }) {
-  const [pais, setPais] = useState<Record<number, { titulo: string; tipo: string }>>({});
+  const [pais, setPais] = useState<Record<number, { titulo: string; tipo: string; estado: string }>>({});
   const [carregandoPais, setCarregandoPais] = useState(false);
   const [datas, setDatas] = useState<Record<string, { inicio: string | null; fim: string | null }>>({});
   const [roster, setRoster] = useState<{ nome: string; papel: string | null }[]>([]);
   const [areasFiltro, setAreasFiltro] = useState<string[]>([]);
   const [inicial, setInicial] = useState<string | null>(null);
   const [sprintsFiltro, setSprintsFiltro] = useState<string[]>([]);
+  const [funcoesFiltro, setFuncoesFiltro] = useState<string[]>([]);
   const [comprimidos, setComprimidos] = useState<Record<string, boolean>>({});
 
   // Títulos dos PBIs pai — só ao abrir o panel (não pesa a aba Sprints).
@@ -1928,13 +1940,19 @@ function PainelAlocacaoPorSprint({
     if (!areasFiltro.length) for (const d of roster) adicionar(d.nome);
     const semResp = normalizarNomePessoa(SEM_RESPONSAVEL);
     const ordenar = (a: { nome: string }, b: { nome: string }) => a.nome.localeCompare(b.nome, "pt-BR");
-    const todos = Array.from(porChave.values());
+    // Filtro de Função (Dev/QA): vazio = todas. "Sem responsável" não tem função, então some
+    // quando há filtro ativo.
+    const todos = Array.from(porChave.values()).filter((l) => {
+      if (!funcoesFiltro.length) return true;
+      if (l.chave === semResp) return false;
+      return funcoesFiltro.includes(l.qa ? "QA" : "Dev");
+    });
     return [
       ...todos.filter((l) => !l.qa && l.chave !== semResp).sort(ordenar),
       ...todos.filter((l) => l.qa && l.chave !== semResp).sort(ordenar),
       ...todos.filter((l) => l.chave === semResp),
     ];
-  }, [tarefasFiltradas, roster, areasFiltro]);
+  }, [tarefasFiltradas, roster, areasFiltro, funcoesFiltro]);
 
   const celulas = useMemo(() => {
     const mapa = new Map<string, TaskAlocada[]>();
@@ -1945,7 +1963,11 @@ function PainelAlocacaoPorSprint({
     return mapa;
   }, [tarefasFiltradas]);
 
-  const areasNaLegenda = useMemo(() => Array.from(new Set(tarefasFiltradas.map((t) => t.areaPath))).sort(), [tarefasFiltradas]);
+  const areasNaLegenda = useMemo(() => {
+    const visiveis = new Set(linhas.map((l) => l.chave));
+    const doVisiveis = tarefasFiltradas.filter((t) => visiveis.has(normalizarNomePessoa(t.responsavel?.nome ?? SEM_RESPONSAVEL)));
+    return Array.from(new Set(doVisiveis.map((t) => t.areaPath))).sort();
+  }, [tarefasFiltradas, linhas]);
 
   const fmtCurta = (iso: string) => iso.slice(0, 10).split("-").reverse().slice(0, 2).join("/");
   const BORDA = `1px solid ${C.border}`;
@@ -1953,46 +1975,24 @@ function PainelAlocacaoPorSprint({
   const LARGURA_SPRINT = 240;
 
   return (
-    <div
-      onClick={onFechar}
-      style={{ position: "fixed", inset: 0, background: "rgba(22,19,15,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 20 }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="kmm-card"
-        style={{ maxWidth: 1320, width: "100%", maxHeight: "90vh", display: "flex", flexDirection: "column", padding: 22 }}
-      >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 14 }}>
-          <div>
-            <div style={{ fontFamily: "Sora,sans-serif", fontWeight: 800, fontSize: 18, color: C.text }}>Alocação por sprint</div>
-            <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
-              Recurso × Iteration · PBI pai e Tasks/Bugs de cada pessoa em cada sprint (cor = Área).
-            </div>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-            <button className="kmm-btn" style={{ padding: "6px 10px", fontSize: 12 }} onClick={() => setComprimidos({})}>
-              Expandir todos
-            </button>
-            <button
-              className="kmm-btn"
-              style={{ padding: "6px 10px", fontSize: 12 }}
-              onClick={() => setComprimidos(Object.fromEntries(linhas.map((l) => [l.chave, true])))}
-            >
-              Comprimir todos
-            </button>
-            <button onClick={onFechar} style={{ background: "none", border: "none", cursor: "pointer", color: C.muted, padding: 4 }}>
-              <X size={18} />
-            </button>
-          </div>
-        </div>
+    <div className="kmm-card" style={{ display: "flex", flexDirection: "column", padding: 18 }}>
+      <div style={{ fontSize: 12, color: C.muted, marginBottom: 12 }}>
+        Recurso × Iteration · PBI pai e Tasks/Bugs de cada pessoa em cada sprint (cor = Área).
+      </div>
 
-        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
           <MultiSelectFiltro
             rotuloTodos="Todas as áreas"
             opcoes={areasDisponiveis}
             selecionados={areasFiltro}
             onChange={setAreasFiltro}
             formatar={(a) => a.split("\\").pop() || a}
+          />
+          <MultiSelectFiltro
+            rotuloTodos="Todas as funções"
+            opcoes={["Dev", "QA"]}
+            selecionados={funcoesFiltro}
+            onChange={setFuncoesFiltro}
           />
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>A partir da</span>
@@ -2011,12 +2011,24 @@ function PainelAlocacaoPorSprint({
             onChange={setSprintsFiltro}
           />
           {carregandoPais && <span style={{ fontSize: 12, color: C.muted }}>Carregando títulos dos PBIs…</span>}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: "auto" }}>
+            <button className="kmm-btn" style={{ padding: "6px 10px", fontSize: 12 }} onClick={() => setComprimidos({})}>
+              Expandir todos
+            </button>
+            <button
+              className="kmm-btn"
+              style={{ padding: "6px 10px", fontSize: 12 }}
+              onClick={() => setComprimidos(Object.fromEntries(linhas.map((l) => [l.chave, true])))}
+            >
+              Comprimir todos
+            </button>
+          </div>
         </div>
 
         {sprintsVisiveis.length === 0 ? (
           <p style={{ color: C.muted }}>Nenhuma Task ou Bug alocada em sprint para exibir.</p>
         ) : (
-          <div style={{ overflow: "auto", border: BORDA, borderRadius: 10, minHeight: 0 }}>
+          <div style={{ overflow: "auto", border: BORDA, borderRadius: 10, minHeight: 360, maxHeight: "calc(100vh - 340px)" }}>
             <div
               style={{
                 display: "grid",
@@ -2080,7 +2092,6 @@ function PainelAlocacaoPorSprint({
             ))}
           </div>
         )}
-      </div>
     </div>
   );
 }
@@ -2099,7 +2110,7 @@ function PainelAlocacaoLinha({
   linha: { chave: string; nome: string; qa: boolean };
   sprints: string[];
   celulas: Map<string, TaskAlocada[]>;
-  pais: Record<number, { titulo: string; tipo: string }>;
+  pais: Record<number, { titulo: string; tipo: string; estado: string }>;
   carregandoPais: boolean;
   borda: string;
   comprimido: boolean;
@@ -2177,6 +2188,13 @@ function PainelAlocacaoLinha({
                   >
                     {rotuloPai}
                   </div>
+                  {pai?.estado && (
+                    <span
+                      style={{ display: "inline-block", marginTop: 3, marginBottom: comprimido ? 0 : 3, padding: "1px 7px", borderRadius: 999, background: "rgba(255,255,255,.92)", color: C.text, fontSize: 10.5, fontWeight: 700 }}
+                    >
+                      {pai.estado}
+                    </span>
+                  )}
                   {!comprimido && g.itens.map((t) => (
                     <div key={t.id} style={{ display: "flex", justifyContent: "space-between", gap: 6, opacity: 0.95 }}>
                       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>

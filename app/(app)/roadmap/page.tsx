@@ -2156,7 +2156,7 @@ function PainelAlocacaoLinha({
 
         return (
           <div key={sp} style={{ borderBottom: borda, borderRight: borda, padding: 6, minWidth: 0 }}>
-            {total > 0 && !comprimido && (
+            {total > 0 && (
               <div style={{ textAlign: "right", fontSize: 10.5, fontWeight: 700, color: C.faint, padding: "0 2px 3px", fontVariantNumeric: "tabular-nums" }}>
                 {total}h
               </div>

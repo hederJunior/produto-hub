@@ -1818,6 +1818,8 @@ function PainelAlocacaoPorSprint({
   const [roster, setRoster] = useState<{ nome: string; papel: string | null }[]>([]);
   const [areasFiltro, setAreasFiltro] = useState<string[]>([]);
   const [inicial, setInicial] = useState<string | null>(null);
+  const [sprintsFiltro, setSprintsFiltro] = useState<string[]>([]);
+  const [comprimidos, setComprimidos] = useState<Record<string, boolean>>({});
 
   // Títulos dos PBIs pai — só ao abrir o panel (não pesa a aba Sprints).
   useEffect(() => {
@@ -1904,7 +1906,10 @@ function PainelAlocacaoPorSprint({
     : sprintsOrdenadas[0] ?? "";
   const inicialEfetivo = inicial ?? inicialPadrao;
   const idxInicial = Math.max(0, sprintsOrdenadas.indexOf(inicialEfetivo));
-  const sprintsVisiveis = sprintsOrdenadas.slice(idxInicial);
+  const sprintsDoIntervalo = sprintsOrdenadas.slice(idxInicial);
+  const sprintsVisiveis = sprintsFiltro.length
+    ? sprintsDoIntervalo.filter((sp) => sprintsFiltro.includes(sp))
+    : sprintsDoIntervalo;
 
   // Linhas: quem tem Task/Bug (já com o filtro de Área) + roster inteiro quando não há filtro de
   // Área (pra mostrar quem está livre). Chave por nome normalizado (displayName do Azure × Cadastro).
@@ -1964,9 +1969,21 @@ function PainelAlocacaoPorSprint({
               Recurso × Iteration · PBI pai e Tasks/Bugs de cada pessoa em cada sprint (cor = Área).
             </div>
           </div>
-          <button onClick={onFechar} style={{ background: "none", border: "none", cursor: "pointer", color: C.muted, padding: 4 }}>
-            <X size={18} />
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+            <button className="kmm-btn" style={{ padding: "6px 10px", fontSize: 12 }} onClick={() => setComprimidos({})}>
+              Expandir todos
+            </button>
+            <button
+              className="kmm-btn"
+              style={{ padding: "6px 10px", fontSize: 12 }}
+              onClick={() => setComprimidos(Object.fromEntries(linhas.map((l) => [l.chave, true])))}
+            >
+              Comprimir todos
+            </button>
+            <button onClick={onFechar} style={{ background: "none", border: "none", cursor: "pointer", color: C.muted, padding: 4 }}>
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
@@ -1987,6 +2004,12 @@ function PainelAlocacaoPorSprint({
               ))}
             </select>
           </div>
+          <MultiSelectFiltro
+            rotuloTodos="Todas as sprints"
+            opcoes={sprintsDoIntervalo}
+            selecionados={sprintsFiltro}
+            onChange={setSprintsFiltro}
+          />
           {carregandoPais && <span style={{ fontSize: 12, color: C.muted }}>Carregando títulos dos PBIs…</span>}
         </div>
 
@@ -2038,6 +2061,8 @@ function PainelAlocacaoPorSprint({
                   pais={pais}
                   carregandoPais={carregandoPais}
                   borda={BORDA}
+                  comprimido={!!comprimidos[linha.chave]}
+                  onToggle={() => setComprimidos((prev) => ({ ...prev, [linha.chave]: !prev[linha.chave] }))}
                 />
               ))}
             </div>
@@ -2068,6 +2093,8 @@ function PainelAlocacaoLinha({
   pais,
   carregandoPais,
   borda,
+  comprimido,
+  onToggle,
 }: {
   linha: { chave: string; nome: string; qa: boolean };
   sprints: string[];
@@ -2075,13 +2102,22 @@ function PainelAlocacaoLinha({
   pais: Record<number, { titulo: string; tipo: string }>;
   carregandoPais: boolean;
   borda: string;
+  comprimido: boolean;
+  onToggle: () => void;
 }) {
   return (
     <>
       <div
         style={{ position: "sticky", left: 0, zIndex: 1, background: "#fff", borderBottom: borda, borderRight: borda, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 4, justifyContent: "flex-start" }}
       >
-        <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{linha.nome}</span>
+        <button
+          onClick={onToggle}
+          title={comprimido ? "Expandir" : "Comprimir"}
+          style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", padding: 0, textAlign: "left", fontFamily: "inherit" }}
+        >
+          {comprimido ? <ChevronRight size={14} color={C.muted} /> : <ChevronDown size={14} color={C.muted} />}
+          <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{linha.nome}</span>
+        </button>
         {linha.chave !== normalizarNomePessoa(SEM_RESPONSAVEL) && (
           <span
             className="kmm-chip"
@@ -2109,7 +2145,7 @@ function PainelAlocacaoLinha({
 
         return (
           <div key={sp} style={{ borderBottom: borda, borderRight: borda, padding: 6, minWidth: 0 }}>
-            {total > 0 && (
+            {total > 0 && !comprimido && (
               <div style={{ textAlign: "right", fontSize: 10.5, fontWeight: 700, color: C.faint, padding: "0 2px 3px", fontVariantNumeric: "tabular-nums" }}>
                 {total}h
               </div>
@@ -2137,11 +2173,11 @@ function PainelAlocacaoLinha({
                   style={{ background: cor.bg, color: cor.fg, borderRadius: 6, padding: "6px 8px", marginBottom: 4, fontSize: 11.5, lineHeight: 1.35 }}
                 >
                   <div
-                    style={{ fontWeight: 700, fontSize: 12, marginBottom: 3, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}
+                    style={{ fontWeight: 700, fontSize: 12, marginBottom: comprimido ? 0 : 3, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}
                   >
                     {rotuloPai}
                   </div>
-                  {g.itens.map((t) => (
+                  {!comprimido && g.itens.map((t) => (
                     <div key={t.id} style={{ display: "flex", justifyContent: "space-between", gap: 6, opacity: 0.95 }}>
                       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {t.tipo === "Bug" ? "Bug " : ""}#{t.id} · {t.titulo}

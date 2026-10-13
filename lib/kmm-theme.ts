@@ -138,12 +138,26 @@ export const COR_AREA_REGISTRADA: Record<string, string> = {
   "projetos de implantacao": "#3A3632", // grafite quente (do C.dark) — rascunho: cinza escuro
   swat: "#3E7CB1", // C.blue — rascunho: azul
   "dedicada maroni": "#E8920C", // C.amber — rascunho: amarelo
+  kmm5: "#2E9E5B", // verde
+  "cabotagem - maersk": "#0E9488", // teal
+  "dedicada transben": "#8D9A1B", // oliva
+  ecossistema: "#22B8CF", // ciano
+  melhorias: "#8B5CF6", // violeta
+  migracao: "#FC4C02", // laranja (acento do tema)
+  "obrigacoes legais e financeiras": "#6D4C41", // marrom
+  "servicos da carteira": "#C2185B", // rosa
+  sustentacao: "#DD3322", // vermelho
+  "torre de controle": "#A8977F", // areia
 };
 
-/** Último segmento do Area Path, minúsculo e sem acentos (chave do registro de cores). */
+/**
+ * Último segmento do Area Path, minúsculo, sem acentos e sem o prefixo "TMS - " (chave do
+ * registro de cores). Sem tirar o prefixo, "TMS - SWAT" nunca casava com a chave "swat" e a área
+ * caía no fallback por hash, que repete cor entre áreas.
+ */
 export function normalizarNomeArea(areaPath: string): string {
   const ultimo = areaPath.split("\\").pop() || areaPath;
-  return ultimo.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+  return ultimo.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase().replace(/^tms\s*-\s*/, "");
 }
 
 /** Texto branco ou escuro conforme a luminância do fundo (WCAG: luminância relativa). */

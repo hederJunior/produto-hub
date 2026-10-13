@@ -6,7 +6,6 @@
  * O PAT precisa do escopo "Work Items → Read" (mesmo requisito já identificado no roadmap-panel).
  */
 
-import { estadoIndicaConcluido } from "./kmm-theme";
 
 const API_VERSION = "7.1";
 
@@ -630,6 +629,8 @@ export type DemandaComite = {
   po: string;
   state: string;
   dataComite: string | null;
+  /** System.CreatedDate (ISO) — base da coluna calculada "Agging" (hoje − Created Date). */
+  createdDate: string;
 };
 
 const CAMPOS_DEMANDA_COMITE = [
@@ -639,6 +640,7 @@ const CAMPOS_DEMANDA_COMITE = [
   "System.AreaPath",
   "Custom.Cliente",
   "Custom.PO",
+  "System.CreatedDate",
   CAMPO_DATA_COMITE,
 ];
 
@@ -650,10 +652,9 @@ const CAMPOS_DEMANDA_COMITE = [
  * possíveis — perguntei antes de escrever a query):
  * - Só entra o PBI que JÁ TEM esse campo de data preenchido — `[CAMPO_DATA_COMITE] <> ''` na
  *   WIQL é filtro de inclusão mesmo, não é "todo PBI em aberto, mostrando a data quando tiver".
- * - Exclui PBIs já concluídos/fechados. Como não dá pra confiar numa lista fixa de valores
- *   exatos de State (cada squad usa uma convenção diferente — mesmo problema documentado em
- *   corDeEstadoDevOps/estadoIndicaConcluido em lib/kmm-theme.ts), a WIQL só exclui Removed e o
- *   filtro de "concluído" roda em JS reaproveitando `estadoIndicaConcluido()`.
+ * - (v1, 2026-09-28) Excluía concluídos/fechados via `estadoIndicaConcluido()`. Substituído em
+ *   2026-10-12 pela regra explícita State = 'Backlog' + Etapa = 'Comitê' na própria WIQL — o
+ *   filtro em JS ficou redundante e foi removido.
  *
  * BUG corrigido em 2026-09-28 (Heder reportou a aba "Comitês" vazia mesmo com PBIs claramente com
  * a data marcada — ex.: #41987): a v1 usava `queryWorkItems()`, que busca os detalhes numa única
@@ -679,15 +680,16 @@ export async function getDemandasComite(projetos: string[]): Promise<DemandaComi
   const porProjeto = await Promise.all(
     projetos.map(async (project) => {
       const base = `https://dev.azure.com/${org}/${encodeURIComponent(project)}/_apis`;
-      // Só PBIs ainda no estado "Backlog" (pedido por Heder em 2026-09-28) — os já movidos
-      // pra estados seguintes do fluxo (Doing, Done etc.) saem da lista mesmo com Data de
-      // Comitê preenchida.
+      // Regra de inclusão da aba Comitês (confirmada por Heder em 2026-10-12): Item Type = PBI,
+      // State = Backlog, Etapa (Custom.Etapa) = Comitê e Data Comitê preenchida. Os já movidos
+      // pra outros estados/etapas saem da lista mesmo com Data de Comitê preenchida.
       const wiql = `
         SELECT [System.Id]
         FROM WorkItems
         WHERE [System.TeamProject] = '${project}'
           AND [System.WorkItemType] = 'Product Backlog Item'
           AND [System.State] = 'Backlog'
+          AND [Custom.Etapa] = 'Comitê'
           AND [${CAMPO_DATA_COMITE}] <> ''
         ORDER BY [${CAMPO_DATA_COMITE}] ASC
       `;
@@ -739,7 +741,7 @@ export async function getDemandasComite(projetos: string[]): Promise<DemandaComi
         po: po?.displayName ?? "",
         state: String(w.fields["System.State"] ?? ""),
         dataComite: (w.fields[CAMPO_DATA_COMITE] as string) ?? null,
+        createdDate: String(w.fields["System.CreatedDate"] ?? ""),
       };
-    })
-    .filter((d) => !estadoIndicaConcluido(d.state));
+    });
 }

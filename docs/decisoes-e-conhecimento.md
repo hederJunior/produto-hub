@@ -1955,3 +1955,45 @@ Como ficou:
 não faz mais sentido com os controles inline/popover; o filtro em si foi mantido.
 Verificado só com `tsc --noEmit` (limpo) + contagem de controles antes/depois; falta olhar no
 navegador (larguras estreitas fazem o cabeçalho quebrar em mais de uma linha, por design).
+
+## 2026-10-12 — Aba Comitês: nova regra de consulta, layout agrupado por Data Comitê e coluna Agging
+
+Pedido de Heder (com rascunho visual): refazer a aba "Comitês" do "Roadmap e Entregas".
+
+**Regra de consulta** (`getDemandasComite`, `lib/devops-client.ts`): Work Item Type = Product Backlog
+Item, State = `Backlog`, Etapa (`Custom.Etapa`) = `Comitê` e Data Comitê preenchida
+(`Custom.443622e0-6ab8-4ae5-9371-612b44a8fb1d <> ''`). `Custom.Etapa = "Comitê"` e
+`System.State = "Backlog"` conferidos no dump real do #41987. O filtro em JS de "concluídos"
+(`estadoIndicaConcluido`) saiu — ficou redundante. Passou a buscar também `System.CreatedDate`.
+
+**Layout** (`DemandasComiteLista`, `app/(app)/roadmap/page.tsx`):
+- Itens agrupados pela Data Comitê; cada data é uma seção que expande/comprime (botão redondo ">"
+  + selo com a data; padrão = todas abertas).
+- Seção **"Atrasados"** (vermelha, sempre a primeira): Data Comitê **anterior a hoje**. O pedido
+  dizia "posterior à data atual", mas pelo rascunho (Atrasados em vermelho, datas futuras em verde)
+  o sentido é anterior — implementado assim. O dia de hoje NÃO é atrasado.
+- Cada PBI = uma linha: Título (`#id · título`), Cliente, PO, Área e **Agging**. Coluna Status saiu
+  (todos são Backlog); o ponto colorido à esquerda indica atrasado (laranja/vermelho) × no prazo (verde).
+- Dias calculados pelo fuso de Brasília (`chaveDia`) — o mesmo dia que o Azure DevOps mostra. A Data
+  Comitê do #41987 vem como `2026-09-25T03:00:00Z` (= meia-noite BRT), então o dia bate.
+- Filtros de Data de Comitê/Área/Cliente do cabeçalho continuam valendo.
+
+**Agging** = hoje − `System.CreatedDate`, em dias corridos inteiros (diferença de datas de calendário,
+BRT, nunca negativa). Escrita "Agging" como pedido (o resto do app usa "Aging").
+
+**Registro de cor por Área** — `COR_AREA_REGISTRADA` + `corDeAreaTabela()` em `lib/kmm-theme.ts`
+(fonte única pra colorir Área em tabela; texto branco/escuro escolhido por luminância). Chave = último
+segmento do Area Path, minúsculo e sem acento. Cores do tema do app, não do Power BI:
+
+| Área | Cor | Hex |
+|---|---|---|
+| Projetos de Implantação | grafite quente | `#3A3632` |
+| SWAT | azul (C.blue) | `#3E7CB1` |
+| DEDICADA MARONI | âmbar (C.amber) | `#E8920C` |
+
+Área não registrada cai num fallback por hash da `PALETA_AREA` (estável, mas pode repetir cor entre
+2 áreas). Pra cor própria, adicionar a área em `COR_AREA_REGISTRADA`. O Gantt do Road Map continua
+usando `corDaArea` (hash do Area Path completo) — não foi alterado; dá pra ligá-lo ao registro depois.
+
+Verificação: `tsc --noEmit` limpo + teste das funções de data em Node. NÃO testado contra o Azure
+DevOps (sem rede no sandbox) — conferir em produção se a lista traz o esperado.

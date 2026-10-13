@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { BarChart3, Calendar, ChevronDown, ChevronUp, Clock, Download, Eraser, Flag, Gauge, Maximize2, Users, X } from "lucide-react";
+import { BarChart3, Calendar, ChevronDown, ChevronRight, ChevronUp, Clock, Download, Eraser, Flag, Gauge, Maximize2, Users, X } from "lucide-react";
 import { useProduto } from "@/components/ProdutoContext";
-import { C, corDaArea, corDeEstadoDevOps, corDeStatus, corDoDev, estadoIndicaConcluido } from "@/lib/kmm-theme";
+import { C, corDaArea, corDeAreaTabela, corDeEstadoDevOps, corDeStatus, corDoDev, estadoIndicaConcluido } from "@/lib/kmm-theme";
 import PainelCapacidade from "@/components/PainelCapacidade";
 import PageHeader from "@/components/PageHeader";
 
@@ -62,6 +62,7 @@ type DemandaComite = {
   po: string;
   state: string;
   dataComite: string | null;
+  createdDate: string;
 };
 
 const MESES_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
@@ -110,6 +111,23 @@ function posicaoPercentual(dataISO: string | null, inicioMs: number, fimMs: numb
   const d = new Date(dataISO).getTime();
   if (Number.isNaN(d) || fimMs === inicioMs) return 0;
   return Math.min(100, Math.max(0, ((d - inicioMs) / (fimMs - inicioMs)) * 100));
+}
+
+/** Dia (YYYY-MM-DD) de um instante ISO no fuso de Brasília — o mesmo dia exibido no Azure DevOps. */
+function chaveDia(iso: string | Date): string {
+  const d = typeof iso === "string" ? new Date(iso) : iso;
+  return d.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+}
+
+/** Dias corridos entre duas chaves de dia (YYYY-MM-DD): `ate − de`. */
+function diasEntreChaves(de: string, ate: string): number {
+  const [y1, m1, d1] = de.split("-").map(Number);
+  const [y2, m2, d2] = ate.split("-").map(Number);
+  return Math.round((Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) / 86_400_000);
+}
+
+function formatarChaveDia(chave: string): string {
+  return chave.split("-").reverse().join("/");
 }
 
 function formatarData(dataISO: string | null): string {
@@ -408,10 +426,11 @@ export default function RoadmapPage() {
         .filter((d) => {
           if (areasSelecionadasComites.length && !areasSelecionadasComites.includes(d.areaPath)) return false;
           if (clientesSelecionadosComites.length && !clientesSelecionadosComites.includes(d.cliente)) return false;
-          if (dataInicioComites && (!d.dataComite || d.dataComite < dataInicioComites)) return false;
-          // dataComite vem com horário (ISO) — compara só a parte de data (10 chars) contra o
-          // "até" do filtro pra não excluir o próprio dia final por causa do horário.
-          if (dataFimComites && (!d.dataComite || d.dataComite.slice(0, 10) > dataFimComites)) return false;
+          // Compara pela chave de dia (YYYY-MM-DD, fuso de Brasília — o mesmo dia que o Azure
+          // DevOps mostra), não pelo ISO com horário, pra não excluir o próprio dia final.
+          const dia = d.dataComite ? chaveDia(d.dataComite) : "";
+          if (dataInicioComites && (!dia || dia < dataInicioComites)) return false;
+          if (dataFimComites && (!dia || dia > dataFimComites)) return false;
           return true;
         })
         // Ordena por Data Comitê (pedido por Heder em 2026-09-28): a API já pede ORDER BY na
@@ -419,7 +438,7 @@ export default function RoadmapPage() {
         // de KMM4 e KMM5 vêm concatenados (getDemandasComite roda um WIQL por projeto e dá
         // `.flat()` no fim), quebrando a ordem cronológica geral. Comparação de string funciona
         // porque dataComite é ISO (YYYY-MM-DDTHH:mm:ssZ).
-        .sort((a, b) => (a.dataComite ?? "").localeCompare(b.dataComite ?? "")),
+        .sort((a, b) => (a.dataComite ?? "").localeCompare(b.dataComite ?? "") || a.id - b.id),
     [demandasComite, areasSelecionadasComites, clientesSelecionadosComites, dataInicioComites, dataFimComites]
   );
 
@@ -726,7 +745,7 @@ export default function RoadmapPage() {
                 Comitês {produtoLabelFooter}
               </div>
               <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
-                Demandas (PBIs) com Data de Comitê marcada no Azure DevOps.
+                PBIs em Backlog, na etapa Comitê, agrupados pela Data de Comitê.
               </div>
             </div>
             {carregandoComites && <p style={{ color: C.muted }}>Carregando demandas de comitê do Azure DevOps…</p>}
@@ -736,9 +755,9 @@ export default function RoadmapPage() {
               </div>
             )}
             {!carregandoComites && !erroComites && demandasExibidas.length === 0 && (
-              <p style={{ color: C.muted }}>Nenhuma demanda com Data de Comitê encontrada para os filtros selecionados.</p>
+              <p style={{ color: C.muted }}>Nenhum PBI em Backlog na etapa Comitê, com Data de Comitê preenchida, para os filtros selecionados.</p>
             )}
-            {!carregandoComites && !erroComites && demandasExibidas.length > 0 && <DemandasComiteLista demandas={demandasExibidas} />}
+            {!carregandoComites && !erroComites && demandasExibidas.length > 0 && <DemandasComiteLista demandas={demandasExibidas} hoje={agora ?? new Date()} />}
           </>
         )}
       </div>
@@ -1587,65 +1606,149 @@ function SprintsAlocadas({
   );
 }
 
-const COLUNAS_COMITE = "110px 1fr 150px 140px 130px 170px";
+// ponto de status | Título | Cliente | PO | Área | Agging
+const COLUNAS_COMITE = "22px minmax(260px, 1fr) 150px 150px 200px 80px";
+
+const CHAVE_ATRASADOS = "atrasados";
 
 /**
- * Lista "Demandas Programadas" da aba Comitês — PBIs com Data de Comitê marcada, no estilo do
- * dashboard Power BI que o Heder mandou de referência (2026-09-28): lista simples, ordenada por
- * Data de Comitê (ordem que já vem da API — ver getDemandasComite em lib/devops-client.ts), sem
- * agrupamento por bloco. Colunas confirmadas com o Heder: Data Comitê, Título, Cliente, PO,
- * Status, Área (Prioridade ficou de fora).
+ * Aba Comitês (layout redesenhado por Heder em 2026-10-12, a partir de rascunho): PBIs agrupados
+ * pela Data de Comitê, cada data numa seção que expande/comprime. Quem tem Data de Comitê ANTERIOR
+ * a hoje cai na seção "Atrasados" (que vem primeiro); o dia de hoje em diante vira uma seção por
+ * data, em ordem crescente. (O pedido dizia "posterior à data atual", mas pelo rascunho —
+ * Atrasados em vermelho, datas futuras em verde — o sentido é anterior; tratado assim.)
+ * Cada PBI é uma linha: Título, Cliente, PO, Área (cor registrada em corDeAreaTabela) e Agging
+ * (coluna calculada: hoje − Created Date, em dias inteiros).
  */
-function DemandasComiteLista({ demandas }: { demandas: DemandaComite[] }) {
+function DemandasComiteLista({ demandas, hoje }: { demandas: DemandaComite[]; hoje: Date }) {
+  const [recolhidas, setRecolhidas] = useState<Record<string, boolean>>({});
+  const hojeChave = chaveDia(hoje);
+
+  const secoes = useMemo(() => {
+    const atrasados: DemandaComite[] = [];
+    const porData = new Map<string, DemandaComite[]>();
+    for (const d of demandas) {
+      const dia = d.dataComite ? chaveDia(d.dataComite) : "";
+      if (!dia || dia < hojeChave) {
+        atrasados.push(d);
+      } else {
+        porData.set(dia, [...(porData.get(dia) ?? []), d]);
+      }
+    }
+    const lista: { chave: string; rotulo: string; itens: DemandaComite[]; atrasado: boolean }[] = [];
+    if (atrasados.length) lista.push({ chave: CHAVE_ATRASADOS, rotulo: "Atrasados", itens: atrasados, atrasado: true });
+    Array.from(porData.keys())
+      .sort()
+      .forEach((chave) => lista.push({ chave, rotulo: formatarChaveDia(chave), itens: porData.get(chave)!, atrasado: false }));
+    return lista;
+  }, [demandas, hojeChave]);
+
   return (
-    <div className="kmm-card" style={{ padding: 0, overflow: "hidden" }}>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: COLUNAS_COMITE,
-          padding: "10px 18px",
-          borderBottom: `1px solid ${C.border}`,
-          fontSize: 11,
-          fontWeight: 700,
-          color: C.muted,
-          textTransform: "uppercase",
-          letterSpacing: 0.3,
-        }}
-      >
-        <div>Data Comitê</div>
-        <div>Título</div>
-        <div>Cliente</div>
-        <div>PO</div>
-        <div>Status</div>
-        <div>Área</div>
-      </div>
-      {demandas.map((d) => {
-        const status = corDeEstadoDevOps(d.state);
+    <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+      {secoes.map((secao) => {
+        const aberta = !recolhidas[secao.chave];
+        const cor = secao.atrasado ? C.red : C.green;
         return (
-          <div
-            key={d.id}
-            style={{
-              display: "grid",
-              gridTemplateColumns: COLUNAS_COMITE,
-              padding: "10px 18px",
-              borderBottom: `1px solid ${C.border}`,
-              alignItems: "center",
-              gap: 8,
-            }}
-          >
-            <div style={{ fontSize: 12.5, color: C.text, fontVariantNumeric: "tabular-nums" }}>{formatarData(d.dataComite)}</div>
-            <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>
-              #{d.id} · {d.titulo}
-            </div>
-            <div style={{ fontSize: 12.5, color: C.muted }}>{d.cliente || "—"}</div>
-            <div style={{ fontSize: 12.5, color: C.muted }}>{d.po || "—"}</div>
-            <div>
-              <span className="kmm-chip" style={{ background: status.bg, color: status.fg, borderColor: "transparent" }}>
-                {d.state}
+          <section key={secao.chave}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: aberta ? 8 : 0 }}>
+              <button
+                type="button"
+                onClick={() => setRecolhidas((r) => ({ ...r, [secao.chave]: aberta }))}
+                aria-expanded={aberta}
+                title={aberta ? "Comprimir" : "Expandir"}
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: "50%",
+                  border: `2px solid ${cor}`,
+                  background: "#fff",
+                  color: cor,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                  padding: 0,
+                  flexShrink: 0,
+                }}
+              >
+                <ChevronRight size={18} style={{ transform: aberta ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
+              </button>
+              <span
+                style={{
+                  fontFamily: "Sora,sans-serif",
+                  fontWeight: 700,
+                  fontSize: 17,
+                  padding: "4px 26px",
+                  borderRadius: 8,
+                  border: `2px solid ${cor}`,
+                  background: secao.atrasado ? cor : "#fff",
+                  color: secao.atrasado ? "#fff" : cor,
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
+                {secao.rotulo}
+              </span>
+              <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>
+                {secao.itens.length} {secao.itens.length === 1 ? "PBI" : "PBIs"}
               </span>
             </div>
-            <div style={{ fontSize: 12.5, color: C.muted }}>{d.areaPath.split("\\").pop() || d.areaPath}</div>
-          </div>
+
+            {aberta && (
+              <div style={{ overflowX: "auto" }}>
+                <div style={{ minWidth: 880 }}>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: COLUNAS_COMITE,
+                      gap: 2,
+                      padding: "0 0 4px",
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: C.muted,
+                      textTransform: "uppercase",
+                      letterSpacing: 0.3,
+                    }}
+                  >
+                    <div />
+                    <div style={{ padding: "0 10px" }}>Título</div>
+                    <div style={{ padding: "0 10px" }}>Cliente</div>
+                    <div style={{ padding: "0 10px" }}>PO</div>
+                    <div style={{ padding: "0 10px" }}>Área</div>
+                    <div style={{ padding: "0 10px", textAlign: "right" }}>Agging</div>
+                  </div>
+                  {secao.itens.map((d) => {
+                    const area = corDeAreaTabela(d.areaPath);
+                    const agging = d.createdDate ? Math.max(0, diasEntreChaves(chaveDia(d.createdDate), hojeChave)) : null;
+                    const celula: React.CSSProperties = { background: C.soft, padding: "9px 10px", fontSize: 12.5, display: "flex", alignItems: "center", minWidth: 0 };
+                    return (
+                      <div key={d.id} style={{ display: "grid", gridTemplateColumns: COLUNAS_COMITE, gap: 2, marginBottom: 2 }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          <span
+                            title={secao.atrasado ? "Atrasado" : "No prazo"}
+                            style={{ width: 12, height: 12, borderRadius: "50%", background: secao.atrasado ? C.orangeDark : C.green, border: `2px solid ${secao.atrasado ? C.red : "#1F8449"}` }}
+                          />
+                        </div>
+                        <div style={{ ...celula, color: C.text, fontWeight: 500, borderRadius: "6px 0 0 6px" }}>
+                          #{d.id} · {d.titulo}
+                        </div>
+                        <div style={{ ...celula, color: C.text }}>{d.cliente || "—"}</div>
+                        <div style={{ ...celula, color: C.muted, fontStyle: "italic", fontWeight: 600 }}>{d.po || "—"}</div>
+                        <div style={{ ...celula, background: area.bg, color: area.fg, fontWeight: 700, fontStyle: "italic" }}>
+                          {d.areaPath.split("\\").pop() || d.areaPath}
+                        </div>
+                        <div
+                          style={{ ...celula, justifyContent: "flex-end", color: C.text, fontWeight: 700, fontVariantNumeric: "tabular-nums", borderRadius: "0 6px 6px 0" }}
+                          title={d.createdDate ? `Criado em ${formatarChaveDia(chaveDia(d.createdDate))}` : undefined}
+                        >
+                          {agging ?? "—"}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </section>
         );
       })}
     </div>

@@ -121,3 +121,43 @@ export function corDoDev(nome: string): string {
   const idx = Math.abs(hash) % PALETA_CATEGORICA_DEV.length;
   return PALETA_CATEGORICA_DEV[idx];
 }
+
+/**
+ * REGISTRO DE COR POR ÁREA pra exibição em tabela/lista (célula "Área" cheia, texto contrastante)
+ * — pedido por Heder em 2026-10-12 na aba Comitês: "cada área deve ter uma cor específica;
+ * registrar a cor de cada área pra uso posterior". Fonte única: qualquer tela nova que precise
+ * colorir uma Área em formato de tabela deve usar `corDeAreaTabela()` em vez de escolher cor na
+ * mão, pra a mesma Área ter sempre a mesma cor em todo o app.
+ *
+ * Chave = último segmento do Area Path, minúsculo e sem acento (ver `normalizarNomeArea`).
+ * Cores saem da paleta do tema (C / PALETA_AREA), não do rascunho Power BI. Área NÃO registrada
+ * cai num fallback determinístico (hash da PALETA_AREA, mesma ideia de `corDaArea`) — estável,
+ * mas pode repetir cor entre 2 áreas; pra garantir cor própria, é só adicionar a Área aqui.
+ */
+export const COR_AREA_REGISTRADA: Record<string, string> = {
+  "projetos de implantacao": "#3A3632", // grafite quente (do C.dark) — rascunho: cinza escuro
+  swat: "#3E7CB1", // C.blue — rascunho: azul
+  "dedicada maroni": "#E8920C", // C.amber — rascunho: amarelo
+};
+
+/** Último segmento do Area Path, minúsculo e sem acentos (chave do registro de cores). */
+export function normalizarNomeArea(areaPath: string): string {
+  const ultimo = areaPath.split("\\").pop() || areaPath;
+  return ultimo.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+}
+
+/** Texto branco ou escuro conforme a luminância do fundo (WCAG: luminância relativa). */
+function corTextoSobre(bgHex: string): string {
+  const [r, g, b] = [1, 3, 5].map((i) => {
+    const c = parseInt(bgHex.slice(i, i + 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  });
+  const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return lum > 0.35 ? C.text : "#FFFFFF";
+}
+
+/** Cor de fundo + texto da célula "Área" em tabelas (ver COR_AREA_REGISTRADA). */
+export function corDeAreaTabela(areaPath: string): { bg: string; fg: string } {
+  const bg = COR_AREA_REGISTRADA[normalizarNomeArea(areaPath)] ?? corDaArea(areaPath);
+  return { bg, fg: corTextoSobre(bg) };
+}

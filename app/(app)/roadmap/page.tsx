@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { BarChart3, Calendar, ChevronDown, ChevronRight, ChevronUp, Clock, Download, Eraser, Flag, Gauge, Maximize2, Users, X } from "lucide-react";
+import { BarChart3, Calendar, CalendarRange, ChevronDown, ChevronRight, ChevronUp, Clock, Download, Eraser, Flag, Gauge, Maximize2, Users, X } from "lucide-react";
 import { useProduto } from "@/components/ProdutoContext";
 import { C, corDaArea, corDeAreaTabela, corDeEstadoDevOps, corDeStatus, corDoDev, estadoIndicaConcluido } from "@/lib/kmm-theme";
 import PainelCapacidade from "@/components/PainelCapacidade";
@@ -49,6 +49,7 @@ type TaskAlocada = {
   spReal: number | null;
   sprint: string;
   responsavel: { nome: string; avatarUrl: string | null } | null;
+  pbiPaiId: number | null;
 };
 
 /** Aba "Comitês" (pedido por Heder em 2026-09-28) — PBIs com Data de Comitê marcada, ver
@@ -329,6 +330,7 @@ export default function RoadmapPage() {
   const [dataInicioComites, setDataInicioComites] = useState("");
   const [dataFimComites, setDataFimComites] = useState("");
 
+  const [painelAlocacaoAberto, setPainelAlocacaoAberto] = useState(false);
   const [agora, setAgora] = useState<Date | null>(null);
   useEffect(() => setAgora(new Date()), []);
 
@@ -605,6 +607,11 @@ export default function RoadmapPage() {
                 <Users size={13} /> Planejar capacidade
               </span>
             </button>
+            <button className="kmm-btn" onClick={() => setPainelAlocacaoAberto(true)}>
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <CalendarRange size={13} /> Alocação por sprint
+              </span>
+            </button>
           </>
         )}
 
@@ -768,6 +775,14 @@ export default function RoadmapPage() {
           tarefas={tarefas}
           areasDisponiveis={areasDisponiveisSprints}
           onFechar={() => setPainelEsforcoAberto(false)}
+        />
+      )}
+      {painelAlocacaoAberto && (
+        <PainelAlocacaoPorSprint
+          tarefas={tarefas}
+          produto={produto}
+          areasDisponiveis={areasDisponiveisSprints}
+          onFechar={() => setPainelAlocacaoAberto(false)}
         />
       )}
       <PainelCapacidade aberto={painelCapacidadeAberto} onFechar={() => setPainelCapacidadeAberto(false)} />
@@ -1752,5 +1767,394 @@ function DemandasComiteLista({ demandas, hoje }: { demandas: DemandaComite[]; ho
         );
       })}
     </div>
+  );
+}
+
+
+/**
+ * Panel "Alocação por sprint" (pedido por Heder em 2026-10-13, a partir de uma planilha de
+ * alocação em Excel): grade com UMA LINHA POR RECURSO (Dev ou QA) e UMA COLUNA POR ITERATION
+ * (sprint). Cada célula lista o que o recurso tem naquela sprint: PBI pai da Task (título), e
+ * embaixo as Tasks/Bugs com id, nome e Effort. A cor do bloco é a cor registrada da Área
+ * (`corDeAreaTabela`, mesma da aba Comitês).
+ *
+ * Decisões confirmadas com o Heder (2026-10-13):
+ * - Papel (Dev × QA) vem do Cadastro de devs (Administração; campo "Função"): função contendo "QA"
+ *   = linha de QA; qualquer outra, ou nenhuma/dev fora do cadastro = linha de Dev.
+ * - Sem as linhas de Ambiente (Dev/Hom/Prod) do Excel nesta versão — esse dado não existe no Azure.
+ * - Cabeçalho da coluna = nome da sprint + datas (início–fim) lidas das Iterations do Azure.
+ * A planilha original é semanal; aqui cada coluna é uma sprint inteira (2 semanas).
+ *
+ * Fontes: as Tasks/Bugs já carregadas na aba Sprints (prop `tarefas`, independente do filtro de
+ * Sprint/Área da tabela — como o panel "Esforço por sprint"), + títulos dos PBIs pai
+ * (POST /api/roadmap/pais, carregado ao abrir), + datas das sprints (/api/roadmap/sprints-datas)
+ * + roster de devs (/api/admin/devs). Datas e roster são só complemento: se falharem, o panel
+ * continua funcionando sem eles.
+ */
+const SEM_RESPONSAVEL = "Sem responsável";
+
+function normalizarNomePessoa(nome: string): string {
+  return nome.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+}
+
+function ehPapelQA(papel: string | null | undefined): boolean {
+  return !!papel && /qa/i.test(papel);
+}
+
+function PainelAlocacaoPorSprint({
+  tarefas,
+  produto,
+  areasDisponiveis,
+  onFechar,
+}: {
+  tarefas: TaskAlocada[];
+  produto: string;
+  areasDisponiveis: string[];
+  onFechar: () => void;
+}) {
+  const [pais, setPais] = useState<Record<number, { titulo: string; tipo: string }>>({});
+  const [carregandoPais, setCarregandoPais] = useState(false);
+  const [datas, setDatas] = useState<Record<string, { inicio: string | null; fim: string | null }>>({});
+  const [roster, setRoster] = useState<{ nome: string; papel: string | null }[]>([]);
+  const [areasFiltro, setAreasFiltro] = useState<string[]>([]);
+  const [inicial, setInicial] = useState<string | null>(null);
+
+  // Títulos dos PBIs pai — só ao abrir o panel (não pesa a aba Sprints).
+  useEffect(() => {
+    const ids = Array.from(new Set(tarefas.map((t) => t.pbiPaiId).filter((n): n is number => n != null)));
+    if (!ids.length) return;
+    let cancelado = false;
+    setCarregandoPais(true);
+    fetch("/api/roadmap/pais", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    })
+      .then((res) => res.json())
+      .then((j) => {
+        if (!cancelado) setPais(j.pais ?? {});
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelado) setCarregandoPais(false);
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [tarefas]);
+
+  // Datas das sprints + roster de devs (papel) — complementos, falha silenciosa.
+  useEffect(() => {
+    let cancelado = false;
+    fetch(`/api/roadmap/sprints-datas?produto=${produto}`, { cache: "no-store" })
+      .then((res) => res.json())
+      .then((j) => {
+        if (cancelado) return;
+        const mapa: Record<string, { inicio: string | null; fim: string | null }> = {};
+        for (const sp of (j.sprints ?? []) as { nome: string; inicio: string | null; fim: string | null }[]) {
+          mapa[sp.nome] = { inicio: sp.inicio, fim: sp.fim };
+        }
+        setDatas(mapa);
+      })
+      .catch(() => {});
+
+    const projetos = produto === "AMBOS" ? ["KMM4", "KMM5"] : [produto];
+    Promise.all(
+      projetos.map((p) =>
+        fetch(`/api/admin/devs?produto=${p}`, { cache: "no-store" })
+          .then((res) => res.json())
+          .then((j) => (j.devs ?? []) as { nome: string; papel: string | null }[])
+          .catch(() => [] as { nome: string; papel: string | null }[])
+      )
+    ).then((listas) => {
+      if (!cancelado) setRoster(listas.flat());
+    });
+    return () => {
+      cancelado = true;
+    };
+  }, [produto]);
+
+  const tarefasFiltradas = useMemo(
+    () => (areasFiltro.length ? tarefas.filter((t) => areasFiltro.includes(t.areaPath)) : tarefas),
+    [tarefas, areasFiltro]
+  );
+
+  // Colunas: todas as sprints com Task/Bug (mesmo com filtro de Área, pra grade não "pular").
+  const sprintsOrdenadas = useMemo(
+    () =>
+      Array.from(new Set(tarefas.map((t) => t.sprint))).sort((a, b) => {
+        const [amaj, amin] = chaveOrdenacaoSprint(a);
+        const [bmaj, bmin] = chaveOrdenacaoSprint(b);
+        return amaj !== bmaj ? amaj - bmaj : amin - bmin;
+      }),
+    [tarefas]
+  );
+
+  // Datas de sprint são datas PURAS (ex. "2026-10-05T00:00:00Z") — lê só os 10 primeiros
+  // caracteres, sem converter de fuso. "Hoje" é o dia em Brasília.
+  const hojeChave = chaveDia(new Date());
+  const sprintAtual =
+    sprintsOrdenadas.find((sp) => {
+      const d = datas[sp];
+      return !!d?.inicio && !!d?.fim && d.inicio.slice(0, 10) <= hojeChave && hojeChave <= d.fim.slice(0, 10);
+    }) ?? null;
+  // Padrão: começa uma sprint antes da atual (como a planilha); sem datas, mostra desde a primeira.
+  const inicialPadrao = sprintAtual
+    ? sprintsOrdenadas[Math.max(0, sprintsOrdenadas.indexOf(sprintAtual) - 1)]
+    : sprintsOrdenadas[0] ?? "";
+  const inicialEfetivo = inicial ?? inicialPadrao;
+  const idxInicial = Math.max(0, sprintsOrdenadas.indexOf(inicialEfetivo));
+  const sprintsVisiveis = sprintsOrdenadas.slice(idxInicial);
+
+  // Linhas: quem tem Task/Bug (já com o filtro de Área) + roster inteiro quando não há filtro de
+  // Área (pra mostrar quem está livre). Chave por nome normalizado (displayName do Azure × Cadastro).
+  const linhas = useMemo(() => {
+    const papelPorNome = new Map<string, string | null>();
+    for (const d of roster) {
+      const k = normalizarNomePessoa(d.nome);
+      if (!papelPorNome.has(k) || (!papelPorNome.get(k) && d.papel)) papelPorNome.set(k, d.papel);
+    }
+    const porChave = new Map<string, { chave: string; nome: string; qa: boolean }>();
+    const adicionar = (nome: string) => {
+      const chave = normalizarNomePessoa(nome);
+      if (!porChave.has(chave)) porChave.set(chave, { chave, nome, qa: ehPapelQA(papelPorNome.get(chave)) });
+    };
+    for (const t of tarefasFiltradas) adicionar(t.responsavel?.nome ?? SEM_RESPONSAVEL);
+    if (!areasFiltro.length) for (const d of roster) adicionar(d.nome);
+    const semResp = normalizarNomePessoa(SEM_RESPONSAVEL);
+    const ordenar = (a: { nome: string }, b: { nome: string }) => a.nome.localeCompare(b.nome, "pt-BR");
+    const todos = Array.from(porChave.values());
+    return [
+      ...todos.filter((l) => !l.qa && l.chave !== semResp).sort(ordenar),
+      ...todos.filter((l) => l.qa && l.chave !== semResp).sort(ordenar),
+      ...todos.filter((l) => l.chave === semResp),
+    ];
+  }, [tarefasFiltradas, roster, areasFiltro]);
+
+  const celulas = useMemo(() => {
+    const mapa = new Map<string, TaskAlocada[]>();
+    for (const t of tarefasFiltradas) {
+      const k = `${normalizarNomePessoa(t.responsavel?.nome ?? SEM_RESPONSAVEL)}|${t.sprint}`;
+      mapa.set(k, [...(mapa.get(k) ?? []), t]);
+    }
+    return mapa;
+  }, [tarefasFiltradas]);
+
+  const areasNaLegenda = useMemo(() => Array.from(new Set(tarefasFiltradas.map((t) => t.areaPath))).sort(), [tarefasFiltradas]);
+
+  const fmtCurta = (iso: string) => iso.slice(0, 10).split("-").reverse().slice(0, 2).join("/");
+  const BORDA = `1px solid ${C.border}`;
+  const LARGURA_RECURSO = 190;
+  const LARGURA_SPRINT = 240;
+
+  return (
+    <div
+      onClick={onFechar}
+      style={{ position: "fixed", inset: 0, background: "rgba(22,19,15,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 20 }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="kmm-card"
+        style={{ maxWidth: 1320, width: "100%", maxHeight: "90vh", display: "flex", flexDirection: "column", padding: 22 }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 14 }}>
+          <div>
+            <div style={{ fontFamily: "Sora,sans-serif", fontWeight: 800, fontSize: 18, color: C.text }}>Alocação por sprint</div>
+            <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+              Recurso × Iteration · PBI pai e Tasks/Bugs de cada pessoa em cada sprint (cor = Área).
+            </div>
+          </div>
+          <button onClick={onFechar} style={{ background: "none", border: "none", cursor: "pointer", color: C.muted, padding: 4 }}>
+            <X size={18} />
+          </button>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
+          <MultiSelectFiltro
+            rotuloTodos="Todas as áreas"
+            opcoes={areasDisponiveis}
+            selecionados={areasFiltro}
+            onChange={setAreasFiltro}
+            formatar={(a) => a.split("\\").pop() || a}
+          />
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>A partir da</span>
+            <select className="kmm-input" style={{ width: "auto" }} value={inicialEfetivo} onChange={(e) => setInicial(e.target.value)}>
+              {sprintsOrdenadas.map((sp) => (
+                <option key={sp} value={sp}>
+                  {sp}
+                </option>
+              ))}
+            </select>
+          </div>
+          {carregandoPais && <span style={{ fontSize: 12, color: C.muted }}>Carregando títulos dos PBIs…</span>}
+        </div>
+
+        {sprintsVisiveis.length === 0 ? (
+          <p style={{ color: C.muted }}>Nenhuma Task ou Bug alocada em sprint para exibir.</p>
+        ) : (
+          <div style={{ overflow: "auto", border: BORDA, borderRadius: 10, minHeight: 0 }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: `${LARGURA_RECURSO}px repeat(${sprintsVisiveis.length}, minmax(${LARGURA_SPRINT}px, 1fr))`,
+                minWidth: LARGURA_RECURSO + sprintsVisiveis.length * LARGURA_SPRINT,
+              }}
+            >
+              <div style={{ position: "sticky", top: 0, left: 0, zIndex: 3, background: "#fff", borderBottom: BORDA, borderRight: BORDA, padding: "10px 12px", fontSize: 11, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.3 }}>
+                Recurso
+              </div>
+              {sprintsVisiveis.map((sp) => {
+                const d = datas[sp];
+                const atual = sp === sprintAtual;
+                return (
+                  <div
+                    key={sp}
+                    style={{ position: "sticky", top: 0, zIndex: 2, background: "#fff", borderBottom: atual ? `3px solid ${C.orange}` : BORDA, borderRight: BORDA, padding: "10px 12px" }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontFamily: "Sora,sans-serif", fontWeight: 800, fontSize: 14, color: C.text }}>{sp}</span>
+                      {atual && (
+                        <span className="kmm-chip" style={{ background: "#FFF1EA", color: C.orange, borderColor: "transparent", padding: "2px 8px", fontSize: 10.5 }}>
+                          atual
+                        </span>
+                      )}
+                    </div>
+                    {d?.inicio && d?.fim && (
+                      <div style={{ fontSize: 11.5, color: C.muted, marginTop: 2, fontVariantNumeric: "tabular-nums" }}>
+                        {fmtCurta(d.inicio)} – {fmtCurta(d.fim)}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {linhas.map((linha) => (
+                <PainelAlocacaoLinha
+                  key={linha.chave}
+                  linha={linha}
+                  sprints={sprintsVisiveis}
+                  celulas={celulas}
+                  pais={pais}
+                  carregandoPais={carregandoPais}
+                  borda={BORDA}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {areasNaLegenda.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 12, alignItems: "center" }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.3 }}>Áreas</span>
+            {areasNaLegenda.map((a) => (
+              <span key={a} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: C.text }}>
+                <span style={{ width: 11, height: 11, borderRadius: 3, background: corDeAreaTabela(a).bg, display: "inline-block" }} />
+                {a.split("\\").pop() || a}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Uma linha (recurso) da grade do panel "Alocação por sprint": rótulo fixo + 1 célula por sprint. */
+function PainelAlocacaoLinha({
+  linha,
+  sprints,
+  celulas,
+  pais,
+  carregandoPais,
+  borda,
+}: {
+  linha: { chave: string; nome: string; qa: boolean };
+  sprints: string[];
+  celulas: Map<string, TaskAlocada[]>;
+  pais: Record<number, { titulo: string; tipo: string }>;
+  carregandoPais: boolean;
+  borda: string;
+}) {
+  return (
+    <>
+      <div
+        style={{ position: "sticky", left: 0, zIndex: 1, background: "#fff", borderBottom: borda, borderRight: borda, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 4, justifyContent: "flex-start" }}
+      >
+        <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{linha.nome}</span>
+        {linha.chave !== normalizarNomePessoa(SEM_RESPONSAVEL) && (
+          <span
+            className="kmm-chip"
+            style={{ alignSelf: "flex-start", padding: "1px 8px", fontSize: 10.5, background: linha.qa ? "#FCEFD8" : "#E7F0FA", color: linha.qa ? C.amber : C.blue, borderColor: "transparent" }}
+          >
+            {linha.qa ? "QA" : "Dev"}
+          </span>
+        )}
+      </div>
+      {sprints.map((sp) => {
+        const tarefasDaCelula = celulas.get(`${linha.chave}|${sp}`) ?? [];
+        const total = tarefasDaCelula.reduce((acc, t) => acc + (t.spEstimados ?? 0), 0);
+
+        // Agrupa por Área + PBI pai: um bloco colorido por grupo.
+        const grupos = new Map<string, { areaPath: string; pbiPaiId: number | null; itens: TaskAlocada[] }>();
+        for (const t of tarefasDaCelula) {
+          const k = `${t.areaPath}|${t.pbiPaiId ?? 0}`;
+          const g = grupos.get(k) ?? { areaPath: t.areaPath, pbiPaiId: t.pbiPaiId, itens: [] };
+          g.itens.push(t);
+          grupos.set(k, g);
+        }
+        const blocos = Array.from(grupos.values()).sort(
+          (a, b) => a.areaPath.localeCompare(b.areaPath) || (a.pbiPaiId ?? 0) - (b.pbiPaiId ?? 0)
+        );
+
+        return (
+          <div key={sp} style={{ borderBottom: borda, borderRight: borda, padding: 6, minWidth: 0 }}>
+            {total > 0 && (
+              <div style={{ textAlign: "right", fontSize: 10.5, fontWeight: 700, color: C.faint, padding: "0 2px 3px", fontVariantNumeric: "tabular-nums" }}>
+                {total}h
+              </div>
+            )}
+            {blocos.map((g) => {
+              const cor = corDeAreaTabela(g.areaPath);
+              const pai = g.pbiPaiId != null ? pais[g.pbiPaiId] : undefined;
+              const rotuloPai =
+                g.pbiPaiId == null
+                  ? "Sem PBI pai"
+                  : pai
+                  ? `#${g.pbiPaiId} · ${pai.titulo}`
+                  : carregandoPais
+                  ? `#${g.pbiPaiId} · …`
+                  : `#${g.pbiPaiId}`;
+              const dica = [
+                `Área: ${g.areaPath.split("\\").pop() || g.areaPath}`,
+                `PBI pai: ${rotuloPai}`,
+                ...g.itens.map((t) => `${t.tipo === "Bug" ? "Bug" : "Task"} #${t.id} · ${t.titulo} [${t.state}]${t.spEstimados != null ? ` · ${t.spEstimados}h` : ""}`),
+              ].join("\n");
+              return (
+                <div
+                  key={`${g.areaPath}|${g.pbiPaiId ?? 0}`}
+                  title={dica}
+                  style={{ background: cor.bg, color: cor.fg, borderRadius: 6, padding: "6px 8px", marginBottom: 4, fontSize: 11.5, lineHeight: 1.35 }}
+                >
+                  <div
+                    style={{ fontWeight: 700, fontSize: 12, marginBottom: 3, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}
+                  >
+                    {rotuloPai}
+                  </div>
+                  {g.itens.map((t) => (
+                    <div key={t.id} style={{ display: "flex", justifyContent: "space-between", gap: 6, opacity: 0.95 }}>
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {t.tipo === "Bug" ? "Bug " : ""}#{t.id} · {t.titulo}
+                      </span>
+                      {t.spEstimados != null && <span style={{ flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{t.spEstimados}h</span>}
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+    </>
   );
 }

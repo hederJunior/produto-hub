@@ -469,6 +469,8 @@ const CAMPOS_SPRINT_TASK = [
   "Microsoft.VSTS.Scheduling.CompletedWork",
   "System.IterationPath",
   "System.IterationLevel3",
+  // PBI pai da Task/Bug (id numérico) — usado pelo panel "Alocação por sprint" (2026-10-13)
+  "System.Parent",
 ];
 
 type CampoPessoa = { displayName?: string; imageUrl?: string } | undefined;
@@ -485,6 +487,8 @@ export type TaskAlocada = {
   spReal: number | null;
   sprint: string;
   responsavel: { nome: string; avatarUrl: string | null } | null;
+  /** System.Parent — id do PBI pai (null se a Task/Bug não tem pai). */
+  pbiPaiId: number | null;
 };
 
 export type SprintMinima = { major: number; minor: number };
@@ -601,12 +605,98 @@ export async function getTasksAlocadas(project: string, sprintMinima: SprintMini
         responsavel: assignedTo?.displayName
           ? { nome: assignedTo.displayName, avatarUrl: assignedTo.imageUrl ?? null }
           : null,
+        pbiPaiId: typeof w.fields["System.Parent"] === "number" ? (w.fields["System.Parent"] as number) : null,
       };
     })
     .filter((t) => {
       const parsed = parseSprint(t.sprint);
       return parsed !== null && sprintEhIgualOuPosterior(parsed, sprintMinima);
     });
+}
+
+// ===== Panel "Alocação por sprint" (Roadmap e Entregas > Sprints, pedido por Heder em 2026-10-13):
+// grade Dev/QA × Iteration. Precisa de 2 dados que a aba Sprints não carregava: o título dos PBIs
+// pai das Tasks e as datas de início/fim de cada sprint. =====
+
+export type ItemTitulo = { titulo: string; tipo: string };
+
+/**
+ * Título e tipo de uma lista de work items por id (ex.: os PBIs pai das Tasks). Usa o endpoint
+ * workitemsbatch no nível da ORGANIZAÇÃO (sem projeto na URL), então aceita ids de KMM4 e KMM5 na
+ * mesma chamada. Lotes de 200 em paralelo; errorPolicy "Omit" pelo mesmo motivo de
+ * getTasksAlocadas (id excluído/sem permissão não derruba o lote inteiro) — id que não voltar
+ * simplesmente fica fora do resultado.
+ */
+export async function getTitulosPorIds(ids: number[]): Promise<Record<number, ItemTitulo>> {
+  const { org, pat } = getConfig();
+  const unicos = Array.from(new Set(ids.filter((n) => Number.isInteger(n) && n > 0)));
+  if (!unicos.length) return {};
+
+  const lotes: number[][] = [];
+  for (let i = 0; i < unicos.length; i += 200) lotes.push(unicos.slice(i, i + 200));
+
+  const todos = (
+    await Promise.all(
+      lotes.map(async (lote) => {
+        const res = await fetch(`https://dev.azure.com/${org}/_apis/wit/workitemsbatch?api-version=${API_VERSION}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeader(pat) },
+          body: JSON.stringify({ ids: lote, fields: ["System.Title", "System.WorkItemType"], errorPolicy: "Omit" }),
+        });
+        if (!res.ok) {
+          throw new Error(`Falha ao buscar títulos de work items (${res.status}): ${await res.text()}`);
+        }
+        const { value } = (await res.json()) as { value: WorkItem[] };
+        return value;
+      })
+    )
+  ).flat();
+
+  const resultado: Record<number, ItemTitulo> = {};
+  for (const w of todos) {
+    if (!w) continue;
+    resultado[w.id] = {
+      titulo: String(w.fields["System.Title"] ?? `Item ${w.id}`),
+      tipo: String(w.fields["System.WorkItemType"] ?? ""),
+    };
+  }
+  return resultado;
+}
+
+export type SprintComDatas = { nome: string; inicio: string | null; fim: string | null };
+
+type NoIteracao = {
+  name: string;
+  attributes?: { startDate?: string; finishDate?: string };
+  children?: NoIteracao[];
+};
+
+/**
+ * Datas de início/fim de cada Iteration (sprint) de um projeto, lidas da árvore de iterations do
+ * Azure DevOps (classificationnodes). Percorre a árvore em qualquer profundidade e devolve todo nó
+ * que tem startDate/finishDate, pelo NOME do nó (é o mesmo texto de System.IterationLevel3 das
+ * Tasks, ex. "Sprint 8.18" — assunção: as sprints ficam no 3º nível, project\2026\Sprint X.Y,
+ * como já assume a WIQL de getTasksAlocadas). As datas vêm como datas puras (ex.
+ * "2026-10-05T00:00:00Z") — quem usa deve ler só os 10 primeiros caracteres, sem converter de fuso.
+ */
+export async function getDatasSprints(project: string): Promise<SprintComDatas[]> {
+  const { org, pat } = getConfig();
+  const url = `https://dev.azure.com/${org}/${encodeURIComponent(project)}/_apis/wit/classificationnodes/iterations?$depth=6&api-version=${API_VERSION}`;
+  const res = await fetch(url, { headers: authHeader(pat) });
+  if (!res.ok) {
+    throw new Error(`Falha ao ler as iterations de ${project} (${res.status}): ${await res.text()}`);
+  }
+  const raiz = (await res.json()) as NoIteracao;
+
+  const sprints: SprintComDatas[] = [];
+  const visitar = (no: NoIteracao) => {
+    if (no.attributes?.startDate || no.attributes?.finishDate) {
+      sprints.push({ nome: no.name, inicio: no.attributes.startDate ?? null, fim: no.attributes.finishDate ?? null });
+    }
+    no.children?.forEach(visitar);
+  };
+  visitar(raiz);
+  return sprints;
 }
 
 // ===== Demandas de Comitê (aba "Comitês" do painel "Roadmap e Entregas", pedido por Heder em

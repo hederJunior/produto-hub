@@ -1997,3 +1997,43 @@ usando `corDaArea` (hash do Area Path completo) — não foi alterado; dá pra l
 
 Verificação: `tsc --noEmit` limpo + teste das funções de data em Node. NÃO testado contra o Azure
 DevOps (sem rede no sandbox) — conferir em produção se a lista traz o esperado.
+
+## 2026-10-13 — Novo panel "Alocação por sprint" (Roadmap e Entregas > Sprints)
+
+Pedido de Heder, a partir de um print de planilha Excel de alocação: botão ao lado de "Planejar
+capacidade" que abre um panel com **uma linha por recurso (Dev/QA) e uma coluna por Iteration**.
+Antes de desenvolver, analisei o print e fechamos 4 decisões:
+
+**Análise do print (resumo):** cabeçalho com Ambiente (Dev/Hom/Prod) × semanas (segundas), sprint de
+2 semanas (8.18 = 05/10–16/10; Hom ≈ Dev−1, Prod ≈ Hom−1, com exceções reais como Prod em 8.13);
+linhas "Dev 1..5 (Nome (vínculo))" + "QA (Nome)"; células semanais com IDs separados por "/" — os mesmos
+IDs aparecem em Dev e QA, ou seja, são PBIs (pai), não Tasks; cores manuais sem regra clara;
+nota "Detalhes Azure DevOps" com `[id] - título - Dev [Xh] / QA [Yh]`.
+
+**Decisões:**
+1. **Conteúdo da célula** = PBI pai da Task (título) + as Tasks/Bugs dentro (`#id · nome` + Effort em h).
+   (Heder pediu "ID da task / Nome da Task / Nome do PBI pai".)
+2. **Papel Dev × QA** vem do Cadastro de devs (Administração > "Função"): função contendo "QA" =
+   linha QA; qualquer outra, vazia ou pessoa fora do cadastro = Dev. Hoje o campo está em branco →
+   **tudo aparece como Dev até o cadastro ser preenchido**.
+3. **Sem as linhas de Ambiente** (Dev/Hom/Prod) nesta versão — não existem no Azure DevOps.
+4. **Cor = Área**, pelo registro `corDeAreaTabela` (mesmo da aba Comitês), com legenda no rodapé.
+
+**Implementação:**
+- `getTasksAlocadas` agora lê `System.Parent` (`pbiPaiId` em `TaskAlocada`).
+- `getTitulosPorIds` (workitemsbatch no nível da organização, aceita KMM4+KMM5) + rota
+  `POST /api/roadmap/pais` — títulos dos PBIs pai, buscados só ao abrir o panel.
+- `getDatasSprints` (árvore de Iterations via `classificationnodes`) + rota
+  `GET /api/roadmap/sprints-datas` — datas no cabeçalho de cada coluna e destaque da sprint "atual".
+  Datas de sprint são datas puras (`2026-10-05T00:00:00Z`): lê-se só `slice(0,10)`, sem fuso.
+  **Assunção não verificada:** nós de sprint têm o mesmo nome do `System.IterationLevel3` das Tasks.
+  Se as datas não vierem, o panel continua funcionando, só sem datas/destaque.
+- Panel `PainelAlocacaoPorSprint` (`app/(app)/roadmap/page.tsx`): fontes = Tasks já carregadas na aba
+  Sprints (independente do filtro da tabela) + roster `/api/admin/devs`. Linhas = quem tem Task +
+  todo o roster quando não há filtro de Área (mostra quem está livre); Devs, depois QAs, depois
+  "Sem responsável". Filtros: Área (multi) e "A partir da" sprint (padrão = sprint anterior à atual).
+  Extra não pedido: total de horas (Effort) no canto de cada célula.
+- A planilha é semanal; aqui cada coluna é uma sprint inteira (2 semanas).
+
+Verificação: `tsc --noEmit` limpo + teste Node da lógica de papel/janela de sprints. NÃO testado contra
+o Azure DevOps nem visualmente no navegador (sem rede/browser neste sandbox).

@@ -19,6 +19,14 @@ import {
 } from "./alocacao-pbi";
 import { estadoIndicaConcluido } from "./kmm-theme";
 
+// Toda chamada ao Azure DevOps neste módulo é SEM cache. O Next.js guarda no Data Cache o resultado
+// de fetch() feito dentro de Route Handlers (inclusive POST de WIQL/workitemsbatch, que têm a mesma
+// URL e corpo a cada leitura) — mesmo com `dynamic = "force-dynamic"` na rota. Resultado: depois de
+// alterar um item no Azure o painel continuava mostrando a lista antiga (achado em 2026-10-14, Task
+// #9359 alocada na 8.19 e ausente da leitura). Mesmo mecanismo que já nos pegou no cliente do
+// Supabase (lib/supabase.ts). Este `fetch` local sombreia o global em todo o arquivo.
+const fetch: typeof globalThis.fetch = (input, init) => globalThis.fetch(input, { ...init, cache: "no-store" });
+
 const API_VERSION = "7.1";
 
 function getConfig() {

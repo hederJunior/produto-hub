@@ -2057,12 +2057,6 @@ function PainelAlocacaoPorSprint({
     return mapa;
   }, [tarefasFiltradas]);
 
-  const areasNaLegenda = useMemo(() => {
-    const visiveis = new Set(linhas.map((l) => l.chave));
-    const doVisiveis = tarefasFiltradas.filter((t) => visiveis.has(normalizarNomePessoa(t.responsavel?.nome ?? SEM_RESPONSAVEL)));
-    return Array.from(new Set(doVisiveis.map((t) => t.areaPath))).sort();
-  }, [tarefasFiltradas, linhas]);
-
   const fmtCurta = (iso: string) => iso.slice(0, 10).split("-").reverse().slice(0, 2).join("/");
   const BORDA = `1px solid ${C.border}`;
   const LARGURA_RECURSO = 190;
@@ -2076,13 +2070,6 @@ function PainelAlocacaoPorSprint({
       {slotFiltros &&
         createPortal(
           <>
-            <MultiSelectFiltro
-              rotuloTodos="Todas as áreas"
-              opcoes={areasDisponiveis}
-              selecionados={areasFiltro}
-              onChange={setAreasFiltro}
-              formatar={(a) => a.split("\\").pop() || a}
-            />
             <MultiSelectFiltro
               rotuloTodos="Todas as funções"
               opcoes={["Dev", "QA"]}
@@ -2122,14 +2109,63 @@ function PainelAlocacaoPorSprint({
           slotAcoes
         )}
 
-      <div style={{ fontSize: 12, color: C.muted, marginBottom: 12 }}>
+      <div style={{ fontSize: 12, color: C.muted, marginBottom: 10 }}>
         Recurso × Iteration · PBI pai e Tasks/Bugs de cada pessoa em cada sprint (cor = Área).
       </div>
+
+      {/* Legenda de Áreas = filtro (pedido por Heder em 2026-10-15): clicar numa área liga/desliga
+          o filtro; nenhuma marcada = todas as áreas. Substitui o antigo seletor "Todas as áreas". */}
+      {areasDisponiveis.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14, alignItems: "center" }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.3, marginRight: 2 }}>Áreas</span>
+          {areasDisponiveis.map((a) => {
+            const ativa = areasFiltro.includes(a);
+            const cor = corDeAreaTabela(a);
+            return (
+              <button
+                key={a}
+                type="button"
+                aria-pressed={ativa}
+                title={ativa ? "Remover do filtro" : "Filtrar por esta área"}
+                onClick={() => setAreasFiltro((atual) => (atual.includes(a) ? atual.filter((x) => x !== a) : [...atual, a]))}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  fontFamily: "inherit",
+                  fontSize: 12,
+                  fontWeight: ativa ? 700 : 600,
+                  padding: "4px 11px",
+                  borderRadius: 999,
+                  cursor: "pointer",
+                  border: `1px solid ${ativa ? cor.bg : C.border}`,
+                  background: ativa ? cor.bg : "#fff",
+                  color: ativa ? cor.fg : C.text,
+                  opacity: areasFiltro.length > 0 && !ativa ? 0.6 : 1,
+                  transition: "opacity .15s ease, background .15s ease",
+                }}
+              >
+                <span style={{ width: 10, height: 10, borderRadius: 3, background: cor.bg, border: ativa ? `1px solid ${cor.fg}` : "none", display: "inline-block" }} />
+                {a.split("\\").pop() || a}
+              </button>
+            );
+          })}
+          {areasFiltro.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setAreasFiltro([])}
+              style={{ background: "none", border: "none", cursor: "pointer", color: C.orange, fontSize: 12, fontWeight: 700, padding: "4px 6px", fontFamily: "inherit" }}
+            >
+              Limpar
+            </button>
+          )}
+        </div>
+      )}
 
         {sprintsVisiveis.length === 0 ? (
           <p style={{ color: C.muted }}>Nenhuma Task ou Bug alocada em sprint para exibir.</p>
         ) : (
-          <div style={{ overflow: "auto", border: BORDA, borderRadius: 10, minHeight: 360, maxHeight: "calc(100vh - 340px)" }}>
+          <div style={{ overflow: "auto", border: BORDA, borderRadius: 10, minHeight: 440, maxHeight: "calc(100vh - 250px)" }}>
             <div
               style={{
                 display: "grid",
@@ -2179,18 +2215,6 @@ function PainelAlocacaoPorSprint({
                 />
               ))}
             </div>
-          </div>
-        )}
-
-        {areasNaLegenda.length > 0 && (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 12, alignItems: "center" }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.3 }}>Áreas</span>
-            {areasNaLegenda.map((a) => (
-              <span key={a} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: C.text }}>
-                <span style={{ width: 11, height: 11, borderRadius: 3, background: corDeAreaTabela(a).bg, display: "inline-block" }} />
-                {a.split("\\").pop() || a}
-              </span>
-            ))}
           </div>
         )}
     </div>

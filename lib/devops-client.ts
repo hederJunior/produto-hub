@@ -7,6 +7,16 @@
  */
 
 
+import {
+  ETAPA_AGUARDANDO_PRIORIZACAO,
+  HORAS_MAX_SPRINT,
+  motivoBloqueioTask,
+  sprintDoIterationPath,
+  type PbiPriorizacao,
+  type TaskDoPbi,
+} from "./alocacao-pbi";
+import { estadoIndicaConcluido } from "./kmm-theme";
+
 const API_VERSION = "7.1";
 
 function getConfig() {
@@ -473,7 +483,7 @@ const CAMPOS_SPRINT_TASK = [
   "System.Parent",
 ];
 
-type CampoPessoa = { displayName?: string; imageUrl?: string } | undefined;
+type CampoPessoa = { displayName?: string; imageUrl?: string; uniqueName?: string } | undefined;
 
 export type TaskAlocada = {
   id: number;
@@ -486,7 +496,7 @@ export type TaskAlocada = {
   spEstimados: number | null;
   spReal: number | null;
   sprint: string;
-  responsavel: { nome: string; avatarUrl: string | null } | null;
+  responsavel: { nome: string; avatarUrl: string | null; email: string | null } | null;
   /** System.Parent — id do PBI pai (null se a Task/Bug não tem pai). */
   pbiPaiId: number | null;
 };
@@ -603,7 +613,7 @@ export async function getTasksAlocadas(project: string, sprintMinima: SprintMini
         spReal: typeof spReal === "number" ? spReal : null,
         sprint: String(w.fields["System.IterationLevel3"] ?? w.fields["System.IterationPath"] ?? "Sem sprint"),
         responsavel: assignedTo?.displayName
-          ? { nome: assignedTo.displayName, avatarUrl: assignedTo.imageUrl ?? null }
+          ? { nome: assignedTo.displayName, avatarUrl: assignedTo.imageUrl ?? null, email: assignedTo.uniqueName ?? null }
           : null,
         pbiPaiId: typeof w.fields["System.Parent"] === "number" ? (w.fields["System.Parent"] as number) : null,
       };
@@ -835,4 +845,192 @@ export async function getDemandasComite(projetos: string[]): Promise<DemandaComi
         createdDate: String(w.fields["System.CreatedDate"] ?? ""),
       };
     });
+}
+
+// ===== Alocar PBI (Planejamento de capacidade, pedido por Heder em 2026-10-14) — ÚNICA parte deste
+// cliente que ESCREVE no Azure DevOps (o resto é só leitura). Exige PAT com Work Items → Read &
+// write. Chamada só por rotas restritas a admin (ver app/api/capacidade/alocar-task). =====
+
+function aspasWiql(valor: string): string {
+  return valor.replace(/'/g, "''");
+}
+
+async function buscarLoteCampos(org: string, pat: string, ids: number[], fields: string[]): Promise<WorkItem[]> {
+  const lotes: number[][] = [];
+  for (let i = 0; i < ids.length; i += 200) lotes.push(ids.slice(i, i + 200));
+  const partes = await Promise.all(
+    lotes.map(async (lote) => {
+      const res = await fetch(`https://dev.azure.com/${org}/_apis/wit/workitemsbatch?api-version=${API_VERSION}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(pat) },
+        body: JSON.stringify({ ids: lote, fields, errorPolicy: "Omit" }),
+      });
+      if (!res.ok) throw new Error(`Falha ao buscar work items (${res.status}): ${await res.text()}`);
+      return ((await res.json()) as { value: WorkItem[] }).value;
+    })
+  );
+  return partes.flat().filter(Boolean);
+}
+
+function taskDoPbiDe(w: WorkItem): TaskDoPbi {
+  const pessoa = w.fields["System.AssignedTo"] as CampoPessoa;
+  const esforco = w.fields["Microsoft.VSTS.Scheduling.Effort"];
+  const iterationPath = String(w.fields["System.IterationPath"] ?? "");
+  return {
+    id: w.id,
+    titulo: String(w.fields["System.Title"] ?? `Item ${w.id}`),
+    tipo: String(w.fields["System.WorkItemType"] ?? ""),
+    state: String(w.fields["System.State"] ?? ""),
+    iterationPath,
+    sprint: sprintDoIterationPath(iterationPath),
+    responsavel: pessoa?.displayName ?? null,
+    esforco: typeof esforco === "number" ? esforco : null,
+  };
+}
+
+/**
+ * PBIs na etapa "Aguardando Priorização" (Custom.Etapa) de UMA squad (Area Path exato, ex.
+ * "KMM5\TMS - Dedicada Maroni"), com suas Tasks/Bugs filhas diretas. Concluídos/cancelados ficam de
+ * fora (a consulta de hoje traz PBI "Finalizado" nessa etapa). Filhos que não são Task/Bug (ex.
+ * "Assesment") são ignorados.
+ */
+export async function getPbisAguardandoPriorizacao(areaPath: string): Promise<PbiPriorizacao[]> {
+  const { org, pat } = getConfig();
+  const project = areaPath.split("\\")[0];
+  const wiql = `
+    SELECT [System.Id]
+    FROM WorkItems
+    WHERE [System.TeamProject] = '${aspasWiql(project)}'
+      AND [System.WorkItemType] = 'Product Backlog Item'
+      AND [Custom.Etapa] = '${ETAPA_AGUARDANDO_PRIORIZACAO}'
+      AND [System.AreaPath] = '${aspasWiql(areaPath)}'
+    ORDER BY [System.Id]
+  `;
+  const wiqlRes = await fetch(`https://dev.azure.com/${org}/${encodeURIComponent(project)}/_apis/wit/wiql?api-version=${API_VERSION}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeader(pat) },
+    body: JSON.stringify({ query: wiql }),
+  });
+  if (!wiqlRes.ok) throw new Error(`Falha na consulta WIQL de PBIs em priorização (${wiqlRes.status}): ${await wiqlRes.text()}`);
+  const ids = ((await wiqlRes.json()) as { workItems: { id: number }[] }).workItems.map((w) => w.id);
+  if (!ids.length) return [];
+
+  const pbisBrutos = (await buscarLoteCampos(org, pat, ids, ["System.Title", "System.State", "System.AreaPath"])).filter(
+    (w) => !estadoIndicaConcluido(String(w.fields["System.State"] ?? "")) && !/cancel|remov/i.test(String(w.fields["System.State"] ?? ""))
+  );
+
+  return Promise.all(
+    pbisBrutos.map(async (pbi) => {
+      const res = await fetch(`https://dev.azure.com/${org}/_apis/wit/workitems/${pbi.id}?$expand=relations&api-version=${API_VERSION}`, {
+        headers: authHeader(pat),
+      });
+      if (!res.ok) throw new Error(`Falha ao ler as relações do PBI #${pbi.id} (${res.status}): ${await res.text()}`);
+      const j = (await res.json()) as { relations?: { rel: string; url: string }[] };
+      const idsFilhos = (j.relations ?? [])
+        .filter((r) => r.rel === "System.LinkTypes.Hierarchy-Forward")
+        .map((r) => Number(r.url.split("/").pop()))
+        .filter((n) => Number.isFinite(n));
+      const filhos = idsFilhos.length
+        ? await buscarLoteCampos(org, pat, idsFilhos, [
+            "System.Title",
+            "System.WorkItemType",
+            "System.State",
+            "System.IterationPath",
+            "System.AssignedTo",
+            "Microsoft.VSTS.Scheduling.Effort",
+          ])
+        : [];
+      return {
+        id: pbi.id,
+        titulo: String(pbi.fields["System.Title"] ?? `Item ${pbi.id}`),
+        state: String(pbi.fields["System.State"] ?? ""),
+        areaPath: String(pbi.fields["System.AreaPath"] ?? areaPath),
+        tasks: filhos.map(taskDoPbiDe).filter((t) => t.tipo === "Task" || t.tipo === "Bug").sort((a, b) => a.id - b.id),
+      };
+    })
+  );
+}
+
+/** Erro de regra de negócio (400/404/409) — a rota devolve a mensagem ao usuário em vez de um 502 genérico. */
+export class ErroAlocacao extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
+/** Caminho gravável da Iteration ("KMM5\2026\Sprint 8.18") a partir do NOME da sprint. */
+async function caminhoDaIteration(org: string, pat: string, project: string, sprint: string): Promise<string | null> {
+  const res = await fetch(
+    `https://dev.azure.com/${org}/${encodeURIComponent(project)}/_apis/wit/classificationnodes/iterations?$depth=6&api-version=${API_VERSION}`,
+    { headers: authHeader(pat) }
+  );
+  if (!res.ok) throw new Error(`Falha ao ler as iterations de ${project} (${res.status}): ${await res.text()}`);
+  type NoComPath = NoIteracao & { path?: string; children?: NoComPath[] };
+  let achado: string | null = null;
+  const visitar = (no: NoComPath) => {
+    if (no.name === sprint && no.path) achado = no.path;
+    no.children?.forEach(visitar);
+  };
+  visitar((await res.json()) as NoComPath);
+  if (!achado) return null;
+  // O nó vem como "\KMM5\Iteration\2026\Sprint 8.18"; o work item usa "KMM5\2026\Sprint 8.18".
+  return (achado as string).replace(/^\\/, "").replace(/^([^\\]+)\\Iteration/, "$1");
+}
+
+/**
+ * Muda a Iteration da Task/Bug pra `sprint` e atribui ao dev — as duas únicas alterações feitas no
+ * Azure. Revalida no servidor (nunca confia só na tela): item em Backlog/sem sprint, com esforço
+ * entre 1 e 60h, e dev com menos de 60h já alocadas naquela sprint. O `test /rev` do PATCH recusa a
+ * gravação se alguém editou o item depois da leitura.
+ */
+export async function alocarTaskEmSprint(params: { taskId: number; sprint: string; devNome: string }): Promise<void> {
+  const { org, pat } = getConfig();
+  const { taskId, sprint, devNome } = params;
+
+  const res = await fetch(
+    `https://dev.azure.com/${org}/_apis/wit/workitems/${taskId}?fields=System.TeamProject,System.WorkItemType,System.State,System.IterationPath,Microsoft.VSTS.Scheduling.Effort&api-version=${API_VERSION}`,
+    { headers: authHeader(pat) }
+  );
+  if (res.status === 404) throw new ErroAlocacao(`Item #${taskId} não encontrado no Azure DevOps.`, 404);
+  if (!res.ok) throw new Error(`Falha ao ler o item #${taskId} (${res.status}): ${await res.text()}`);
+  const item = (await res.json()) as WorkItem & { rev: number };
+  const tipo = String(item.fields["System.WorkItemType"] ?? "");
+  if (tipo !== "Task" && tipo !== "Bug") throw new ErroAlocacao(`Item #${taskId} é ${tipo || "de outro tipo"} — só Task e Bug podem ser alocados.`, 400);
+
+  const task = taskDoPbiDe(item);
+  const bloqueio = motivoBloqueioTask(task);
+  if (bloqueio) throw new ErroAlocacao(`Item #${taskId} não pode ser alocado: ${bloqueio}.`, 409);
+
+  const project = String(item.fields["System.TeamProject"] ?? "");
+  const caminho = await caminhoDaIteration(org, pat, project, sprint);
+  if (!caminho) throw new ErroAlocacao(`Sprint "${sprint}" não encontrada nas iterations de ${project}.`, 400);
+
+  // Horas já alocadas do dev nessa sprint (mesma conta do quadro: soma do Effort das Task/Bug dele).
+  const minima = parseSprint(sprint) ?? { major: 0, minor: 0 };
+  const daSprint = (await getTasksAlocadas(project, minima)).filter((t) => t.sprint === sprint && t.responsavel?.nome === devNome);
+  const horas = daSprint.reduce((acc, t) => acc + (t.spEstimados ?? 0), 0);
+  if (horas >= HORAS_MAX_SPRINT) {
+    throw new ErroAlocacao(`${devNome} já tem ${Math.round(horas)}h alocadas na ${sprint} (limite de ${HORAS_MAX_SPRINT}h).`, 409);
+  }
+  // E-mail (uniqueName) identifica a pessoa sem ambiguidade; sem ele (dev sem nenhum item no
+  // Azure), cai no nome de exibição.
+  const identidade = daSprint[0]?.responsavel?.email ?? devNome;
+
+  const patch = await fetch(`https://dev.azure.com/${org}/_apis/wit/workitems/${taskId}?api-version=${API_VERSION}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json-patch+json", ...authHeader(pat) },
+    body: JSON.stringify([
+      { op: "test", path: "/rev", value: item.rev },
+      { op: "add", path: "/fields/System.IterationPath", value: caminho },
+      { op: "add", path: "/fields/System.AssignedTo", value: identidade },
+    ]),
+  });
+  if (!patch.ok) {
+    const corpo = await patch.text();
+    if (patch.status === 409 || patch.status === 412) throw new ErroAlocacao(`O item #${taskId} foi alterado por outra pessoa. Recarregue e tente de novo.`, 409);
+    if (patch.status === 401 || patch.status === 403) throw new ErroAlocacao("O token do Azure DevOps não tem permissão de escrita em Work Items.", 502);
+    throw new Error(`Falha ao atualizar o item #${taskId} (${patch.status}): ${corpo}`);
+  }
 }

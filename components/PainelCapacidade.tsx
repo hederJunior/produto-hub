@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { GripVertical, X } from "lucide-react";
+import { ArrowLeft, GripVertical, Plus, X } from "lucide-react";
 import { C, corDoDev, corDeEstadoDevOps } from "@/lib/kmm-theme";
+import { HORAS_MAX_SPRINT, motivoBloqueioTask, type PbiPriorizacao, type TaskDoPbi } from "@/lib/alocacao-pbi";
 import { agruparAlocacoesPorDevSprint, sprintEhIgualOuPosterior, type TarefaParaCapacidade } from "@/lib/capacidade";
 
 /**
@@ -48,6 +49,19 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
   // depender disso, e listar/excluir os vínculos existentes.
   const [dispAberto, setDispAberto] = useState(false);
 
+  // "Alocar PBI" (pedido por Heder em 2026-10-14): o botão + em cada bloco sprint × squad abre o
+  // modal que move uma Task/Bug de um PBI "Aguardando Priorização" pra essa sprint e a atribui a um
+  // dev — grava no Azure DevOps, por isso só aparece pra admin (a API também recusa não-admin).
+  const [ehAdminUsuario, setEhAdminUsuario] = useState(false);
+  const [alocarEm, setAlocarEm] = useState<{ sprint: string; squad: string } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/auth/me", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((j) => setEhAdminUsuario(j?.tipo === "adm"))
+      .catch(() => setEhAdminUsuario(false));
+  }, []);
+
   const dragRef = useRef<{ devId: string; sprintOrigem: string | null } | null>(null);
   // Guarda de corrida: carregarBoard() é chamado tanto ao abrir o painel quanto logo depois de
   // auto-alocar/mover — se a chamada mais antiga responder depois da mais recente, só aplica a
@@ -74,9 +88,7 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
       });
   }
 
-  useEffect(() => {
-    if (!aberto) return;
-    carregarBoard();
+  function carregarTarefas() {
     setCarregandoTarefas(true);
     fetch(`/api/roadmap/tarefas?produto=${PRODUTO}`, { cache: "no-store" })
       .then((res) => res.json())
@@ -88,6 +100,12 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
       })
       .catch(() => setErro("Não foi possível carregar as tasks/bugs do Azure DevOps (KMM5)."))
       .finally(() => setCarregandoTarefas(false));
+  }
+
+  useEffect(() => {
+    if (!aberto) return;
+    carregarBoard();
+    carregarTarefas();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aberto]);
 
@@ -398,18 +416,31 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
                                     {devsDaSquad.length} pessoa{devsDaSquad.length === 1 ? "" : "s"}
                                   </div>
                                 </div>
-                                <span
-                                  className="kmm-chip"
-                                  style={{
-                                    fontSize: 10.5,
-                                    padding: "2px 8px",
-                                    color: saldoSquad < 0 ? C.red : C.text,
-                                    borderColor: saldoSquad < 0 ? C.red : C.border,
-                                  }}
-                                  title="Saldo: capacidade (pessoas × 60h) menos horas já alocadas"
-                                >
-                                  {saldoSquad}h
-                                </span>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                                  {ehAdminUsuario && (
+                                    <button
+                                      onClick={() => setAlocarEm({ sprint, squad })}
+                                      title="Alocar uma Task de PBI aguardando priorização nesta sprint"
+                                      aria-label="Alocar PBI"
+                                      className="kmm-btn"
+                                      style={{ padding: 3, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 7 }}
+                                    >
+                                      <Plus size={14} />
+                                    </button>
+                                  )}
+                                  <span
+                                    className="kmm-chip"
+                                    style={{
+                                      fontSize: 10.5,
+                                      padding: "2px 8px",
+                                      color: saldoSquad < 0 ? C.red : C.text,
+                                      borderColor: saldoSquad < 0 ? C.red : C.border,
+                                    }}
+                                    title="Saldo: capacidade (pessoas × 60h) menos horas já alocadas"
+                                  >
+                                    {saldoSquad}h
+                                  </span>
+                                </div>
                               </div>
                               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                                 {devsDaSquad.map((d) => (
@@ -478,6 +509,20 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
           onFechar={() => setDispAberto(false)}
         />
       )}
+
+      {alocarEm && (
+        <ModalAlocarPbi
+          sprint={alocarEm.sprint}
+          squad={alocarEm.squad}
+          devs={devs}
+          horasAlocadas={horasAlocadas}
+          onFechar={() => setAlocarEm(null)}
+          onConcluido={() => {
+            setAlocarEm(null);
+            carregarTarefas();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -485,6 +530,279 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
 /** Capacidade fixa por pessoa/sprint (regra do produto: "cada pessoa representa 60 horas por
  * sprint") — mesmo valor usado no card da squad e no cabeçalho de cada sprint. */
 const HORAS_POR_PESSOA_SPRINT = 60;
+
+/**
+ * Modal "Alocar PBI" (pedido por Heder em 2026-10-14), aberto pelo + de um bloco sprint × squad.
+ * Fluxo: PBIs da squad em "Aguardando Priorização" → Tasks/Bugs do PBI → devs com menos de 60h na
+ * sprint → confirmação → grava no Azure DevOps (Iteration = sprint do bloco, responsável = dev).
+ * Task/Bug sem esforço, com mais de 60h, fora do Backlog ou já em sprint aparece desabilitada com o
+ * motivo (regra em lib/alocacao-pbi.ts, revalidada no servidor). Dev que passaria de 60h com a task
+ * é só avisado, não bloqueado.
+ */
+function ModalAlocarPbi({
+  sprint,
+  squad,
+  devs,
+  horasAlocadas,
+  onFechar,
+  onConcluido,
+}: {
+  sprint: string;
+  squad: string;
+  devs: { id: string; nome: string; papel: string | null }[];
+  horasAlocadas: (nome: string, sprint: string) => number;
+  onFechar: () => void;
+  onConcluido: () => void;
+}) {
+  const [pbis, setPbis] = useState<PbiPriorizacao[] | null>(null);
+  const [erroCarga, setErroCarga] = useState<string | null>(null);
+  const [pbiSel, setPbiSel] = useState<PbiPriorizacao | null>(null);
+  const [taskSel, setTaskSel] = useState<TaskDoPbi | null>(null);
+  const [devSel, setDevSel] = useState<{ nome: string; papel: string | null; horas: number } | null>(null);
+  const [enviando, setEnviando] = useState(false);
+  const [erroEnvio, setErroEnvio] = useState<string | null>(null);
+
+  const nomeSquad = squad.split("\\").pop() || squad;
+
+  useEffect(() => {
+    let cancelado = false;
+    fetch(`/api/capacidade/pbis-priorizacao?squad=${encodeURIComponent(squad)}`, { cache: "no-store" })
+      .then(async (res) => {
+        const j = await res.json().catch(() => ({}));
+        if (cancelado) return;
+        if (!res.ok) setErroCarga(j.detalhe ? `${j.erro} (${j.detalhe})` : j.erro ?? "Não foi possível carregar os PBIs.");
+        else setPbis(j.pbis ?? []);
+      })
+      .catch(() => {
+        if (!cancelado) setErroCarga("Não foi possível carregar os PBIs.");
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [squad]);
+
+  const devsDisponiveis = useMemo(
+    () =>
+      devs
+        .map((d) => ({ ...d, horas: horasAlocadas(d.nome, sprint) }))
+        .filter((d) => d.horas < HORAS_MAX_SPRINT)
+        .sort((a, b) => a.horas - b.horas || a.nome.localeCompare(b.nome, "pt-BR")),
+    [devs, horasAlocadas, sprint]
+  );
+
+  const passo = devSel ? "confirmar" : taskSel ? "devs" : pbiSel ? "tasks" : "pbis";
+
+  function voltar() {
+    setErroEnvio(null);
+    if (devSel) setDevSel(null);
+    else if (taskSel) setTaskSel(null);
+    else setPbiSel(null);
+  }
+
+  async function confirmar() {
+    if (!taskSel || !devSel) return;
+    setEnviando(true);
+    setErroEnvio(null);
+    try {
+      const res = await fetch("/api/capacidade/alocar-task", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taskId: taskSel.id, sprint, devNome: devSel.nome }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setErroEnvio(j.detalhe ? `${j.erro} (${j.detalhe})` : j.erro ?? "Não foi possível atualizar o Azure DevOps.");
+        return;
+      }
+      onConcluido();
+    } catch {
+      setErroEnvio("Não foi possível atualizar o Azure DevOps.");
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  const titulos: Record<typeof passo, string> = {
+    pbis: "PBIs aguardando priorização",
+    tasks: `PBI #${pbiSel?.id ?? ""} — escolha a Task`,
+    devs: `Task #${taskSel?.id ?? ""} — escolha o dev`,
+    confirmar: "Confirmar alocação",
+  };
+
+  const chip = (texto: string, extra?: React.CSSProperties) => (
+    <span className="kmm-chip" style={{ fontSize: 10.5, padding: "2px 8px", ...extra }}>
+      {texto}
+    </span>
+  );
+
+  return (
+    <div
+      onClick={onFechar}
+      style={{ position: "fixed", inset: 0, background: "rgba(22,19,15,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: 20 }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="kmm-card"
+        style={{ maxWidth: 720, width: "100%", maxHeight: "85vh", overflowY: "auto", padding: 20 }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+            {passo !== "pbis" && (
+              <button onClick={voltar} aria-label="Voltar" disabled={enviando} style={{ background: "none", border: "none", cursor: "pointer", color: C.muted, padding: 4, marginTop: 1 }}>
+                <ArrowLeft size={18} />
+              </button>
+            )}
+            <div>
+              <div style={{ fontFamily: "Sora,sans-serif", fontWeight: 800, fontSize: 16, color: C.text }}>{titulos[passo]}</div>
+              <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+                Alocar em {sprint} · {nomeSquad}
+              </div>
+            </div>
+          </div>
+          <button onClick={onFechar} aria-label="Fechar" style={{ background: "none", border: "none", cursor: "pointer", color: C.muted, padding: 4 }}>
+            <X size={18} />
+          </button>
+        </div>
+
+        <div style={{ marginTop: 16 }}>
+          {passo === "pbis" && (
+            <>
+              {erroCarga && <div style={{ color: C.red, fontSize: 13 }}>{erroCarga}</div>}
+              {!erroCarga && pbis === null && <p style={{ color: C.muted, fontSize: 13 }}>Carregando PBIs do Azure DevOps…</p>}
+              {pbis && pbis.length === 0 && (
+                <p style={{ color: C.muted, fontSize: 13 }}>Nenhum PBI aguardando priorização para {nomeSquad}.</p>
+              )}
+              {pbis && pbis.length > 0 && (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: 10 }}>
+                  {pbis.map((p) => {
+                    const alocaveis = p.tasks.filter((t) => !motivoBloqueioTask(t)).length;
+                    return (
+                      <button
+                        key={p.id}
+                        onClick={() => setPbiSel(p)}
+                        className="kmm-card"
+                        style={{ textAlign: "left", cursor: "pointer", padding: 12, display: "flex", flexDirection: "column", gap: 6, fontFamily: "inherit" }}
+                      >
+                        <span style={{ fontSize: 11, fontWeight: 700, color: C.muted }}>#{p.id}</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: C.text, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                          {p.titulo}
+                        </span>
+                        <span style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: "auto" }}>
+                          {chip(p.state)}
+                          {chip(`${p.tasks.length} task${p.tasks.length === 1 ? "" : "s"} · ${alocaveis} alocáve${alocaveis === 1 ? "l" : "is"}`)}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+
+          {passo === "tasks" && pbiSel && (
+            <>
+              <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 10 }}>
+                #{pbiSel.id} · {pbiSel.titulo}
+              </div>
+              {pbiSel.tasks.length === 0 && <p style={{ color: C.muted, fontSize: 13 }}>Este PBI não tem Tasks ou Bugs.</p>}
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {pbiSel.tasks.map((t) => {
+                  const bloqueio = motivoBloqueioTask(t);
+                  return (
+                    <div
+                      key={t.id}
+                      style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", display: "flex", alignItems: "center", gap: 12, opacity: bloqueio ? 0.7 : 1 }}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 600, color: C.text }}>
+                          {t.tipo} #{t.id} · {t.titulo}
+                        </div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+                          {chip(t.state)}
+                          {chip(t.esforco != null ? `${t.esforco}h` : "sem esforço")}
+                          {t.sprint && chip(t.sprint)}
+                          {t.responsavel && chip(t.responsavel)}
+                        </div>
+                        {bloqueio && <div style={{ fontSize: 11.5, color: C.red, marginTop: 6 }}>{bloqueio}</div>}
+                      </div>
+                      <button className="kmm-btn" style={{ padding: "6px 12px", fontSize: 12 }} disabled={!!bloqueio} onClick={() => setTaskSel(t)} title={bloqueio ?? "Escolher o dev"}>
+                        Alocar
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
+          {passo === "devs" && taskSel && (
+            <>
+              <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 10 }}>
+                Devs com menos de {HORAS_MAX_SPRINT}h alocadas na {sprint}. Esta task tem {taskSel.esforco}h.
+              </div>
+              {devsDisponiveis.length === 0 && <p style={{ color: C.muted, fontSize: 13 }}>Nenhum dev com menos de {HORAS_MAX_SPRINT}h nesta sprint.</p>}
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {devsDisponiveis.map((d) => {
+                  const depois = d.horas + (taskSel.esforco ?? 0);
+                  const estoura = depois > HORAS_MAX_SPRINT;
+                  return (
+                    <div key={d.id} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", display: "flex", alignItems: "center", gap: 12 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{d.nome}</div>
+                        <div style={{ fontSize: 11.5, color: C.muted }}>{d.papel ?? "Sem função"}</div>
+                      </div>
+                      <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 700, color: C.text }}>
+                          {d.horas} / {HORAS_MAX_SPRINT}h
+                        </div>
+                        <div style={{ fontSize: 11, color: estoura ? C.amber : C.muted }}>
+                          ficaria com {depois}h{estoura ? " (acima de 60h)" : ""}
+                        </div>
+                      </div>
+                      <button className="kmm-btn" style={{ padding: "6px 12px", fontSize: 12 }} onClick={() => setDevSel({ nome: d.nome, papel: d.papel, horas: d.horas })}>
+                        Escolher
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
+          {passo === "confirmar" && taskSel && devSel && (
+            <>
+              <div style={{ fontSize: 13.5, color: C.text, lineHeight: 1.5 }}>
+                Isto altera o <strong>Azure DevOps</strong>, visível para todo o time. Na {taskSel.tipo} <strong>#{taskSel.id}</strong> ({taskSel.titulo}):
+              </div>
+              <ul style={{ fontSize: 13.5, color: C.text, margin: "10px 0", paddingLeft: 20, lineHeight: 1.7 }}>
+                <li>
+                  Iteration: <strong>{sprint}</strong>
+                </li>
+                <li>
+                  Responsável: <strong>{devSel.nome}</strong>
+                </li>
+              </ul>
+              {devSel.horas + (taskSel.esforco ?? 0) > HORAS_MAX_SPRINT && (
+                <div style={{ fontSize: 12.5, color: C.amber, marginBottom: 10 }}>
+                  Atenção: {devSel.nome} ficará com {devSel.horas + (taskSel.esforco ?? 0)}h na sprint, acima de {HORAS_MAX_SPRINT}h.
+                </div>
+              )}
+              {erroEnvio && <div style={{ fontSize: 12.5, color: C.red, marginBottom: 10 }}>{erroEnvio}</div>}
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                <button className="kmm-btn" onClick={voltar} disabled={enviando}>
+                  Cancelar
+                </button>
+                <button className="kmm-btn primary" onClick={confirmar} disabled={enviando}>
+                  {enviando ? "Gravando…" : "Confirmar"}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function CartaoDev({
   dev,

@@ -19,6 +19,7 @@ export const FONTS = `
 .kmm-btn.primary:hover{ background:${C.orangeDark}; color:#fff; }
 .kmm-card{ background:${C.panel}; border:1px solid ${C.border}; border-radius:14px; padding:16px 18px;
   box-shadow:0 1px 2px rgba(20,16,12,.04), 0 10px 26px rgba(20,16,12,.03); }
+.kmm-painel .kmm-card{ box-shadow:none; }
 .kmm-chip{ display:inline-flex; align-items:center; gap:6px; font-family:'Hanken Grotesk',sans-serif; font-size:12px; font-weight:600;
   padding:5px 10px; border-radius:999px; border:1px solid ${C.border}; background:#fff; color:${C.muted}; }
 .kmm-nav-item{ display:flex; align-items:center; gap:10px; padding:10px 14px; border-radius:10px; color:${C.muted};
@@ -58,6 +59,26 @@ export function corDeEstadoDevOps(state: string): { bg: string; fg: string } {
   if (/andamento|execu|doing|progress|active/.test(s)) return { bg: "#E7F0FA", fg: C.blue };
   if (/teste|review|revis|valida/.test(s)) return { bg: "#FCEFD8", fg: C.amber };
   return { bg: C.soft, fg: C.muted };
+}
+
+/**
+ * Prioridade do Azure DevOps vem como número (1–4). Convenção padrão adotada (não confirmada
+ * campo a campo com o Heder, só a leitura usual do Priority no processo do Azure DevOps):
+ * 1 = Crítica, 2 = Alta, 3 = Média, 4 = Baixa.
+ */
+export function infoPrioridade(p: number | null): { label: string; bg: string; fg: string } {
+  switch (p) {
+    case 1:
+      return { label: "Crítica", bg: "#FBE7E4", fg: C.red };
+    case 2:
+      return { label: "Alta", bg: "#FFF1EA", fg: C.orange };
+    case 3:
+      return { label: "Média", bg: "#FCEFD8", fg: C.amber };
+    case 4:
+      return { label: "Baixa", bg: "#E7F5EC", fg: C.green };
+    default:
+      return { label: "Sem prioridade", bg: C.soft, fg: C.muted };
+  }
 }
 
 /** Um State literal do Azure DevOps indica item concluído? (Done/Closed/Concluído/Fechado/...) */

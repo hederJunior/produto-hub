@@ -1,10 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { BarChart3, Calendar, CalendarRange, ChevronDown, ChevronRight, ChevronUp, Clock, Download, Eraser, Flag, Gauge, Maximize2, Users, X } from "lucide-react";
+import { BarChart3, Calendar, CalendarRange, ChevronDown, ChevronRight, ChevronUp, Clock, Download, Eraser, Flag, Gauge, ListTodo, Map as MapIcon, Maximize2, Users, X } from "lucide-react";
 import { useProduto } from "@/components/ProdutoContext";
-import { C, corDaArea, corDeAreaTabela, corDeEstadoDevOps, corDeStatus, corDoDev, estadoIndicaConcluido } from "@/lib/kmm-theme";
+import { C, corDaArea, corDeAreaTabela, corDeEstadoDevOps, corDeStatus, corDoDev, estadoIndicaConcluido, infoPrioridade } from "@/lib/kmm-theme";
+import { chaveDia, diasEntreChaves, formatarChaveDia } from "@/lib/datas";
+import BacklogEsteirasClientes, { type OrdemBacklog } from "@/components/BacklogEsteirasClientes";
+import type { ItemBacklog } from "@/lib/backlog";
 import PainelCapacidade from "@/components/PainelCapacidade";
 import PageHeader from "@/components/PageHeader";
 
@@ -114,23 +118,6 @@ function posicaoPercentual(dataISO: string | null, inicioMs: number, fimMs: numb
   return Math.min(100, Math.max(0, ((d - inicioMs) / (fimMs - inicioMs)) * 100));
 }
 
-/** Dia (YYYY-MM-DD) de um instante ISO no fuso de Brasília — o mesmo dia exibido no Azure DevOps. */
-function chaveDia(iso: string | Date): string {
-  const d = typeof iso === "string" ? new Date(iso) : iso;
-  return d.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-}
-
-/** Dias corridos entre duas chaves de dia (YYYY-MM-DD): `ate − de`. */
-function diasEntreChaves(de: string, ate: string): number {
-  const [y1, m1, d1] = de.split("-").map(Number);
-  const [y2, m2, d2] = ate.split("-").map(Number);
-  return Math.round((Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) / 86_400_000);
-}
-
-function formatarChaveDia(chave: string): string {
-  return chave.split("-").reverse().join("/");
-}
-
 function formatarData(dataISO: string | null): string {
   if (!dataISO) return "sem data";
   const d = new Date(dataISO);
@@ -159,26 +146,6 @@ function statusPrazoDoEpic(epic: EpicRoadmap, progresso: number): "No prazo" | "
   if (diasRestantes < 0 && progresso < 100) return "Atrasado";
   if (diasRestantes < 15 && progresso < 80) return "Atenção";
   return "No prazo";
-}
-
-/**
- * Prioridade do Azure DevOps vem como número (1–4). Convenção padrão adotada (não confirmada
- * campo a campo com o Heder, só a leitura usual do Priority no processo do Azure DevOps):
- * 1 = Crítica, 2 = Alta, 3 = Média, 4 = Baixa.
- */
-function infoPrioridade(p: number | null): { label: string; bg: string; fg: string } {
-  switch (p) {
-    case 1:
-      return { label: "Crítica", bg: "#FBE7E4", fg: C.red };
-    case 2:
-      return { label: "Alta", bg: "#FFF1EA", fg: C.orange };
-    case 3:
-      return { label: "Média", bg: "#FCEFD8", fg: C.amber };
-    case 4:
-      return { label: "Baixa", bg: "#E7F5EC", fg: C.green };
-    default:
-      return { label: "Sem prioridade", bg: C.soft, fg: C.muted };
-  }
 }
 
 const LARGURA_COLUNA_LABEL = 300;
@@ -319,6 +286,12 @@ export default function RoadmapPage() {
   const [painelEsforcoAberto, setPainelEsforcoAberto] = useState(false);
   const [painelCapacidadeAberto, setPainelCapacidadeAberto] = useState(false);
 
+  // Backlog > Esteiras Clientes (pedido por Heder em 2026-10-14). `ordemBacklog` null = ordem por ID.
+  const [backlogItens, setBacklogItens] = useState<ItemBacklog[]>([]);
+  const [carregandoBacklog, setCarregandoBacklog] = useState(true);
+  const [erroBacklog, setErroBacklog] = useState<string | null>(null);
+  const [ordemBacklog, setOrdemBacklog] = useState<OrdemBacklog | null>(null);
+
   const [demandasComite, setDemandasComite] = useState<DemandaComite[]>([]);
   const [carregandoComites, setCarregandoComites] = useState(true);
   const [erroComites, setErroComites] = useState<string | null>(null);
@@ -333,6 +306,10 @@ export default function RoadmapPage() {
 
   // Tela da seção Sprints: "alocacao" (grade Recurso × Iteration, padrão) ou "lista" (tabela por sprint).
   const [modoSprints, setModoSprints] = useState<ModoSprints>("alocacao");
+  // Pontos de encaixe na barra de filtros do painel, onde a tela "Alocação por sprint" injeta (portal)
+  // os próprios filtros e ações — pra ficarem na mesma linha das outras seções.
+  const [slotFiltros, setSlotFiltros] = useState<HTMLElement | null>(null);
+  const [slotAcoes, setSlotAcoes] = useState<HTMLElement | null>(null);
   const [agora, setAgora] = useState<Date | null>(null);
   useEffect(() => setAgora(new Date()), []);
 
@@ -377,6 +354,19 @@ export default function RoadmapPage() {
       })
       .catch(() => setErroComites("Não foi possível carregar as demandas de comitê do Azure DevOps."))
       .finally(() => setCarregandoComites(false));
+  }, [produto]);
+
+  useEffect(() => {
+    setCarregandoBacklog(true);
+    setErroBacklog(null);
+    fetch(`/api/roadmap/backlog?produto=${produto}`, { cache: "no-store" })
+      .then((res) => res.json())
+      .then((j) => {
+        if (j.erro) setErroBacklog(j.detalhe ? `${j.erro} (${j.detalhe})` : j.erro);
+        setBacklogItens(j.itens ?? []);
+      })
+      .catch(() => setErroBacklog("Não foi possível carregar o backlog do Azure DevOps."))
+      .finally(() => setCarregandoBacklog(false));
   }, [produto]);
 
   const areasDisponiveis = useMemo(() => Array.from(new Set(epicos.map((e) => e.areaPath))).sort(), [epicos]);
@@ -529,8 +519,47 @@ export default function RoadmapPage() {
             ? "Cronograma estratégico de desenvolvimento, marcos e entregas do time de Produto."
             : "Sincronizado com o Azure DevOps."
         }
-        abas={<VisaoFiltro visao={visao} setVisao={setVisao} />}
+      />
+
+      <VisaoFiltro visao={visao} setVisao={setVisao} />
+
+      {/* Painel único da seção (abas de pasta coladas nele, pedido por Heder em 2026-10-14): a barra
+          de filtros/ações fica SEMPRE logo abaixo das abas, dentro do painel, igual em toda seção —
+          filtros à esquerda, ações empurradas pra direita (marginLeft:auto). */}
+      <div
+        className="kmm-painel"
+        style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: "0 14px 14px 14px", padding: 18, minHeight: 260 }}
       >
+      <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 18 }}>
+        {visao === "backlog" && (
+          <>
+            {/* Visões do Backlog: por enquanto só "Esteiras Clientes" (a primeira de várias previstas). */}
+            <div className="kmm-seg">
+              <div className="kmm-seg-item active" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <Users size={13} /> Esteiras Clientes
+              </div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, marginLeft: "auto" }}>
+              {(
+                [
+                  { valor: "prioridade", label: "Ordenar por prioridade" },
+                  { valor: "data", label: "Ordenar por data" },
+                ] as { valor: OrdemBacklog; label: string }[]
+              ).map((o) => (
+                <button
+                  key={o.valor}
+                  className="kmm-btn"
+                  aria-pressed={ordemBacklog === o.valor}
+                  style={ordemBacklog === o.valor ? { borderColor: C.orange, color: C.orange, background: "#FFF1EA" } : undefined}
+                  onClick={() => setOrdemBacklog(o.valor)}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
         {visao === "roadmap" && (
           <>
             <FiltroTrimestre selecionados={quartersSelecionados} onChange={setQuartersSelecionados} />
@@ -547,7 +576,7 @@ export default function RoadmapPage() {
                 </option>
               ))}
             </select>
-            <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
               <button
                 className="kmm-btn"
                 onClick={() => setFeaturesAbertas(Object.fromEntries(epicosExibidos.map((e) => [e.id, true])))}
@@ -566,6 +595,24 @@ export default function RoadmapPage() {
 
         {visao === "sprints" && (
           <>
+            <div className="kmm-seg">
+              {(
+                [
+                  { valor: "alocacao", label: "Alocação por sprint", icone: <CalendarRange size={13} /> },
+                  { valor: "lista", label: "Lista por sprint", icone: <Calendar size={13} /> },
+                ] as { valor: ModoSprints; label: string; icone: React.ReactNode }[]
+              ).map((o) => (
+                <div
+                  key={o.valor}
+                  className={`kmm-seg-item${modoSprints === o.valor ? " active" : ""}`}
+                  style={{ display: "flex", alignItems: "center", gap: 6 }}
+                  onClick={() => setModoSprints(o.valor)}
+                >
+                  {o.icone} {o.label}
+                </div>
+              ))}
+            </div>
+            {modoSprints === "alocacao" && <div ref={setSlotFiltros} style={{ display: "contents" }} />}
             {modoSprints === "lista" && (
               <>
                 <MultiSelectFiltro
@@ -595,39 +642,27 @@ export default function RoadmapPage() {
                     <option value="tipo">Tipo</option>
                   </select>
                 </div>
+              </>
+            )}
+            <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, marginLeft: "auto" }}>
+              {modoSprints === "alocacao" && <div ref={setSlotAcoes} style={{ display: "contents" }} />}
+              {modoSprints === "lista" && (
                 <button className="kmm-btn" onClick={exportarExcelSprints} disabled={!tarefasExibidas.length}>
                   <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <Download size={13} /> Exportar Excel
                   </span>
                 </button>
-              </>
-            )}
-            <button className="kmm-btn" onClick={() => setPainelEsforcoAberto(true)}>
-              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <BarChart3 size={13} /> Esforço por sprint
-              </span>
-            </button>
-            <button className="kmm-btn" onClick={() => setPainelCapacidadeAberto(true)}>
-              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <Users size={13} /> Planejar capacidade
-              </span>
-            </button>
-            <div className="kmm-seg">
-              {(
-                [
-                  { valor: "alocacao", label: "Alocação por sprint", icone: <CalendarRange size={13} /> },
-                  { valor: "lista", label: "Lista por sprint", icone: <Calendar size={13} /> },
-                ] as { valor: ModoSprints; label: string; icone: React.ReactNode }[]
-              ).map((o) => (
-                <div
-                  key={o.valor}
-                  className={`kmm-seg-item${modoSprints === o.valor ? " active" : ""}`}
-                  style={{ display: "flex", alignItems: "center", gap: 6 }}
-                  onClick={() => setModoSprints(o.valor)}
-                >
-                  {o.icone} {o.label}
-                </div>
-              ))}
+              )}
+              <button className="kmm-btn" onClick={() => setPainelEsforcoAberto(true)}>
+                <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <BarChart3 size={13} /> Esforço por sprint
+                </span>
+              </button>
+              <button className="kmm-btn" onClick={() => setPainelCapacidadeAberto(true)}>
+                <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <Users size={13} /> Planejar capacidade
+                </span>
+              </button>
             </div>
           </>
         )}
@@ -679,11 +714,27 @@ export default function RoadmapPage() {
             />
           </>
         )}
-      </PageHeader>
+      </div>
 
       <div>
-        {/* Seção Backlog: em branco por enquanto (pedido por Heder em 2026-10-14). */}
-        {visao === "backlog" ? null : visao === "roadmap" ? (
+        {visao === "backlog" ? (
+          <>
+            {carregandoBacklog && <p style={{ color: C.muted }}>Carregando backlog do Azure DevOps…</p>}
+            {erroBacklog && (
+              <div className="kmm-card" style={{ color: C.red, fontSize: 13 }}>
+                {erroBacklog}
+              </div>
+            )}
+            {!carregandoBacklog && !erroBacklog && backlogItens.length === 0 && (
+              <p style={{ color: C.muted }}>
+                Nenhum PBI em Backlog (State e Etapa) nas squads de Esteiras Clientes para o produto selecionado. Essas squads existem apenas no KMM5.
+              </p>
+            )}
+            {!carregandoBacklog && !erroBacklog && backlogItens.length > 0 && (
+              <BacklogEsteirasClientes itens={backlogItens} ordem={ordemBacklog} hoje={agora ?? new Date()} />
+            )}
+          </>
+        ) : visao === "roadmap" ? (
           <>
             {carregandoRoadmap && <p style={{ color: C.muted }}>Carregando roadmap do Azure DevOps…</p>}
             {erroRoadmap && (
@@ -757,7 +808,13 @@ export default function RoadmapPage() {
               </div>
             )}
             {modoSprints === "alocacao" && !carregandoSprints && !erroSprints && (
-              <PainelAlocacaoPorSprint tarefas={tarefas} produto={produto} areasDisponiveis={areasDisponiveisSprints} />
+              <PainelAlocacaoPorSprint
+                tarefas={tarefas}
+                produto={produto}
+                areasDisponiveis={areasDisponiveisSprints}
+                slotFiltros={slotFiltros}
+                slotAcoes={slotAcoes}
+              />
             )}
             {modoSprints === "lista" && !carregandoSprints && !erroSprints && tarefasExibidas.length === 0 && (
               <p style={{ color: C.muted }}>Nenhuma Task ou Bug encontrada para os filtros selecionados.</p>
@@ -789,6 +846,7 @@ export default function RoadmapPage() {
           </>
         )}
       </div>
+      </div>
 
       {epicDescricao && <ModalDescricaoEpic epic={epicDescricao} onFechar={() => setEpicDescricaoAberta(null)} />}
       {painelEsforcoAberto && (
@@ -804,24 +862,20 @@ export default function RoadmapPage() {
 }
 
 /**
- * Seletor de SEÇÃO da página (Backlog | Comitê | Sprints | Road Map). Diferente dos filtros (caixas
- * brancas pequenas): barra escura, abas maiores e em negrito, com a aba ativa em laranja — pra ficar
- * claro que isto troca a visão inteira, e não filtra o que está na tela (pedido por Heder em
- * 2026-10-14).
+ * Seletor de SEÇÃO da página (Backlog | Comitê | Sprints | Road Map), como abas de pasta coladas no
+ * painel de conteúdo logo abaixo: a aba ativa se funde ao painel (mesmo fundo, sem a borda de
+ * baixo, borda laranja no topo e ícone laranja); as inativas ficam num cinza-areia "recuado".
+ * Escolhido pelo Heder em 2026-10-14 (opção D, com os ícones da opção C).
  */
 function VisaoFiltro({ visao, setVisao }: { visao: Visao; setVisao: (v: Visao) => void }) {
-  const opcoes: { valor: Visao; label: string }[] = [
-    { valor: "backlog", label: "Backlog" },
-    { valor: "comites", label: "Comitê" },
-    { valor: "sprints", label: "Sprints" },
-    { valor: "roadmap", label: "Road Map" },
+  const opcoes: { valor: Visao; label: string; icone: React.ReactNode }[] = [
+    { valor: "backlog", label: "Backlog", icone: <ListTodo size={16} /> },
+    { valor: "comites", label: "Comitê", icone: <Users size={16} /> },
+    { valor: "sprints", label: "Sprints", icone: <CalendarRange size={16} /> },
+    { valor: "roadmap", label: "Road Map", icone: <MapIcon size={16} /> },
   ];
   return (
-    <div
-      role="tablist"
-      aria-label="Seção"
-      style={{ display: "inline-flex", gap: 4, padding: 5, borderRadius: 14, background: C.dark, boxShadow: "0 2px 8px rgba(20,16,12,.18)" }}
-    >
+    <div role="tablist" aria-label="Seção" style={{ display: "flex", gap: 4, alignItems: "flex-end", marginBottom: -1, position: "relative", zIndex: 2, flexWrap: "wrap" }}>
       {opcoes.map((o) => {
         const ativo = visao === o.valor;
         return (
@@ -831,19 +885,24 @@ function VisaoFiltro({ visao, setVisao }: { visao: Visao; setVisao: (v: Visao) =
             aria-selected={ativo}
             onClick={() => setVisao(o.valor)}
             style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
               fontFamily: "Sora,sans-serif",
               fontSize: 14,
-              fontWeight: 700,
-              padding: "10px 22px",
-              borderRadius: 10,
-              border: "none",
+              fontWeight: ativo ? 700 : 600,
+              padding: ativo ? "11px 20px" : "9px 18px",
+              borderRadius: "12px 12px 0 0",
               cursor: "pointer",
-              background: ativo ? C.orange : "transparent",
-              color: ativo ? "#fff" : "rgba(255,255,255,.72)",
-              boxShadow: ativo ? "0 2px 6px rgba(252,76,2,.45)" : "none",
-              transition: "all .15s ease",
+              background: ativo ? C.panel : "#ECE9E3",
+              color: ativo ? C.text : C.muted,
+              border: ativo ? `1px solid ${C.border}` : "1px solid transparent",
+              borderTop: ativo ? `3px solid ${C.orange}` : "1px solid transparent",
+              borderBottom: ativo ? `1px solid ${C.panel}` : "1px solid transparent",
+              transition: "background .15s ease, color .15s ease",
             }}
           >
+            <span style={{ display: "flex", color: ativo ? C.orange : C.muted }}>{o.icone}</span>
             {o.label}
           </button>
         );
@@ -1849,10 +1908,14 @@ function PainelAlocacaoPorSprint({
   tarefas,
   produto,
   areasDisponiveis,
+  slotFiltros,
+  slotAcoes,
 }: {
   tarefas: TaskAlocada[];
   produto: string;
   areasDisponiveis: string[];
+  slotFiltros: HTMLElement | null;
+  slotAcoes: HTMLElement | null;
 }) {
   const [pais, setPais] = useState<Record<number, { titulo: string; tipo: string; estado: string }>>({});
   const [carregandoPais, setCarregandoPais] = useState(false);
@@ -2006,55 +2069,62 @@ function PainelAlocacaoPorSprint({
   const LARGURA_SPRINT = 240;
 
   return (
-    <div className="kmm-card" style={{ display: "flex", flexDirection: "column", padding: 18 }}>
+    <div style={{ display: "flex", flexDirection: "column" }}>
+      {/* Filtros e ações desta tela vivem na barra do painel da página (logo abaixo das abas,
+          igual nas outras seções): entram lá via portal nos "slots" criados pela página, mas o
+          estado continua aqui dentro. */}
+      {slotFiltros &&
+        createPortal(
+          <>
+            <MultiSelectFiltro
+              rotuloTodos="Todas as áreas"
+              opcoes={areasDisponiveis}
+              selecionados={areasFiltro}
+              onChange={setAreasFiltro}
+              formatar={(a) => a.split("\\").pop() || a}
+            />
+            <MultiSelectFiltro
+              rotuloTodos="Todas as funções"
+              opcoes={["Dev", "QA"]}
+              selecionados={funcoesFiltro}
+              onChange={setFuncoesFiltro}
+            />
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>A partir da</span>
+              <select className="kmm-input" style={{ width: "auto" }} value={inicialEfetivo} onChange={(e) => setInicial(e.target.value)}>
+                {sprintsOrdenadas.map((sp) => (
+                  <option key={sp} value={sp}>
+                    {sp}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <MultiSelectFiltro
+              rotuloTodos="Todas as sprints"
+              opcoes={sprintsDoIntervalo}
+              selecionados={sprintsFiltro}
+              onChange={setSprintsFiltro}
+            />
+            {carregandoPais && <span style={{ fontSize: 12, color: C.muted }}>Carregando títulos dos PBIs…</span>}
+          </>,
+          slotFiltros
+        )}
+      {slotAcoes &&
+        createPortal(
+          <>
+            <button className="kmm-btn" onClick={() => setComprimidos({})}>
+              Expandir todos
+            </button>
+            <button className="kmm-btn" onClick={() => setComprimidos(Object.fromEntries(linhas.map((l) => [l.chave, true])))}>
+              Comprimir todos
+            </button>
+          </>,
+          slotAcoes
+        )}
+
       <div style={{ fontSize: 12, color: C.muted, marginBottom: 12 }}>
         Recurso × Iteration · PBI pai e Tasks/Bugs de cada pessoa em cada sprint (cor = Área).
       </div>
-
-      <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
-          <MultiSelectFiltro
-            rotuloTodos="Todas as áreas"
-            opcoes={areasDisponiveis}
-            selecionados={areasFiltro}
-            onChange={setAreasFiltro}
-            formatar={(a) => a.split("\\").pop() || a}
-          />
-          <MultiSelectFiltro
-            rotuloTodos="Todas as funções"
-            opcoes={["Dev", "QA"]}
-            selecionados={funcoesFiltro}
-            onChange={setFuncoesFiltro}
-          />
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>A partir da</span>
-            <select className="kmm-input" style={{ width: "auto" }} value={inicialEfetivo} onChange={(e) => setInicial(e.target.value)}>
-              {sprintsOrdenadas.map((sp) => (
-                <option key={sp} value={sp}>
-                  {sp}
-                </option>
-              ))}
-            </select>
-          </div>
-          <MultiSelectFiltro
-            rotuloTodos="Todas as sprints"
-            opcoes={sprintsDoIntervalo}
-            selecionados={sprintsFiltro}
-            onChange={setSprintsFiltro}
-          />
-          {carregandoPais && <span style={{ fontSize: 12, color: C.muted }}>Carregando títulos dos PBIs…</span>}
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: "auto" }}>
-            <button className="kmm-btn" style={{ padding: "6px 10px", fontSize: 12 }} onClick={() => setComprimidos({})}>
-              Expandir todos
-            </button>
-            <button
-              className="kmm-btn"
-              style={{ padding: "6px 10px", fontSize: 12 }}
-              onClick={() => setComprimidos(Object.fromEntries(linhas.map((l) => [l.chave, true])))}
-            >
-              Comprimir todos
-            </button>
-          </div>
-        </div>
 
         {sprintsVisiveis.length === 0 ? (
           <p style={{ color: C.muted }}>Nenhuma Task ou Bug alocada em sprint para exibir.</p>

@@ -18,6 +18,7 @@ import {
   type TaskDoPbi,
 } from "./alocacao-pbi";
 import { estadoIndicaConcluido } from "./kmm-theme";
+import { ESTEIRAS_CLIENTES_SQUADS, type ItemBacklog } from "./backlog";
 
 // Toda chamada ao Azure DevOps neste módulo é SEM cache. O Next.js guarda no Data Cache o resultado
 // de fetch() feito dentro de Route Handlers (inclusive POST de WIQL/workitemsbatch, que têm a mesma
@@ -856,6 +857,86 @@ export async function getDemandasComite(projetos: string[]): Promise<DemandaComi
         createdDate: String(w.fields["System.CreatedDate"] ?? ""),
       };
     });
+}
+
+// ===== Backlog > Esteiras Clientes (pedido por Heder em 2026-10-14). Só leitura. =====
+
+const CAMPO_CLASSIFICACAO = "Custom.67a95862-58a3-47f7-8f7c-285ec4d13106";
+
+/** Texto de um campo que pode vir como string ou como identidade ({ displayName }). */
+function textoDeCampo(valor: unknown): string {
+  if (typeof valor === "string") return valor;
+  if (valor && typeof valor === "object" && "displayName" in valor) return String((valor as { displayName?: string }).displayName ?? "");
+  return "";
+}
+
+/**
+ * PBIs com State = "Backlog" e Etapa = "Backlog" das squads de ESTEIRAS_CLIENTES_SQUADS, nos
+ * projetos informados. Só consulta o projeto onde a squad existe (hoje todas ficam no KMM5; a WIQL
+ * com Area Path inexistente falha com TF51011, então as áreas são conferidas antes).
+ */
+export async function getBacklogEsteirasClientes(projetos: string[]): Promise<ItemBacklog[]> {
+  const { org, pat } = getConfig();
+
+  const porProjeto = await Promise.all(
+    projetos.map(async (project) => {
+      const arvore = await fetch(
+        `https://dev.azure.com/${org}/${encodeURIComponent(project)}/_apis/wit/classificationnodes/areas?$depth=2&api-version=${API_VERSION}`,
+        { headers: authHeader(pat) }
+      );
+      if (!arvore.ok) throw new Error(`Falha ao ler as áreas de ${project} (${arvore.status}): ${await arvore.text()}`);
+      const existentes = new Set(((await arvore.json()) as { children?: { name: string }[] }).children?.map((c) => c.name) ?? []);
+      const areas = ESTEIRAS_CLIENTES_SQUADS.filter((s) => existentes.has(s)).map((s) => `${project}\\${s}`);
+      if (!areas.length) return [];
+
+      const wiql = `
+        SELECT [System.Id]
+        FROM WorkItems
+        WHERE [System.TeamProject] = '${aspasWiql(project)}'
+          AND [System.WorkItemType] = 'Product Backlog Item'
+          AND [System.State] = 'Backlog'
+          AND [Custom.Etapa] = 'Backlog'
+          AND (${areas.map((a) => `[System.AreaPath] UNDER '${aspasWiql(a)}'`).join(" OR ")})
+        ORDER BY [System.Id]
+      `;
+      const wiqlRes = await fetch(`https://dev.azure.com/${org}/${encodeURIComponent(project)}/_apis/wit/wiql?api-version=${API_VERSION}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(pat) },
+        body: JSON.stringify({ query: wiql }),
+      });
+      if (!wiqlRes.ok) throw new Error(`Falha na consulta WIQL do Backlog (${project}) (${wiqlRes.status}): ${await wiqlRes.text()}`);
+      const ids = ((await wiqlRes.json()) as { workItems: { id: number }[] }).workItems.map((w) => w.id);
+      if (!ids.length) return [];
+
+      return buscarLoteCampos(org, pat, ids, [
+        "System.Title",
+        "System.AreaPath",
+        "System.CreatedDate",
+        "Custom.Cliente",
+        "Custom.PO",
+        "Custom.DataAberturaProduto",
+        CAMPO_CLASSIFICACAO,
+        "Custom.Feature",
+        "Microsoft.VSTS.Common.Priority",
+      ]);
+    })
+  );
+
+  return porProjeto.flat().map((w) => {
+    const prioridade = w.fields["Microsoft.VSTS.Common.Priority"];
+    return {
+      id: w.id,
+      titulo: String(w.fields["System.Title"] ?? `Item ${w.id}`),
+      areaPath: String(w.fields["System.AreaPath"] ?? ""),
+      cliente: textoDeCampo(w.fields["Custom.Cliente"]),
+      po: textoDeCampo(w.fields["Custom.PO"]),
+      createdDate: String(w.fields["System.CreatedDate"] ?? ""),
+      dataAberturaProduto: (w.fields["Custom.DataAberturaProduto"] as string) ?? null,
+      classificacao: textoDeCampo(w.fields[CAMPO_CLASSIFICACAO]),
+      feature: textoDeCampo(w.fields["Custom.Feature"]),
+      prioridade: typeof prioridade === "number" ? prioridade : null,
+    };
+  });
 }
 
 // ===== Alocar PBI (Planejamento de capacidade, pedido por Heder em 2026-10-14) — ÚNICA parte deste

@@ -1008,15 +1008,17 @@ export async function alocarTaskEmSprint(params: { taskId: number; sprint: strin
   if (!caminho) throw new ErroAlocacao(`Sprint "${sprint}" não encontrada nas iterations de ${project}.`, 400);
 
   // Horas já alocadas do dev nessa sprint (mesma conta do quadro: soma do Effort das Task/Bug dele).
-  const minima = parseSprint(sprint) ?? { major: 0, minor: 0 };
-  const daSprint = (await getTasksAlocadas(project, minima)).filter((t) => t.sprint === sprint && t.responsavel?.nome === devNome);
+  // Busca todas as sprints (mínima 0.0) pra achar o e-mail do dev em QUALQUER item dele, não só nos
+  // da sprint de destino — quem ainda não tem nada nessa sprint também precisa ser identificado.
+  const doDev = (await getTasksAlocadas(project, { major: 0, minor: 0 })).filter((t) => t.responsavel?.nome === devNome);
+  const daSprint = doDev.filter((t) => t.sprint === sprint);
   const horas = daSprint.reduce((acc, t) => acc + (t.spEstimados ?? 0), 0);
   if (horas >= HORAS_MAX_SPRINT) {
     throw new ErroAlocacao(`${devNome} já tem ${Math.round(horas)}h alocadas na ${sprint} (limite de ${HORAS_MAX_SPRINT}h).`, 409);
   }
   // E-mail (uniqueName) identifica a pessoa sem ambiguidade; sem ele (dev sem nenhum item no
   // Azure), cai no nome de exibição.
-  const identidade = daSprint[0]?.responsavel?.email ?? devNome;
+  const identidade = doDev.find((t) => t.responsavel?.email)?.responsavel?.email ?? devNome;
 
   const patch = await fetch(`https://dev.azure.com/${org}/_apis/wit/workitems/${taskId}?api-version=${API_VERSION}`, {
     method: "PATCH",

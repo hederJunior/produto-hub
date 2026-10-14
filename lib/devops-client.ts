@@ -9,10 +9,12 @@
 
 import {
   ETAPA_AGUARDANDO_PRIORIZACAO,
+  ETAPA_EXECUCAO,
   HORAS_MAX_SPRINT,
   motivoBloqueioTask,
   sprintDoIterationPath,
   type PbiPriorizacao,
+  type ResultadoEtapaPbi,
   type TaskDoPbi,
 } from "./alocacao-pbi";
 import { estadoIndicaConcluido } from "./kmm-theme";
@@ -979,18 +981,43 @@ async function caminhoDaIteration(org: string, pat: string, project: string, spr
   return (achado as string).replace(/^\\/, "").replace(/^([^\\]+)\\Iteration/, "$1");
 }
 
+/** Confere que o Area Path existe na árvore de áreas do projeto (evita gravar uma área inventada). */
+async function areaPathExiste(org: string, pat: string, project: string, areaPath: string): Promise<boolean> {
+  const res = await fetch(
+    `https://dev.azure.com/${org}/${encodeURIComponent(project)}/_apis/wit/classificationnodes/areas?$depth=6&api-version=${API_VERSION}`,
+    { headers: authHeader(pat) }
+  );
+  if (!res.ok) throw new Error(`Falha ao ler as áreas de ${project} (${res.status}): ${await res.text()}`);
+  type NoArea = { path?: string; children?: NoArea[] };
+  let achou = false;
+  const visitar = (no: NoArea) => {
+    // O nó vem como "\KMM5\Area\TMS - Dedicada Maroni"; o work item usa "KMM5\TMS - Dedicada Maroni".
+    const normal = no.path?.replace(/^\\/, "").replace(/^([^\\]+)\\Area/, "$1");
+    if (normal === areaPath) achou = true;
+    no.children?.forEach(visitar);
+  };
+  visitar((await res.json()) as NoArea);
+  return achou;
+}
+
 /**
- * Muda a Iteration da Task/Bug pra `sprint` e atribui ao dev — as duas únicas alterações feitas no
- * Azure. Revalida no servidor (nunca confia só na tela): item em Backlog/sem sprint, com esforço
- * entre 1 e 60h, e dev com menos de 60h já alocadas naquela sprint. O `test /rev` do PATCH recusa a
- * gravação se alguém editou o item depois da leitura.
+ * Muda a Iteration da Task/Bug pra `sprint`, o Area Path pra `areaPath` (a squad do bloco) e atribui
+ * ao dev — as únicas alterações feitas no Azure. Revalida no servidor (nunca confia só na tela):
+ * item em Backlog/sem sprint, com esforço entre 1 e 60h, Area Path existente no mesmo projeto, e
+ * dev com menos de 60h já alocadas naquela sprint. O `test /rev` do PATCH recusa a gravação se
+ * alguém editou o item depois da leitura.
  */
-export async function alocarTaskEmSprint(params: { taskId: number; sprint: string; devNome: string }): Promise<void> {
+export async function alocarTaskEmSprint(params: {
+  taskId: number;
+  sprint: string;
+  devNome: string;
+  areaPath: string;
+}): Promise<{ etapaPbi: ResultadoEtapaPbi | null }> {
   const { org, pat } = getConfig();
-  const { taskId, sprint, devNome } = params;
+  const { taskId, sprint, devNome, areaPath } = params;
 
   const res = await fetch(
-    `https://dev.azure.com/${org}/_apis/wit/workitems/${taskId}?fields=System.TeamProject,System.WorkItemType,System.State,System.IterationPath,Microsoft.VSTS.Scheduling.Effort&api-version=${API_VERSION}`,
+    `https://dev.azure.com/${org}/_apis/wit/workitems/${taskId}?fields=System.TeamProject,System.WorkItemType,System.State,System.IterationPath,System.Parent,Microsoft.VSTS.Scheduling.Effort&api-version=${API_VERSION}`,
     { headers: authHeader(pat) }
   );
   if (res.status === 404) throw new ErroAlocacao(`Item #${taskId} não encontrado no Azure DevOps.`, 404);
@@ -1006,6 +1033,9 @@ export async function alocarTaskEmSprint(params: { taskId: number; sprint: strin
   const project = String(item.fields["System.TeamProject"] ?? "");
   const caminho = await caminhoDaIteration(org, pat, project, sprint);
   if (!caminho) throw new ErroAlocacao(`Sprint "${sprint}" não encontrada nas iterations de ${project}.`, 400);
+  if (areaPath.split("\\")[0] !== project || !(await areaPathExiste(org, pat, project, areaPath))) {
+    throw new ErroAlocacao(`Area Path "${areaPath}" não existe no projeto ${project}.`, 400);
+  }
 
   // Horas já alocadas do dev nessa sprint (mesma conta do quadro: soma do Effort das Task/Bug dele).
   // Busca todas as sprints (mínima 0.0) pra achar o e-mail do dev em QUALQUER item dele, não só nos
@@ -1026,6 +1056,7 @@ export async function alocarTaskEmSprint(params: { taskId: number; sprint: strin
     body: JSON.stringify([
       { op: "test", path: "/rev", value: item.rev },
       { op: "add", path: "/fields/System.IterationPath", value: caminho },
+      { op: "add", path: "/fields/System.AreaPath", value: areaPath },
       { op: "add", path: "/fields/System.AssignedTo", value: identidade },
     ]),
   });
@@ -1035,4 +1066,56 @@ export async function alocarTaskEmSprint(params: { taskId: number; sprint: strin
     if (patch.status === 401 || patch.status === 403) throw new ErroAlocacao("O token do Azure DevOps não tem permissão de escrita em Work Items.", 502);
     throw new Error(`Falha ao atualizar o item #${taskId} (${patch.status}): ${corpo}`);
   }
+
+  // A Task já foi gravada: qualquer problema na Etapa do PBI vira aviso, nunca um erro que faria o
+  // usuário achar que a alocação falhou.
+  const pbiId = typeof item.fields["System.Parent"] === "number" ? (item.fields["System.Parent"] as number) : null;
+  if (pbiId == null) return { etapaPbi: null };
+  try {
+    return { etapaPbi: await promoverPbiParaExecucao(org, pat, pbiId) };
+  } catch (err) {
+    console.error(`[alocarTaskEmSprint] Task #${taskId} alocada, mas falhou ao atualizar a Etapa do PBI #${pbiId}:`, err);
+    return { etapaPbi: { pbiId, atualizada: false, aviso: `A Task foi alocada, mas não consegui atualizar a Etapa do PBI #${pbiId} para ${ETAPA_EXECUCAO}. Altere manualmente no Azure DevOps.` } };
+  }
+}
+
+/**
+ * Se o PBI está em "Aguardando Priorização" e TODAS as suas Tasks/Bugs (ignorando removidas e
+ * canceladas) já têm sprint, muda a Etapa pra "Execução". Lê o estado atual do Azure (já com a Task
+ * recém-alocada), então a decisão não depende de dados da tela. Não mexe em PBI que esteja em outra
+ * Etapa. `test /rev` evita sobrescrever uma edição concorrente.
+ */
+async function promoverPbiParaExecucao(org: string, pat: string, pbiId: number): Promise<ResultadoEtapaPbi> {
+  const res = await fetch(`https://dev.azure.com/${org}/_apis/wit/workitems/${pbiId}?$expand=relations&api-version=${API_VERSION}`, {
+    headers: authHeader(pat),
+  });
+  if (!res.ok) throw new Error(`Falha ao ler o PBI #${pbiId} (${res.status}): ${await res.text()}`);
+  const pbi = (await res.json()) as WorkItem & { rev: number; relations?: { rel: string; url: string }[] };
+
+  if (String(pbi.fields["System.WorkItemType"] ?? "") !== "Product Backlog Item") return { pbiId, atualizada: false };
+  if (String(pbi.fields["Custom.Etapa"] ?? "") !== ETAPA_AGUARDANDO_PRIORIZACAO) return { pbiId, atualizada: false };
+
+  const idsFilhos = (pbi.relations ?? [])
+    .filter((r) => r.rel === "System.LinkTypes.Hierarchy-Forward")
+    .map((r) => Number(r.url.split("/").pop()))
+    .filter((n) => Number.isFinite(n));
+  const filhos = idsFilhos.length
+    ? await buscarLoteCampos(org, pat, idsFilhos, ["System.WorkItemType", "System.State", "System.IterationPath"])
+    : [];
+  const consideradas = filhos
+    .filter((w) => ["Task", "Bug"].includes(String(w.fields["System.WorkItemType"] ?? "")))
+    .filter((w) => !/cancel|remov/i.test(String(w.fields["System.State"] ?? "")));
+  const todasAlocadas = consideradas.length > 0 && consideradas.every((w) => sprintDoIterationPath(String(w.fields["System.IterationPath"] ?? "")) !== null);
+  if (!todasAlocadas) return { pbiId, atualizada: false };
+
+  const patch = await fetch(`https://dev.azure.com/${org}/_apis/wit/workitems/${pbiId}?api-version=${API_VERSION}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json-patch+json", ...authHeader(pat) },
+    body: JSON.stringify([
+      { op: "test", path: "/rev", value: pbi.rev },
+      { op: "add", path: "/fields/Custom.Etapa", value: ETAPA_EXECUCAO },
+    ]),
+  });
+  if (!patch.ok) throw new Error(`Falha ao atualizar a Etapa do PBI #${pbiId} (${patch.status}): ${await patch.text()}`);
+  return { pbiId, atualizada: true };
 }

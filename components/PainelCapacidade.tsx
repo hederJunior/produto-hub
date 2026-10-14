@@ -1,9 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, GripVertical, Plus, X } from "lucide-react";
+import { ArrowLeft, GripVertical, Plus, RefreshCw, X } from "lucide-react";
 import { C, corDoDev, corDeEstadoDevOps } from "@/lib/kmm-theme";
-import { HORAS_MAX_SPRINT, motivoBloqueioTask, type PbiPriorizacao, type TaskDoPbi } from "@/lib/alocacao-pbi";
+import {
+  ETAPA_EXECUCAO,
+  HORAS_MAX_SPRINT,
+  motivoBloqueioTask,
+  type PbiPriorizacao,
+  type ResultadoEtapaPbi,
+  type TaskDoPbi,
+} from "@/lib/alocacao-pbi";
 import { agruparAlocacoesPorDevSprint, sprintEhIgualOuPosterior, type TarefaParaCapacidade } from "@/lib/capacidade";
 
 /**
@@ -86,6 +93,46 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
       .finally(() => {
         if (minhaSeq === cargaSeqRef.current) setCarregando(false);
       });
+  }
+
+  /**
+   * Depois de uma alocação no Azure DevOps (modal "Alocar PBI"): espera o Azure REFLETIR a mudança e
+   * força o refresh do painel. O PATCH é imediato, mas a lista que o quadro usa (WIQL) pode demorar
+   * alguns segundos pra enxergar o item na sprint nova — então consulta a mesma fonte do quadro, de
+   * 2 em 2s (até MAX vezes), até a Task aparecer na sprint com o dev certo. Antes disso garante o
+   * card do dev no bloco (vínculo AlocacaoCapacidade), senão ele não apareceria na squad/sprint —
+   * só cria se o dev ainda não tiver vínculo naquela sprint (nunca move quem já está em outra squad).
+   * Devolve true se o Azure confirmou; false se esgotou as tentativas (dados ainda são aplicados).
+   */
+  async function sincronizarAposAlocar(
+    p: { taskId: number; sprint: string; squad: string; dev: { id: string; nome: string } },
+    aoTentar: (n: number, max: number) => void
+  ): Promise<boolean> {
+    if (!alocacoes.some((a) => a.devId === p.dev.id && a.sprint === p.sprint)) {
+      await mover(p.dev.id, null, p.sprint, p.squad);
+    }
+    const MAX = 8;
+    let confirmado = false;
+    for (let i = 1; i <= MAX; i++) {
+      aoTentar(i, MAX);
+      try {
+        const res = await fetch(`/api/roadmap/tarefas?produto=${PRODUTO}`, { cache: "no-store" });
+        const j = await res.json();
+        if (!j.erro) {
+          const lista = (j.tarefas ?? []) as TarefaParaCapacidade[];
+          setTarefas(lista);
+          if (lista.some((t) => t.id === p.taskId && t.sprint === p.sprint && t.responsavel?.nome === p.dev.nome)) {
+            confirmado = true;
+            break;
+          }
+        }
+      } catch {
+        // tenta de novo na próxima volta
+      }
+      if (i < MAX) await new Promise((r) => setTimeout(r, 2000));
+    }
+    carregarBoard();
+    return confirmado;
   }
 
   function carregarTarefas() {
@@ -516,11 +563,9 @@ export default function PainelCapacidade({ aberto, onFechar }: { aberto: boolean
           squad={alocarEm.squad}
           devs={devs}
           horasAlocadas={horasAlocadas}
+          onSincronizar={sincronizarAposAlocar}
           onFechar={() => setAlocarEm(null)}
-          onConcluido={() => {
-            setAlocarEm(null);
-            carregarTarefas();
-          }}
+          onConcluido={() => setAlocarEm(null)}
         />
       )}
     </div>
@@ -534,7 +579,8 @@ const HORAS_POR_PESSOA_SPRINT = 60;
 /**
  * Modal "Alocar PBI" (pedido por Heder em 2026-10-14), aberto pelo + de um bloco sprint × squad.
  * Fluxo: PBIs da squad em "Aguardando Priorização" → Tasks/Bugs do PBI → devs com menos de 60h na
- * sprint → confirmação → grava no Azure DevOps (Iteration = sprint do bloco, responsável = dev).
+ * sprint → confirmação → grava no Azure DevOps (Iteration = sprint do bloco, Area Path = squad do
+ * bloco, responsável = dev).
  * Task/Bug sem esforço, com mais de 60h, fora do Backlog ou já em sprint aparece desabilitada com o
  * motivo (regra em lib/alocacao-pbi.ts, revalidada no servidor). Dev que passaria de 60h com a task
  * é só avisado, não bloqueado.
@@ -544,6 +590,7 @@ function ModalAlocarPbi({
   squad,
   devs,
   horasAlocadas,
+  onSincronizar,
   onFechar,
   onConcluido,
 }: {
@@ -551,6 +598,10 @@ function ModalAlocarPbi({
   squad: string;
   devs: { id: string; nome: string; papel: string | null }[];
   horasAlocadas: (nome: string, sprint: string) => number;
+  onSincronizar: (
+    p: { taskId: number; sprint: string; squad: string; dev: { id: string; nome: string } },
+    aoTentar: (n: number, max: number) => void
+  ) => Promise<boolean>;
   onFechar: () => void;
   onConcluido: () => void;
 }) {
@@ -558,9 +609,13 @@ function ModalAlocarPbi({
   const [erroCarga, setErroCarga] = useState<string | null>(null);
   const [pbiSel, setPbiSel] = useState<PbiPriorizacao | null>(null);
   const [taskSel, setTaskSel] = useState<TaskDoPbi | null>(null);
-  const [devSel, setDevSel] = useState<{ nome: string; papel: string | null; horas: number } | null>(null);
+  const [devSel, setDevSel] = useState<{ id: string; nome: string; papel: string | null; horas: number } | null>(null);
   const [enviando, setEnviando] = useState(false);
   const [erroEnvio, setErroEnvio] = useState<string | null>(null);
+  // Espera pela confirmação do Azure DevOps depois da gravação (tentativa atual / máximo).
+  const [sincronizando, setSincronizando] = useState<{ n: number; max: number } | null>(null);
+  // Resultado final: mostrado quando a Etapa do PBI mudou/falhou ou quando o Azure ainda não refletiu.
+  const [final, setFinal] = useState<{ etapa: ResultadoEtapaPbi | null; confirmado: boolean } | null>(null);
 
   const nomeSquad = squad.split("\\").pop() || squad;
 
@@ -590,7 +645,13 @@ function ModalAlocarPbi({
     [devs, horasAlocadas, sprint]
   );
 
-  const passo = devSel ? "confirmar" : taskSel ? "devs" : pbiSel ? "tasks" : "pbis";
+  const passo = final ? "concluido" : sincronizando ? "sincronizando" : devSel ? "confirmar" : taskSel ? "devs" : pbiSel ? "tasks" : "pbis";
+
+  // Enquanto grava e espera o Azure confirmar, o modal não pode ser fechado/voltado.
+  const ocupado = enviando || !!sincronizando;
+  function fecharSeLivre() {
+    if (!ocupado) onFechar();
+  }
 
   function voltar() {
     setErroEnvio(null);
@@ -607,14 +668,24 @@ function ModalAlocarPbi({
       const res = await fetch("/api/capacidade/alocar-task", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ taskId: taskSel.id, sprint, devNome: devSel.nome }),
+        body: JSON.stringify({ taskId: taskSel.id, sprint, devNome: devSel.nome, areaPath: squad }),
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) {
         setErroEnvio(j.detalhe ? `${j.erro} (${j.detalhe})` : j.erro ?? "Não foi possível atualizar o Azure DevOps.");
         return;
       }
-      onConcluido();
+      // Gravado. Agora espera o Azure refletir a mudança e força o refresh do painel.
+      setEnviando(false);
+      setSincronizando({ n: 0, max: 1 });
+      const confirmado = await onSincronizar(
+        { taskId: taskSel.id, sprint, squad, dev: { id: devSel.id, nome: devSel.nome } },
+        (n, max) => setSincronizando({ n, max })
+      );
+      setSincronizando(null);
+      const etapa = (j.etapaPbi as ResultadoEtapaPbi | null | undefined) ?? null;
+      if (confirmado && !(etapa && (etapa.atualizada || etapa.aviso))) onConcluido();
+      else setFinal({ etapa, confirmado });
     } catch {
       setErroEnvio("Não foi possível atualizar o Azure DevOps.");
     } finally {
@@ -627,6 +698,8 @@ function ModalAlocarPbi({
     tasks: `PBI #${pbiSel?.id ?? ""} — escolha a Task`,
     devs: `Task #${taskSel?.id ?? ""} — escolha o dev`,
     confirmar: "Confirmar alocação",
+    sincronizando: "Aguardando o Azure DevOps",
+    concluido: "Alocação concluída",
   };
 
   const chip = (texto: string, extra?: React.CSSProperties) => (
@@ -637,7 +710,7 @@ function ModalAlocarPbi({
 
   return (
     <div
-      onClick={onFechar}
+      onClick={fecharSeLivre}
       style={{ position: "fixed", inset: 0, background: "rgba(22,19,15,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: 20 }}
     >
       <div
@@ -647,7 +720,7 @@ function ModalAlocarPbi({
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
           <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-            {passo !== "pbis" && (
+            {passo !== "pbis" && passo !== "concluido" && passo !== "sincronizando" && (
               <button onClick={voltar} aria-label="Voltar" disabled={enviando} style={{ background: "none", border: "none", cursor: "pointer", color: C.muted, padding: 4, marginTop: 1 }}>
                 <ArrowLeft size={18} />
               </button>
@@ -659,12 +732,24 @@ function ModalAlocarPbi({
               </div>
             </div>
           </div>
-          <button onClick={onFechar} aria-label="Fechar" style={{ background: "none", border: "none", cursor: "pointer", color: C.muted, padding: 4 }}>
+          <button onClick={final ? onConcluido : fecharSeLivre} aria-label="Fechar" disabled={ocupado} style={{ background: "none", border: "none", cursor: ocupado ? "not-allowed" : "pointer", color: C.muted, padding: 4, opacity: ocupado ? 0.4 : 1 }}>
             <X size={18} />
           </button>
         </div>
 
         <div style={{ marginTop: 16 }}>
+          {passo === "sincronizando" && sincronizando && (
+            <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "18px 4px" }}>
+              <RefreshCw size={20} color={C.orange} className="kmm-spin" />
+              <div>
+                <div style={{ fontSize: 13.5, fontWeight: 600, color: C.text }}>Alteração gravada. Aguardando o Azure DevOps confirmar…</div>
+                <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+                  {sincronizando.n > 0 ? `Conferindo (tentativa ${sincronizando.n} de ${sincronizando.max})` : "Preparando"} — o painel será atualizado em seguida.
+                </div>
+              </div>
+            </div>
+          )}
+
           {passo === "pbis" && (
             <>
               {erroCarga && <div style={{ color: C.red, fontSize: 13 }}>{erroCarga}</div>}
@@ -759,12 +844,36 @@ function ModalAlocarPbi({
                           ficaria com {depois}h{estoura ? " (acima de 60h)" : ""}
                         </div>
                       </div>
-                      <button className="kmm-btn" style={{ padding: "6px 12px", fontSize: 12 }} onClick={() => setDevSel({ nome: d.nome, papel: d.papel, horas: d.horas })}>
+                      <button className="kmm-btn" style={{ padding: "6px 12px", fontSize: 12 }} onClick={() => setDevSel({ id: d.id, nome: d.nome, papel: d.papel, horas: d.horas })}>
                         Escolher
                       </button>
                     </div>
                   );
                 })}
+              </div>
+            </>
+          )}
+
+          {passo === "concluido" && final && (
+            <>
+              <div style={{ fontSize: 13.5, color: C.text, lineHeight: 1.5 }}>
+                A Task #{taskSel?.id} foi alocada em <strong>{sprint}</strong> para <strong>{devSel?.nome}</strong>.
+              </div>
+              {!final.confirmado && (
+                <div style={{ fontSize: 13, color: C.amber, marginTop: 10 }}>
+                  O Azure DevOps ainda não refletiu a mudança na lista do painel. A alteração foi gravada; use &quot;Atualizar&quot; em alguns instantes.
+                </div>
+              )}
+              {final.etapa?.atualizada && (
+                <div style={{ fontSize: 13.5, color: C.green, marginTop: 10 }}>
+                  Todas as Tasks do PBI #{final.etapa.pbiId} estão alocadas: a Etapa do PBI passou para <strong>{ETAPA_EXECUCAO}</strong>.
+                </div>
+              )}
+              {final.etapa?.aviso && <div style={{ fontSize: 13, color: C.amber, marginTop: 10 }}>{final.etapa.aviso}</div>}
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
+                <button className="kmm-btn primary" onClick={onConcluido}>
+                  Fechar
+                </button>
               </div>
             </>
           )}
@@ -777,6 +886,9 @@ function ModalAlocarPbi({
               <ul style={{ fontSize: 13.5, color: C.text, margin: "10px 0", paddingLeft: 20, lineHeight: 1.7 }}>
                 <li>
                   Iteration: <strong>{sprint}</strong>
+                </li>
+                <li>
+                  Area Path: <strong>{squad}</strong>
                 </li>
                 <li>
                   Responsável: <strong>{devSel.nome}</strong>

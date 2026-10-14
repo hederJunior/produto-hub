@@ -6,6 +6,14 @@
  */
 
 export const ETAPA_AGUARDANDO_PRIORIZACAO = "Aguardando Priorização";
+export const ETAPA_EXECUCAO = "Execução";
+
+/**
+ * O que aconteceu com a Etapa do PBI pai depois de alocar uma Task/Bug: quando a alocação deixa
+ * TODAS as Tasks/Bugs do PBI com sprint, a Etapa muda de "Aguardando Priorização" pra "Execução".
+ * `aviso` só vem quando a Task foi alocada mas a Etapa não pôde ser atualizada.
+ */
+export type ResultadoEtapaPbi = { pbiId: number; atualizada: boolean; aviso?: string };
 
 /** Capacidade por dev/sprint e teto de esforço de uma Task alocável (decisão do Heder, 2026-10-14). */
 export const HORAS_MAX_SPRINT = 60;

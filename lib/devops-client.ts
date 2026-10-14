@@ -638,7 +638,7 @@ export async function getTasksAlocadas(project: string, sprintMinima: SprintMini
 // grade Dev/QA × Iteration. Precisa de 2 dados que a aba Sprints não carregava: o título dos PBIs
 // pai das Tasks e as datas de início/fim de cada sprint. =====
 
-export type ItemTitulo = { titulo: string; tipo: string; estado: string };
+export type ItemTitulo = { titulo: string; tipo: string; estado: string; cliente: string };
 
 /**
  * Título e tipo de uma lista de work items por id (ex.: os PBIs pai das Tasks). Usa o endpoint
@@ -661,7 +661,7 @@ export async function getTitulosPorIds(ids: number[]): Promise<Record<number, It
         const res = await fetch(`https://dev.azure.com/${org}/_apis/wit/workitemsbatch?api-version=${API_VERSION}`, {
           method: "POST",
           headers: { "Content-Type": "application/json", ...authHeader(pat) },
-          body: JSON.stringify({ ids: lote, fields: ["System.Title", "System.WorkItemType", "System.State"], errorPolicy: "Omit" }),
+          body: JSON.stringify({ ids: lote, fields: ["System.Title", "System.WorkItemType", "System.State", "Custom.Cliente"], errorPolicy: "Omit" }),
         });
         if (!res.ok) {
           throw new Error(`Falha ao buscar títulos de work items (${res.status}): ${await res.text()}`);
@@ -679,6 +679,7 @@ export async function getTitulosPorIds(ids: number[]): Promise<Record<number, It
       titulo: String(w.fields["System.Title"] ?? `Item ${w.id}`),
       tipo: String(w.fields["System.WorkItemType"] ?? ""),
       estado: String(w.fields["System.State"] ?? ""),
+      cliente: String(w.fields["Custom.Cliente"] ?? ""),
     };
   }
   return resultado;
@@ -925,7 +926,15 @@ export async function getPbisAguardandoPriorizacao(areaPath: string): Promise<Pb
   const ids = ((await wiqlRes.json()) as { workItems: { id: number }[] }).workItems.map((w) => w.id);
   if (!ids.length) return [];
 
-  const pbisBrutos = (await buscarLoteCampos(org, pat, ids, ["System.Title", "System.State", "System.AreaPath"])).filter(
+  const pbisBrutos = (
+    await buscarLoteCampos(org, pat, ids, [
+      "System.Title",
+      "System.State",
+      "System.AreaPath",
+      "Custom.Cliente",
+      "Microsoft.VSTS.Scheduling.Effort",
+    ])
+  ).filter(
     (w) => !estadoIndicaConcluido(String(w.fields["System.State"] ?? "")) && !/cancel|remov/i.test(String(w.fields["System.State"] ?? ""))
   );
 
@@ -955,6 +964,8 @@ export async function getPbisAguardandoPriorizacao(areaPath: string): Promise<Pb
         titulo: String(pbi.fields["System.Title"] ?? `Item ${pbi.id}`),
         state: String(pbi.fields["System.State"] ?? ""),
         areaPath: String(pbi.fields["System.AreaPath"] ?? areaPath),
+        cliente: pbi.fields["Custom.Cliente"] ? String(pbi.fields["Custom.Cliente"]) : null,
+        esforco: typeof pbi.fields["Microsoft.VSTS.Scheduling.Effort"] === "number" ? (pbi.fields["Microsoft.VSTS.Scheduling.Effort"] as number) : null,
         tasks: filhos.map(taskDoPbiDe).filter((t) => t.tipo === "Task" || t.tipo === "Bug").sort((a, b) => a.id - b.id),
       };
     })

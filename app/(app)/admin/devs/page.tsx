@@ -95,7 +95,6 @@ export default function CadastroDevsPage() {
     <div>
       <PageHeader
         titulo="Cadastro de devs"
-        mostrarProduto={false}
         subtitulo={
           <>
             Base de desenvolvedores usada no Planejamento de capacidade (Roadmap e entregas &gt; Sprints). Um dev cadastrado aqui fica disponível pra vincular manualmente numa squad/sprint (função "Cadastrar disponibilidade"), mesmo antes de ter qualquer Task/Bug atribuída no Azure DevOps.

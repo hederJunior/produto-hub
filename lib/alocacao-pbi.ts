@@ -35,6 +35,10 @@ export type PbiPriorizacao = {
   titulo: string;
   state: string;
   areaPath: string;
+  /** Custom.Cliente do PBI (null se não preenchido). */
+  cliente: string | null;
+  /** Effort do próprio PBI, em horas (null se não preenchido). */
+  esforco: number | null;
   tasks: TaskDoPbi[];
 };
 

@@ -773,6 +773,8 @@ function ModalAlocarPbi({
                           {p.titulo}
                         </span>
                         <span style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: "auto" }}>
+                          {chip(p.esforco != null ? `Effort: ${p.esforco}h` : "Sem effort", { fontWeight: 700, color: C.text })}
+                          {chip(p.cliente ? `Cliente: ${p.cliente}` : "Sem cliente")}
                           {chip(p.state)}
                           {chip(`${p.tasks.length} task${p.tasks.length === 1 ? "" : "s"} · ${alocaveis} alocáve${alocaveis === 1 ? "l" : "is"}`)}
                         </span>
@@ -1001,6 +1003,31 @@ function ModalTasksDev({
   tarefas: TarefaParaCapacidade[];
   onFechar: () => void;
 }) {
+  // Nome e cliente do PBI pai de cada Task/Bug (pedido por Heder em 2026-10-14): buscados ao abrir
+  // o detalhe, só dos PBIs das tasks mostradas. Falha silenciosa — sem isso a lista continua útil.
+  const [pais, setPais] = useState<Record<number, { titulo: string; cliente: string }>>({});
+  const idsPais = useMemo(
+    () => Array.from(new Set(tarefas.map((t) => t.pbiPaiId).filter((n): n is number => n != null))),
+    [tarefas]
+  );
+  useEffect(() => {
+    if (!idsPais.length) return;
+    let cancelado = false;
+    fetch("/api/roadmap/pais", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: idsPais }),
+    })
+      .then((res) => res.json())
+      .then((j) => {
+        if (!cancelado) setPais(j.pais ?? {});
+      })
+      .catch(() => {});
+    return () => {
+      cancelado = true;
+    };
+  }, [idsPais]);
+
   return (
     <div
       onClick={onFechar}
@@ -1048,12 +1075,28 @@ function ModalTasksDev({
                     {t.tipo}
                   </span>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
                   <span className="kmm-chip" style={{ fontSize: 10.5, background: status.bg, color: status.fg, borderColor: "transparent" }}>
                     {t.state}
                   </span>
+                  <span className="kmm-chip" style={{ fontSize: 10.5, fontWeight: 700, color: C.text }} title="Effort (esforço estimado) da tarefa">
+                    {t.spEstimados != null ? `Effort: ${t.spEstimados}h` : "Sem effort"}
+                  </span>
                   <span style={{ fontSize: 11, color: C.muted }}>{t.areaPath.split("\\").pop() || t.areaPath}</span>
                 </div>
+                {t.pbiPaiId != null && (
+                  <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px dashed ${C.border}`, fontSize: 11.5, color: C.muted, lineHeight: 1.5 }}>
+                    <div>
+                      <strong style={{ color: C.text }}>PBI pai:</strong>{" "}
+                      {pais[t.pbiPaiId] ? `#${t.pbiPaiId} · ${pais[t.pbiPaiId].titulo}` : `#${t.pbiPaiId}`}
+                    </div>
+                    {pais[t.pbiPaiId]?.cliente && (
+                      <div>
+                        <strong style={{ color: C.text }}>Cliente:</strong> {pais[t.pbiPaiId].cliente}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}

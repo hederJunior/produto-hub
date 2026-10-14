@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Users, Map, Bell, ShieldCheck } from "lucide-react";
 import { ProdutoProvider } from "./ProdutoContext";
+import ProdutoSwitcher from "./ProdutoSwitcher";
 import { C, FONTS } from "@/lib/kmm-theme";
 
 const NAV_ITEMS = [
@@ -36,7 +37,25 @@ function Sidebar() {
   const tipo = useTipoUsuario();
 
   return (
-    <aside style={{ width: 260, borderRight: `1px solid ${C.border}`, background: C.panel, padding: 20, display: "flex", flexDirection: "column", gap: 24 }}>
+    // Sticky + altura da tela: a barra lateral (e o filtro de produto nela) fica travada no lugar
+    // enquanto o conteúdo da página rola.
+    <aside
+      style={{
+        width: 260,
+        flexShrink: 0,
+        position: "sticky",
+        top: 0,
+        alignSelf: "flex-start",
+        height: "100vh",
+        overflowY: "auto",
+        borderRight: `1px solid ${C.border}`,
+        background: C.panel,
+        padding: 20,
+        display: "flex",
+        flexDirection: "column",
+        gap: 24,
+      }}
+    >
       <Link href="/" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
         {/* Logo oficial kmm (pedido por Heder em 2026-09-20) — antes era um "kmm" em texto/Sora
             simulando o wordmark; substituído pela arte real fornecida por ele. */}
@@ -46,6 +65,17 @@ function Sidebar() {
           <div style={{ fontSize: 11, color: C.muted }}>Indicadores, alertas e controles do time de Produto</div>
         </div>
       </Link>
+
+      {/* Filtro global de produto (KMM4 / KMM5 / Ambos), travado aqui em qualquer seção (pedido por
+          Heder em 2026-10-14). Some só na Administração, cujas telas não usam o filtro. */}
+      {!pathname.startsWith("/admin") && (
+        <div>
+          <div style={{ fontSize: 11, color: C.faint, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", marginBottom: 8 }}>
+            Produto
+          </div>
+          <ProdutoSwitcher cheio />
+        </div>
+      )}
 
       <nav style={{ display: "flex", flexDirection: "column", gap: 4 }}>
         {NAV_ITEMS.map(({ href, label, icon: Icon }) => {

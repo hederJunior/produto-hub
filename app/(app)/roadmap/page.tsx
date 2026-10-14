@@ -288,7 +288,7 @@ function FiltroTrimestre({ selecionados, onChange }: { selecionados: string[]; o
   );
 }
 
-type Visao = "roadmap" | "sprints" | "comites";
+type Visao = "backlog" | "comites" | "sprints" | "roadmap";
 type ModoSprints = "alocacao" | "lista";
 
 export default function RoadmapPage() {
@@ -529,9 +529,8 @@ export default function RoadmapPage() {
             ? "Cronograma estratégico de desenvolvimento, marcos e entregas do time de Produto."
             : "Sincronizado com o Azure DevOps."
         }
+        abas={<VisaoFiltro visao={visao} setVisao={setVisao} />}
       >
-        <VisaoFiltro visao={visao} setVisao={setVisao} />
-
         {visao === "roadmap" && (
           <>
             <FiltroTrimestre selecionados={quartersSelecionados} onChange={setQuartersSelecionados} />
@@ -683,7 +682,8 @@ export default function RoadmapPage() {
       </PageHeader>
 
       <div>
-        {visao === "roadmap" ? (
+        {/* Seção Backlog: em branco por enquanto (pedido por Heder em 2026-10-14). */}
+        {visao === "backlog" ? null : visao === "roadmap" ? (
           <>
             {carregandoRoadmap && <p style={{ color: C.muted }}>Carregando roadmap do Azure DevOps…</p>}
             {erroRoadmap && (
@@ -803,20 +803,51 @@ export default function RoadmapPage() {
   );
 }
 
-/** Alterna entre a visão de Road Map (Gantt por Epic) e a de Sprints alocadas (Tasks por sprint). */
+/**
+ * Seletor de SEÇÃO da página (Backlog | Comitê | Sprints | Road Map). Diferente dos filtros (caixas
+ * brancas pequenas): barra escura, abas maiores e em negrito, com a aba ativa em laranja — pra ficar
+ * claro que isto troca a visão inteira, e não filtra o que está na tela (pedido por Heder em
+ * 2026-10-14).
+ */
 function VisaoFiltro({ visao, setVisao }: { visao: Visao; setVisao: (v: Visao) => void }) {
   const opcoes: { valor: Visao; label: string }[] = [
-    { valor: "roadmap", label: "Road Map" },
+    { valor: "backlog", label: "Backlog" },
+    { valor: "comites", label: "Comitê" },
     { valor: "sprints", label: "Sprints" },
-    { valor: "comites", label: "Comitês" },
+    { valor: "roadmap", label: "Road Map" },
   ];
   return (
-    <div className="kmm-seg">
-      {opcoes.map((o) => (
-        <div key={o.valor} className={`kmm-seg-item${visao === o.valor ? " active" : ""}`} onClick={() => setVisao(o.valor)}>
-          {o.label}
-        </div>
-      ))}
+    <div
+      role="tablist"
+      aria-label="Seção"
+      style={{ display: "inline-flex", gap: 4, padding: 5, borderRadius: 14, background: C.dark, boxShadow: "0 2px 8px rgba(20,16,12,.18)" }}
+    >
+      {opcoes.map((o) => {
+        const ativo = visao === o.valor;
+        return (
+          <button
+            key={o.valor}
+            role="tab"
+            aria-selected={ativo}
+            onClick={() => setVisao(o.valor)}
+            style={{
+              fontFamily: "Sora,sans-serif",
+              fontSize: 14,
+              fontWeight: 700,
+              padding: "10px 22px",
+              borderRadius: 10,
+              border: "none",
+              cursor: "pointer",
+              background: ativo ? C.orange : "transparent",
+              color: ativo ? "#fff" : "rgba(255,255,255,.72)",
+              boxShadow: ativo ? "0 2px 6px rgba(252,76,2,.45)" : "none",
+              transition: "all .15s ease",
+            }}
+          >
+            {o.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

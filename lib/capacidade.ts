@@ -25,6 +25,8 @@ export type TarefaParaCapacidade = {
   areaPath: string;
   spEstimados: number | null;
   responsavel: { nome: string } | null;
+  /** PBI pai da Task/Bug (já vem do /api/roadmap/tarefas) — usado no detalhe do dev. */
+  pbiPaiId?: number | null;
 };
 
 export type AlocacaoAuto = { nome: string; sprint: string; squad: string };

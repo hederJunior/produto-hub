@@ -137,7 +137,6 @@ export default function IndicadoresManuaisPage() {
     <div>
       <PageHeader
         titulo="Indicadores manuais"
-        mostrarProduto={false}
         subtitulo={
           <>
             Lançamento de valores mensais por fora do JOB automático — use pra preencher meses anteriores ao início da captura, ou pra corrigir um mês específico. Um mês lançado aqui substitui o calculado automaticamente no painel de indicadores, sempre pro produto e mês escolhidos (o dado manual não tem recorte de Cliente/Squad).

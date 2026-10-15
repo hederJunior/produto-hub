@@ -2037,3 +2037,48 @@ nota "Detalhes Azure DevOps" com `[id] - título - Dev [Xh] / QA [Yh]`.
 
 Verificação: `tsc --noEmit` limpo + teste Node da lógica de papel/janela de sprints. NÃO testado contra
 o Azure DevOps nem visualmente no navegador (sem rede/browser neste sandbox).
+
+## 2026-10-15 — Login por CÓDIGO (6 dígitos) no lugar do link mágico
+
+**Problema** (Fabiana, 2026-10-15): ao clicar no link do e-mail caía em
+`/login#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired`.
+Não era permissão (o e-mail só é enviado pra quem está em `AllowedUser`). Causa mais provável: scanner
+de e-mail corporativo (Microsoft Defender/Safe Links) abre o link antes do usuário; o link é de uso
+único, então o clique real chega com o token já consumido. Outras causas possíveis: link com mais de
+1h, ou clique num link de um e-mail antigo (cada novo pedido invalida o anterior).
+
+**Correção definitiva:** o usuário digita um código de 6 dígitos na tela de login — scanner não "abre"
+um código.
+- `app/api/auth/request-link/route.ts`: `signInWithOtp({ email })` **sem** `emailRedirectTo` (e-mail
+  leva só o código). Mantém a resposta genérica (não revela quem está na allowlist).
+- `app/api/auth/verify-code/route.ts` (novo): `verifyOtp({ email, token, type: "email" })`, grava a
+  sessão nos mesmos cookies que o middleware lê; reconfere a allowlist; erro sempre genérico
+  ("Código inválido ou expirado."). Aceita 6–8 dígitos (o tamanho é configurável no Supabase).
+- `app/login/page.tsx`: 2 passos (e-mail → código), `autoComplete="one-time-code"`, "Reenviar código"
+  com espera de 60s (limite do Supabase) e "Usar outro e-mail". Quem cair com `#error=...otp_expired`
+  (link antigo) vê um aviso explicando e pedindo o código.
+- `app/auth/callback` continua existindo, só pra links antigos ainda na caixa de entrada.
+
+**PASSOS MANUAIS NO SUPABASE (sem isso o e-mail não traz o código!)** — Authentication → Emails →
+Templates:
+1. Editar **os DOIS** templates: **"Magic Link"** (usuário que já logou antes) e **"Confirm signup"**
+   (1º acesso — `signInWithOtp` cria o usuário no Supabase Auth, e quem é novo recebe ESTE template).
+2. Colocar `{{ .Token }}` no corpo e **remover `{{ .ConfirmationURL }}`**: o link consome o MESMO token
+   do código — se o e-mail tiver o link, o scanner o abre e o código também morre.
+   Sugestão de assunto: `Seu código de acesso ao Produto Hub`; corpo:
+   ```html
+   <h2>Seu código de acesso ao Produto Hub</h2>
+   <p>Digite este código na tela de login:</p>
+   <p style="font-size:28px;font-weight:bold;letter-spacing:6px">{{ .Token }}</p>
+   <p>O código vale por poucos minutos e só pode ser usado uma vez. Se não foi você, ignore este e-mail.</p>
+   ```
+3. (Recomendado) Authentication → Sign In / Providers → Email: "Email OTP Expiration" = 600 (10 min) e
+   "Email OTP Length" = 6.
+
+**Ordem de rollout:** a tela nova e os templates precisam entrar juntos. Template novo + tela antiga =
+e-mail com código, mas a tela pede "link"; tela nova + template antigo = e-mail com link, mas a tela
+pede "código". Janela curta, sem dano — só confunde quem tentar entrar nesse intervalo.
+
+**Segurança:** código de 6 dígitos com validade curta + rate limit de verificação do próprio Supabase
+(por IP/e-mail) + allowlist reconferida no `verify-code`. Verificado só com `tsc --noEmit` (sem rede
+neste sandbox): testar ponta a ponta em produção com um e-mail real (primeiro acesso e acesso repetido).

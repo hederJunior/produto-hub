@@ -10,9 +10,16 @@ import { getRouteClient } from "@/lib/supabase-server";
 export const dynamic = "force-dynamic";
 
 /**
- * Autenticação fase 1: link mágico (passwordless) via Supabase Auth, liberado apenas
- * para e-mails presentes na tabela AllowedUser. Não existe cadastro de senha — mais simples
- * de operar para um app interno, e o allowlist é o único portão de entrada.
+ * Autenticação fase 1: login sem senha por CÓDIGO enviado por e-mail (Supabase Auth, OTP),
+ * liberado apenas para e-mails presentes na tabela AllowedUser. Não existe cadastro de senha —
+ * mais simples de operar para um app interno, e o allowlist é o único portão de entrada.
+ *
+ * Mudou de link mágico para código em 2026-10-15: scanners de e-mail corporativo (ex.: Microsoft
+ * Defender / Safe Links) abrem o link antes do usuário e, como ele só funciona uma vez, o clique
+ * real caía em `otp_expired` ("Email link is invalid or has expired" — caso da Fabiana). Código
+ * digitado na tela não é "aberto" por scanner. O e-mail enviado pelo Supabase precisa conter só
+ * `{{ .Token }}` e NÃO `{{ .ConfirmationURL }}` (o link consome o mesmo token do código — ver
+ * docs/decisoes-e-conhecimento.md). A validação do código está em app/api/auth/verify-code.
  *
  * A resposta é sempre a mesma, exista ou não o e-mail na allowlist, para não dar pistas
  * de quem tem acesso a quem tentar adivinhar e-mails. Os detalhes reais (permitido? o Supabase
@@ -29,11 +36,9 @@ export async function POST(request: NextRequest) {
 
   if (permitido) {
     const supabase = getRouteClient();
-    const origin = request.nextUrl.origin;
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: `${origin}/auth/callback` },
-    });
+    // Sem emailRedirectTo: o e-mail leva só o código. (Rota /auth/callback continua existindo
+    // só pra links antigos que ainda estejam na caixa de entrada de alguém.)
+    const { error } = await supabase.auth.signInWithOtp({ email });
     if (error) {
       // Não propaga pro cliente (mantém a resposta genérica por design), mas fica registrado
       // pro Runtime Log da Vercel — achado em 2026-09-22: sem isso, uma falha no envio do
@@ -44,6 +49,6 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    mensagem: "Se esse e-mail estiver liberado, você vai receber um link de acesso em instantes.",
+    mensagem: "Se esse e-mail estiver liberado, você vai receber um código de acesso em instantes.",
   });
 }

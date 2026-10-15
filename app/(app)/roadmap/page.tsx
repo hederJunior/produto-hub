@@ -258,6 +258,13 @@ function FiltroTrimestre({ selecionados, onChange }: { selecionados: string[]; o
 type Visao = "backlog" | "comites" | "sprints" | "roadmap";
 type ModoSprints = "alocacao" | "demandas" | "lista";
 
+const SEM_CLIENTE = "Sem cliente";
+
+/** Cliente da Task/Bug = Custom.Cliente do PBI pai; sem PBI pai ou sem cliente preenchido → "Sem cliente". */
+function clienteDaTarefa(t: { pbiPaiId: number | null }, pais: Record<number, { cliente?: string }>): string {
+  return (t.pbiPaiId != null ? pais[t.pbiPaiId]?.cliente : "") || SEM_CLIENTE;
+}
+
 export default function RoadmapPage() {
   const { produto } = useProduto();
   const [visao, setVisao] = useState<Visao>("roadmap");
@@ -308,6 +315,12 @@ export default function RoadmapPage() {
   const [modoSprints, setModoSprints] = useState<ModoSprints>("alocacao");
   // Pontos de encaixe na barra de filtros do painel, onde a tela "Alocação por sprint" injeta (portal)
   // os próprios filtros e ações — pra ficarem na mesma linha das outras seções.
+  // Filtro de CLIENTE das 3 telas de Sprints (pedido por Heder em 2026-10-15). O cliente é o
+  // Custom.Cliente do PBI pai da Task/Bug (não existe na Task), então os PBIs pai são buscados aqui,
+  // uma vez, e compartilhados pelas três telas. Vazio = todos os clientes.
+  const [paisSprints, setPaisSprints] = useState<Record<number, { titulo: string; tipo: string; estado: string; cliente?: string }>>({});
+  const [carregandoPaisSprints, setCarregandoPaisSprints] = useState(false);
+  const [clientesSprints, setClientesSprints] = useState<string[]>([]);
   const [slotFiltros, setSlotFiltros] = useState<HTMLElement | null>(null);
   const [slotAcoes, setSlotAcoes] = useState<HTMLElement | null>(null);
   const [agora, setAgora] = useState<Date | null>(null);
@@ -356,6 +369,34 @@ export default function RoadmapPage() {
       .finally(() => setCarregandoComites(false));
   }, [produto]);
 
+  // Títulos/clientes dos PBIs pai das Tasks/Bugs — só quando a seção Sprints é aberta.
+  useEffect(() => {
+    if (visao !== "sprints") return;
+    const ids = Array.from(new Set(tarefas.map((t) => t.pbiPaiId).filter((n): n is number => n != null)));
+    if (!ids.length) return;
+    let cancelado = false;
+    setCarregandoPaisSprints(true);
+    fetch("/api/roadmap/pais", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    })
+      .then((res) => res.json())
+      .then((j) => {
+        if (!cancelado) setPaisSprints(j.pais ?? {});
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelado) setCarregandoPaisSprints(false);
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [tarefas, visao]);
+
+  // Trocar de produto muda as Tasks: a seleção de clientes anterior não vale mais.
+  useEffect(() => setClientesSprints([]), [produto]);
+
   useEffect(() => {
     setCarregandoBacklog(true);
     setErroBacklog(null);
@@ -399,14 +440,26 @@ export default function RoadmapPage() {
   );
   const areasDisponiveisSprints = useMemo(() => Array.from(new Set(tarefas.map((t) => t.areaPath))).sort(), [tarefas]);
 
+  // Opções do filtro de cliente: só depois de carregar os PBIs pai (antes, toda Task cairia em "Sem cliente").
+  const clientesDisponiveisSprints = useMemo(
+    () =>
+      carregandoPaisSprints || !Object.keys(paisSprints).length
+        ? []
+        : Array.from(new Set(tarefas.map((t) => clienteDaTarefa(t, paisSprints)))).sort((a, b) =>
+            a === SEM_CLIENTE ? 1 : b === SEM_CLIENTE ? -1 : a.localeCompare(b, "pt-BR")
+          ),
+    [tarefas, paisSprints, carregandoPaisSprints]
+  );
+
   const tarefasExibidas = useMemo(
     () =>
       tarefas.filter(
         (t) =>
           (sprintsSelecionadas.length === 0 || sprintsSelecionadas.includes(t.sprint)) &&
-          (areasSelecionadasSprints.length === 0 || areasSelecionadasSprints.includes(t.areaPath))
+          (areasSelecionadasSprints.length === 0 || areasSelecionadasSprints.includes(t.areaPath)) &&
+          (clientesSprints.length === 0 || clientesSprints.includes(clienteDaTarefa(t, paisSprints)))
       ),
-    [tarefas, sprintsSelecionadas, areasSelecionadasSprints]
+    [tarefas, sprintsSelecionadas, areasSelecionadasSprints, clientesSprints, paisSprints]
   );
 
   const areasDisponiveisComites = useMemo(() => Array.from(new Set(demandasComite.map((d) => d.areaPath))).sort(), [demandasComite]);
@@ -613,6 +666,12 @@ export default function RoadmapPage() {
                 </div>
               ))}
             </div>
+            <MultiSelectFiltro
+              rotuloTodos="Todos os clientes"
+              opcoes={clientesDisponiveisSprints}
+              selecionados={clientesSprints}
+              onChange={setClientesSprints}
+            />
             {modoSprints !== "lista" && <div ref={setSlotFiltros} style={{ display: "contents" }} />}
             {modoSprints === "lista" && (
               <>
@@ -814,6 +873,9 @@ export default function RoadmapPage() {
                 tarefas={tarefas}
                 produto={produto}
                 areasDisponiveis={areasDisponiveisSprints}
+                pais={paisSprints}
+                carregandoPais={carregandoPaisSprints}
+                clientesFiltro={clientesSprints}
                 slotFiltros={slotFiltros}
                 slotAcoes={slotAcoes}
               />
@@ -1911,6 +1973,9 @@ function PainelAlocacaoPorSprint({
   tarefas,
   produto,
   areasDisponiveis,
+  pais,
+  carregandoPais,
+  clientesFiltro,
   slotFiltros,
   slotAcoes,
 }: {
@@ -1919,11 +1984,14 @@ function PainelAlocacaoPorSprint({
   tarefas: TaskAlocada[];
   produto: string;
   areasDisponiveis: string[];
+  /** PBIs pai (título, estado, cliente) — buscados pela página, compartilhados com as outras telas. */
+  pais: Record<number, { titulo: string; tipo: string; estado: string; cliente?: string }>;
+  carregandoPais: boolean;
+  /** Filtro de cliente da página (vazio = todos). */
+  clientesFiltro: string[];
   slotFiltros: HTMLElement | null;
   slotAcoes: HTMLElement | null;
 }) {
-  const [pais, setPais] = useState<Record<number, { titulo: string; tipo: string; estado: string; cliente?: string }>>({});
-  const [carregandoPais, setCarregandoPais] = useState(false);
   const [datas, setDatas] = useState<Record<string, { inicio: string | null; fim: string | null }>>({});
   const [roster, setRoster] = useState<{ nome: string; papel: string | null }[]>([]);
   const [areasFiltro, setAreasFiltro] = useState<string[]>([]);
@@ -1931,30 +1999,6 @@ function PainelAlocacaoPorSprint({
   const [sprintsFiltro, setSprintsFiltro] = useState<string[]>([]);
   const [funcoesFiltro, setFuncoesFiltro] = useState<string[]>([]);
   const [comprimidos, setComprimidos] = useState<Record<string, boolean>>({});
-
-  // Títulos dos PBIs pai — só ao abrir o panel (não pesa a aba Sprints).
-  useEffect(() => {
-    const ids = Array.from(new Set(tarefas.map((t) => t.pbiPaiId).filter((n): n is number => n != null)));
-    if (!ids.length) return;
-    let cancelado = false;
-    setCarregandoPais(true);
-    fetch("/api/roadmap/pais", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids }),
-    })
-      .then((res) => res.json())
-      .then((j) => {
-        if (!cancelado) setPais(j.pais ?? {});
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelado) setCarregandoPais(false);
-      });
-    return () => {
-      cancelado = true;
-    };
-  }, [tarefas]);
 
   // Datas das sprints + roster de devs (papel) — complementos, falha silenciosa.
   useEffect(() => {
@@ -1988,8 +2032,13 @@ function PainelAlocacaoPorSprint({
   }, [produto]);
 
   const tarefasFiltradas = useMemo(
-    () => (areasFiltro.length ? tarefas.filter((t) => areasFiltro.includes(t.areaPath)) : tarefas),
-    [tarefas, areasFiltro]
+    () =>
+      tarefas.filter(
+        (t) =>
+          (!areasFiltro.length || areasFiltro.includes(t.areaPath)) &&
+          (!clientesFiltro.length || clientesFiltro.includes(clienteDaTarefa(t, pais)))
+      ),
+    [tarefas, areasFiltro, clientesFiltro, pais]
   );
 
   // Colunas: todas as sprints com Task/Bug (mesmo com filtro de Área, pra grade não "pular").
@@ -2036,7 +2085,7 @@ function PainelAlocacaoPorSprint({
       if (!porChave.has(chave)) porChave.set(chave, { chave, nome, qa: ehPapelQA(papelPorNome.get(chave)) });
     };
     for (const t of tarefasFiltradas) adicionar(t.responsavel?.nome ?? SEM_RESPONSAVEL);
-    if (!areasFiltro.length) for (const d of roster) adicionar(d.nome);
+    if (!areasFiltro.length && !clientesFiltro.length) for (const d of roster) adicionar(d.nome);
     const semResp = normalizarNomePessoa(SEM_RESPONSAVEL);
     const ordenar = (a: { nome: string }, b: { nome: string }) => a.nome.localeCompare(b.nome, "pt-BR");
     // Filtro de Função (Dev/QA): vazio = todas. "Sem responsável" não tem função, então some
@@ -2051,7 +2100,7 @@ function PainelAlocacaoPorSprint({
       ...todos.filter((l) => l.qa && l.chave !== semResp).sort(ordenar),
       ...todos.filter((l) => l.chave === semResp),
     ];
-  }, [tarefasFiltradas, roster, areasFiltro, funcoesFiltro]);
+  }, [tarefasFiltradas, roster, areasFiltro, clientesFiltro, funcoesFiltro]);
 
   const celulas = useMemo(() => {
     const mapa = new Map<string, TaskAlocada[]>();

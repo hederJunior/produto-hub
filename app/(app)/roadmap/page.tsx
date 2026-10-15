@@ -256,7 +256,7 @@ function FiltroTrimestre({ selecionados, onChange }: { selecionados: string[]; o
 }
 
 type Visao = "backlog" | "comites" | "sprints" | "roadmap";
-type ModoSprints = "alocacao" | "lista";
+type ModoSprints = "alocacao" | "demandas" | "lista";
 
 export default function RoadmapPage() {
   const { produto } = useProduto();
@@ -599,6 +599,7 @@ export default function RoadmapPage() {
               {(
                 [
                   { valor: "alocacao", label: "Alocação por sprint", icone: <CalendarRange size={13} /> },
+                  { valor: "demandas", label: "Demandas", icone: <ListTodo size={13} /> },
                   { valor: "lista", label: "Lista por sprint", icone: <Calendar size={13} /> },
                 ] as { valor: ModoSprints; label: string; icone: React.ReactNode }[]
               ).map((o) => (
@@ -612,7 +613,7 @@ export default function RoadmapPage() {
                 </div>
               ))}
             </div>
-            {modoSprints === "alocacao" && <div ref={setSlotFiltros} style={{ display: "contents" }} />}
+            {modoSprints !== "lista" && <div ref={setSlotFiltros} style={{ display: "contents" }} />}
             {modoSprints === "lista" && (
               <>
                 <MultiSelectFiltro
@@ -645,7 +646,7 @@ export default function RoadmapPage() {
               </>
             )}
             <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, marginLeft: "auto" }}>
-              {modoSprints === "alocacao" && <div ref={setSlotAcoes} style={{ display: "contents" }} />}
+              {modoSprints !== "lista" && <div ref={setSlotAcoes} style={{ display: "contents" }} />}
               {modoSprints === "lista" && (
                 <button className="kmm-btn" onClick={exportarExcelSprints} disabled={!tarefasExibidas.length}>
                   <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -807,8 +808,9 @@ export default function RoadmapPage() {
                 {erroSprints}
               </div>
             )}
-            {modoSprints === "alocacao" && !carregandoSprints && !erroSprints && (
+            {modoSprints !== "lista" && !carregandoSprints && !erroSprints && (
               <PainelAlocacaoPorSprint
+                modo={modoSprints}
                 tarefas={tarefas}
                 produto={produto}
                 areasDisponiveis={areasDisponiveisSprints}
@@ -1905,19 +1907,22 @@ function ehPapelQA(papel: string | null | undefined): boolean {
 }
 
 function PainelAlocacaoPorSprint({
+  modo,
   tarefas,
   produto,
   areasDisponiveis,
   slotFiltros,
   slotAcoes,
 }: {
+  /** "alocacao" = uma linha por recurso (Dev/QA); "demandas" = uma linha por PBI, com suas Tasks. */
+  modo: "alocacao" | "demandas";
   tarefas: TaskAlocada[];
   produto: string;
   areasDisponiveis: string[];
   slotFiltros: HTMLElement | null;
   slotAcoes: HTMLElement | null;
 }) {
-  const [pais, setPais] = useState<Record<number, { titulo: string; tipo: string; estado: string }>>({});
+  const [pais, setPais] = useState<Record<number, { titulo: string; tipo: string; estado: string; cliente?: string }>>({});
   const [carregandoPais, setCarregandoPais] = useState(false);
   const [datas, setDatas] = useState<Record<string, { inicio: string | null; fim: string | null }>>({});
   const [roster, setRoster] = useState<{ nome: string; papel: string | null }[]>([]);
@@ -2057,9 +2062,32 @@ function PainelAlocacaoPorSprint({
     return mapa;
   }, [tarefasFiltradas]);
 
+  // Modo "Demandas" (pedido por Heder em 2026-10-15): a linha é o PBI pai e a célula lista as Tasks/Bugs
+  // dele naquela sprint. Só entram PBIs com alguma Task nas sprints visíveis; "Sem PBI pai" por último.
+  const celulasPbi = useMemo(() => {
+    const mapa = new Map<string, TaskAlocada[]>();
+    for (const t of tarefasFiltradas) {
+      const k = `${chaveDoPbi(t.pbiPaiId)}|${t.sprint}`;
+      mapa.set(k, [...(mapa.get(k) ?? []), t].sort((a, b) => a.id - b.id));
+    }
+    return mapa;
+  }, [tarefasFiltradas]);
+
+  const linhasPbi = (() => {
+    const ids = new Set<number | null>();
+    for (const t of tarefasFiltradas) {
+      if (sprintsVisiveis.includes(t.sprint)) ids.add(t.pbiPaiId);
+    }
+    return Array.from(ids)
+      .sort((a, b) => (a === null ? 1 : 0) - (b === null ? 1 : 0) || (a ?? 0) - (b ?? 0))
+      .map((pbiId) => ({ chave: chaveDoPbi(pbiId), pbiId }));
+  })();
+
+  const linhasAtivas = modo === "demandas" ? linhasPbi : linhas;
+
   const fmtCurta = (iso: string) => iso.slice(0, 10).split("-").reverse().slice(0, 2).join("/");
   const BORDA = `1px solid ${C.border}`;
-  const LARGURA_RECURSO = 190;
+  const LARGURA_RECURSO = modo === "demandas" ? 300 : 190;
   const LARGURA_SPRINT = 240;
 
   return (
@@ -2070,12 +2098,14 @@ function PainelAlocacaoPorSprint({
       {slotFiltros &&
         createPortal(
           <>
-            <MultiSelectFiltro
-              rotuloTodos="Todas as funções"
-              opcoes={["Dev", "QA"]}
-              selecionados={funcoesFiltro}
-              onChange={setFuncoesFiltro}
-            />
+            {modo === "alocacao" && (
+              <MultiSelectFiltro
+                rotuloTodos="Todas as funções"
+                opcoes={["Dev", "QA"]}
+                selecionados={funcoesFiltro}
+                onChange={setFuncoesFiltro}
+              />
+            )}
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>A partir da</span>
               <select className="kmm-input" style={{ width: "auto" }} value={inicialEfetivo} onChange={(e) => setInicial(e.target.value)}>
@@ -2102,7 +2132,7 @@ function PainelAlocacaoPorSprint({
             <button className="kmm-btn" onClick={() => setComprimidos({})}>
               Expandir todos
             </button>
-            <button className="kmm-btn" onClick={() => setComprimidos(Object.fromEntries(linhas.map((l) => [l.chave, true])))}>
+            <button className="kmm-btn" onClick={() => setComprimidos(Object.fromEntries(linhasAtivas.map((l) => [l.chave, true])))}>
               Comprimir todos
             </button>
           </>,
@@ -2110,7 +2140,9 @@ function PainelAlocacaoPorSprint({
         )}
 
       <div style={{ fontSize: 12, color: C.muted, marginBottom: 10 }}>
-        Recurso × Iteration · PBI pai e Tasks/Bugs de cada pessoa em cada sprint (cor = Área).
+        {modo === "demandas"
+          ? "PBI × Iteration · Tasks/Bugs de cada demanda em cada sprint (cor = Área)."
+          : "Recurso × Iteration · PBI pai e Tasks/Bugs de cada pessoa em cada sprint (cor = Área)."}
       </div>
 
       {/* Legenda de Áreas = filtro (pedido por Heder em 2026-10-15): clicar numa área liga/desliga
@@ -2174,7 +2206,7 @@ function PainelAlocacaoPorSprint({
               }}
             >
               <div style={{ position: "sticky", top: 0, left: 0, zIndex: 3, background: "#fff", borderBottom: BORDA, borderRight: BORDA, padding: "10px 12px", fontSize: 11, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.3 }}>
-                Recurso
+                {modo === "demandas" ? "PBI" : "Recurso"}
               </div>
               {sprintsVisiveis.map((sp) => {
                 const d = datas[sp];
@@ -2201,23 +2233,153 @@ function PainelAlocacaoPorSprint({
                 );
               })}
 
-              {linhas.map((linha) => (
-                <PainelAlocacaoLinha
-                  key={linha.chave}
-                  linha={linha}
-                  sprints={sprintsVisiveis}
-                  celulas={celulas}
-                  pais={pais}
-                  carregandoPais={carregandoPais}
-                  borda={BORDA}
-                  comprimido={!!comprimidos[linha.chave]}
-                  onToggle={() => setComprimidos((prev) => ({ ...prev, [linha.chave]: !prev[linha.chave] }))}
-                />
-              ))}
+              {modo === "demandas"
+                ? linhasPbi.map((linha) => (
+                    <PainelDemandaLinha
+                      key={linha.chave}
+                      linha={linha}
+                      sprints={sprintsVisiveis}
+                      celulas={celulasPbi}
+                      pais={pais}
+                      carregandoPais={carregandoPais}
+                      borda={BORDA}
+                      comprimido={!!comprimidos[linha.chave]}
+                      onToggle={() => setComprimidos((prev) => ({ ...prev, [linha.chave]: !prev[linha.chave] }))}
+                    />
+                  ))
+                : linhas.map((linha) => (
+                    <PainelAlocacaoLinha
+                      key={linha.chave}
+                      linha={linha}
+                      sprints={sprintsVisiveis}
+                      celulas={celulas}
+                      pais={pais}
+                      carregandoPais={carregandoPais}
+                      borda={BORDA}
+                      comprimido={!!comprimidos[linha.chave]}
+                      onToggle={() => setComprimidos((prev) => ({ ...prev, [linha.chave]: !prev[linha.chave] }))}
+                    />
+                  ))}
             </div>
           </div>
         )}
     </div>
+  );
+}
+
+/** Chave estável de uma linha do modo "Demandas" (PBI pai; null = Tasks/Bugs sem PBI pai). */
+function chaveDoPbi(pbiId: number | null): string {
+  return pbiId == null ? "pbi-sem" : `pbi-${pbiId}`;
+}
+
+/**
+ * Uma linha (PBI) da grade no modo "Demandas" (pedido por Heder em 2026-10-15): rótulo fixo com o
+ * título, estado e cliente do PBI + 1 célula por sprint listando as Tasks/Bugs dele naquela sprint,
+ * cada uma num cartão na cor da Área. Comprimido, cada cartão mostra só o título.
+ */
+function PainelDemandaLinha({
+  linha,
+  sprints,
+  celulas,
+  pais,
+  carregandoPais,
+  borda,
+  comprimido,
+  onToggle,
+}: {
+  linha: { chave: string; pbiId: number | null };
+  sprints: string[];
+  celulas: Map<string, TaskAlocada[]>;
+  pais: Record<number, { titulo: string; tipo: string; estado: string; cliente?: string }>;
+  carregandoPais: boolean;
+  borda: string;
+  comprimido: boolean;
+  onToggle: () => void;
+}) {
+  const pai = linha.pbiId != null ? pais[linha.pbiId] : undefined;
+  const titulo = linha.pbiId == null ? "Sem PBI pai" : pai ? pai.titulo : carregandoPais ? "…" : "(título indisponível)";
+  return (
+    <>
+      <div
+        style={{ position: "sticky", left: 0, zIndex: 1, background: "#fff", borderBottom: borda, borderRight: borda, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6, justifyContent: "flex-start" }}
+      >
+        <button
+          onClick={onToggle}
+          title={comprimido ? "Expandir" : "Comprimir"}
+          style={{ display: "flex", alignItems: "flex-start", gap: 4, background: "none", border: "none", cursor: "pointer", padding: 0, textAlign: "left", fontFamily: "inherit" }}
+        >
+          <span style={{ display: "flex", marginTop: 2 }}>
+            {comprimido ? <ChevronRight size={14} color={C.muted} /> : <ChevronDown size={14} color={C.muted} />}
+          </span>
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: C.text, lineHeight: 1.35 }}>
+            {linha.pbiId != null && <span style={{ color: C.muted }}>#{linha.pbiId} · </span>}
+            {titulo}
+          </span>
+        </button>
+        {(pai?.estado || pai?.cliente) && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, paddingLeft: 18 }}>
+            {pai?.estado && (
+              <span className="kmm-chip" style={{ padding: "1px 8px", fontSize: 10.5 }}>
+                {pai.estado}
+              </span>
+            )}
+            {pai?.cliente && (
+              <span className="kmm-chip" style={{ padding: "1px 8px", fontSize: 10.5 }}>
+                {pai.cliente}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+      {sprints.map((sp) => {
+        const tasks = celulas.get(`${linha.chave}|${sp}`) ?? [];
+        const total = tasks.reduce((acc, t) => acc + (t.spEstimados ?? 0), 0);
+        return (
+          <div key={sp} style={{ borderBottom: borda, borderRight: borda, padding: 6, minWidth: 0 }}>
+            {total > 0 && (
+              <div style={{ textAlign: "right", fontSize: 10.5, fontWeight: 700, color: C.faint, padding: "0 2px 3px", fontVariantNumeric: "tabular-nums" }}>
+                {total}h
+              </div>
+            )}
+            {tasks.map((t) => {
+              const cor = corDeAreaTabela(t.areaPath);
+              const rotulo = `${t.tipo === "Bug" ? "Bug " : ""}#${t.id} · ${t.titulo}`;
+              const dica = [
+                rotulo,
+                `Área: ${t.areaPath.split("\\").pop() || t.areaPath}`,
+                `Estado: ${t.state}`,
+                `Responsável: ${t.responsavel?.nome ?? "sem responsável"}`,
+                t.spEstimados != null ? `Effort: ${t.spEstimados}h` : "Sem effort",
+              ].join("\n");
+              return (
+                <div
+                  key={t.id}
+                  title={dica}
+                  style={{ background: cor.bg, color: cor.fg, borderRadius: 6, padding: "6px 8px", marginBottom: 4, fontSize: 11.5, lineHeight: 1.35 }}
+                >
+                  <div style={{ fontWeight: 700, fontSize: 12, display: "-webkit-box", WebkitLineClamp: comprimido ? 1 : 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                    {rotulo}
+                  </div>
+                  {!comprimido && (
+                    <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
+                      <span
+                        style={{ display: "inline-block", padding: "1px 7px", borderRadius: 999, background: "rgba(255,255,255,.92)", color: C.text, fontSize: 10.5, fontWeight: 700 }}
+                      >
+                        {t.state}
+                      </span>
+                      <span style={{ opacity: 0.95, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0, flex: 1 }}>
+                        {t.responsavel?.nome ?? "Sem responsável"}
+                      </span>
+                      {t.spEstimados != null && <span style={{ flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{t.spEstimados}h</span>}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+    </>
   );
 }
 

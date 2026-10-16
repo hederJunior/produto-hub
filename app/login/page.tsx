@@ -93,7 +93,7 @@ export default function LoginPage() {
       <h1 style={{ fontSize: 22, marginBottom: 8 }}>Produto Hub</h1>
       <p style={{ color: "#555", marginBottom: 24, lineHeight: 1.4 }}>
         Acesso restrito ao time de Produto (KMM4/KMM5). Informe seu e-mail corporativo para receber um
-        código de acesso — sem senha.
+        acesso por e-mail — sem senha.
       </p>
 
       {aviso && <p style={{ color: "#8a5a00", background: "#fff6e0", padding: 10, borderRadius: 4, fontSize: 13, lineHeight: 1.4 }}>{aviso}</p>}
@@ -110,15 +110,16 @@ export default function LoginPage() {
             style={{ width: "100%", padding: 10, marginBottom: 12, boxSizing: "border-box", fontSize: 14 }}
           />
           <button type="submit" disabled={carregando} style={botao(carregando)}>
-            {carregando ? "Enviando..." : "Enviar código de acesso"}
+            {carregando ? "Enviando..." : "Enviar e-mail de acesso"}
           </button>
           {erro && <p style={{ color: "crimson", marginTop: 8, fontSize: 13 }}>{erro}</p>}
         </form>
       ) : (
         <form onSubmit={confirmarCodigo}>
           <p style={{ marginBottom: 12, lineHeight: 1.4, fontSize: 14 }}>
-            Se <strong>{email.trim()}</strong> estiver liberado, você vai receber um código de acesso em instantes.
-            Digite-o abaixo (confira também o spam).
+            Se <strong>{email.trim()}</strong> estiver liberado, você vai receber um e-mail em instantes (confira
+            também o spam). Digite abaixo o <strong>código</strong> que veio no e-mail — ou, se o e-mail trouxer um
+            link em vez de código, clique nele.
           </p>
           <input
             type="text"

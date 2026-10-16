@@ -36,9 +36,15 @@ export async function POST(request: NextRequest) {
 
   if (permitido) {
     const supabase = getRouteClient();
-    // Sem emailRedirectTo: o e-mail leva só o código. (Rota /auth/callback continua existindo
-    // só pra links antigos que ainda estejam na caixa de entrada de alguém.)
-    const { error } = await supabase.auth.signInWithOtp({ email });
+    // MODO HÍBRIDO (2026-10-16): o e-mail pode trazer o CÓDIGO ({{ .Token }}, quando o template do
+    // Supabase foi editado — exige SMTP próprio) ou só o LINK (template padrão do Supabase). Por
+    // isso o emailRedirectTo continua aqui: com o template padrão (só link), o link ainda precisa
+    // cair em /auth/callback; sem isso o login quebra até o SMTP/template ser configurado.
+    const origin = request.nextUrl.origin;
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: `${origin}/auth/callback` },
+    });
     if (error) {
       // Não propaga pro cliente (mantém a resposta genérica por design), mas fica registrado
       // pro Runtime Log da Vercel — achado em 2026-09-22: sem isso, uma falha no envio do
@@ -49,6 +55,6 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    mensagem: "Se esse e-mail estiver liberado, você vai receber um código de acesso em instantes.",
+    mensagem: "Se esse e-mail estiver liberado, você vai receber um e-mail de acesso em instantes.",
   });
 }

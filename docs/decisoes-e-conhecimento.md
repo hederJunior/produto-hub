@@ -2082,3 +2082,37 @@ pede "código". Janela curta, sem dano — só confunde quem tentar entrar nesse
 **Segurança:** código de 6 dígitos com validade curta + rate limit de verificação do próprio Supabase
 (por IP/e-mail) + allowlist reconferida no `verify-code`. Verificado só com `tsc --noEmit` (sem rede
 neste sandbox): testar ponta a ponta em produção com um e-mail real (primeiro acesso e acesso repetido).
+
+## 2026-10-16 — Login por código depende de SMTP próprio no Supabase: modo híbrido + plano
+
+**Descoberta (Heder):** no painel do Supabase, Authentication → Emails → Templates mostra *"Set up
+custom SMTP to edit templates — Emails will be sent using the default templates"*. Ou seja, **sem SMTP
+próprio não dá pra editar o corpo dos e-mails**, e os templates padrão trazem só o LINK
+(`{{ .ConfirmationURL }}`), não o código (`{{ .Token }}`). A entrada de 2026-10-15 (login só por
+código) ficou, portanto, **incompleta sem SMTP próprio**: e-mail com link + tela pedindo código; e,
+sem `emailRedirectTo`, o link ainda caía no Site URL e perdia o `code` (middleware manda pra /login).
+
+**Correção imediata (modo HÍBRIDO, `request-link` + `login/page.tsx`):** `emailRedirectTo` voltou
+(`/auth/callback`) e a tela diz "digite o código que veio no e-mail — ou, se vier um link, clique
+nele". Funciona nos dois cenários: template padrão (link, com o risco de scanner) e template
+customizado (só código). `verify-code` continua igual.
+
+**Contorno pra quem está bloqueado agora:** `scripts/gerar-codigo-acesso.mjs <email>` gera um código
+de 6 dígitos via `auth.admin.generateLink` SEM mandar e-mail; Heder repassa por Teams/WhatsApp e a
+pessoa digita na tela de login. Só gera pra e-mail que está em `AllowedUser`. Roteiro: pessoa pede o
+acesso na tela e ignora o e-mail → Heder roda o script (pedido novo invalida o código anterior) →
+envia o código. (Não testado contra o Supabase — sem rede neste sandbox.)
+
+**Solução definitiva (pendente, precisa de TI/Heder): configurar SMTP próprio no Supabase**
+(Authentication → Emails → SMTP Settings), e só então editar os templates "Magic Link" e "Confirm
+signup" com `{{ .Token }}` e sem `{{ .ConfirmationURL }}` (passos na entrada de 2026-10-15). Bônus: o
+SMTP padrão do Supabase tem limite de envio muito baixo e não é pra produção (já havia sido suspeita
+de "e-mail não chega" em 2026-09-22) — SMTP próprio resolve isso também. Opções:
+- **Resend** (já usado em `lib/email.ts`; `RESEND_API_KEY`/`ALERTS_FROM_EMAIL` existem no `.env`, mas a
+  conta ainda não foi criada): SMTP `smtp.resend.com`, porta 465, usuário `resend`, senha = API key.
+  Exige verificar o domínio remetente (ex. `produto-hub.nstech.com.br`) com registros DNS (SPF/DKIM)
+  — pedir à TI da nstech. Plano gratuito cobre o volume deste app.
+- **SMTP do Microsoft 365** (`smtp.office365.com:587`) com caixa de serviço: nenhum DNS novo, mas o
+  tenant costuma ter SMTP AUTH desativado — depende da TI.
+Quando o SMTP estiver ativo e os templates editados, o e-mail passa a trazer só o código e o modo
+híbrido da tela continua compatível (nenhuma mudança de código necessária).

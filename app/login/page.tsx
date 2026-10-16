@@ -7,6 +7,18 @@ import { useEffect, useState, type FormEvent } from "react";
 // "consumiam" antes do clique do usuário (erro otp_expired) — ver app/api/auth/request-link.
 const ESPERA_REENVIO_S = 60; // o Supabase limita 1 envio por e-mail a cada 60s
 
+// Login com Microsoft (Entra ID) — 2026-10-16. Só aparece com NEXT_PUBLIC_LOGIN_MICROSOFT=true
+// (ligar na Vercel DEPOIS de configurar o provider Azure no Supabase; exige novo deploy).
+// O login por e-mail abaixo continua como fallback.
+const MICROSOFT_ATIVO = process.env.NEXT_PUBLIC_LOGIN_MICROSOFT === "true";
+
+const MENSAGENS_ERRO: Record<string, string> = {
+  nao_liberado: "Sua conta Microsoft não está liberada para o Produto Hub. Peça o acesso ao time de Produto.",
+  microsoft_indisponivel: "O login com Microsoft não está disponível agora. Use o e-mail abaixo.",
+  oauth: "Não foi possível concluir o login com Microsoft. Tente novamente ou use o e-mail abaixo.",
+  sessao: "Não foi possível validar o acesso (o link pode ter sido aberto em outro navegador ou já foi usado). Tente novamente.",
+};
+
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [codigo, setCodigo] = useState("");
@@ -19,8 +31,15 @@ export default function LoginPage() {
   // Quem cair aqui por um link antigo expirado (#error=...otp_expired) recebe uma explicação
   // amigável em vez de uma tela de login "muda".
   useEffect(() => {
-    if (typeof window !== "undefined" && window.location.hash.includes("otp_expired")) {
+    if (typeof window === "undefined") return;
+    if (window.location.hash.includes("otp_expired")) {
       setAviso("O link de acesso expirou ou já foi usado. Informe seu e-mail para receber um código de acesso.");
+      window.history.replaceState(null, "", window.location.pathname);
+      return;
+    }
+    const cod = new URLSearchParams(window.location.search).get("erro");
+    if (cod && MENSAGENS_ERRO[cod]) {
+      setErro(MENSAGENS_ERRO[cod]);
       window.history.replaceState(null, "", window.location.pathname);
     }
   }, []);
@@ -92,9 +111,34 @@ export default function LoginPage() {
     <main style={{ maxWidth: 380, margin: "80px auto", fontFamily: "sans-serif", padding: 24 }}>
       <h1 style={{ fontSize: 22, marginBottom: 8 }}>Produto Hub</h1>
       <p style={{ color: "#555", marginBottom: 24, lineHeight: 1.4 }}>
-        Acesso restrito ao time de Produto (KMM4/KMM5). Informe seu e-mail corporativo para receber um
-        acesso por e-mail — sem senha.
+        Acesso restrito ao time de Produto (KMM4/KMM5).{" "}
+        {MICROSOFT_ATIVO
+          ? "Entre com sua conta corporativa Microsoft ou, se preferir, receba um acesso por e-mail."
+          : "Informe seu e-mail corporativo para receber um acesso por e-mail — sem senha."}
       </p>
+
+      {MICROSOFT_ATIVO && etapa === "email" && (
+        <>
+          <a
+            href="/api/auth/microsoft"
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 10, width: "100%", padding: 10,
+              boxSizing: "border-box", background: "#fff", color: "#222", border: "1px solid #8c8c8c", borderRadius: 4,
+              fontSize: 14, textDecoration: "none", fontWeight: 600,
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 21 21" aria-hidden="true">
+              <rect x="1" y="1" width="9" height="9" fill="#F25022" />
+              <rect x="11" y="1" width="9" height="9" fill="#7FBA00" />
+              <rect x="1" y="11" width="9" height="9" fill="#00A4EF" />
+              <rect x="11" y="11" width="9" height="9" fill="#FFB900" />
+            </svg>
+            Entrar com Microsoft
+          </a>
+          {erro && <p style={{ color: "crimson", marginTop: 8, fontSize: 13, lineHeight: 1.4 }}>{erro}</p>}
+          <p style={{ textAlign: "center", color: "#888", fontSize: 12, margin: "16px 0" }}>— ou por e-mail —</p>
+        </>
+      )}
 
       {aviso && <p style={{ color: "#8a5a00", background: "#fff6e0", padding: 10, borderRadius: 4, fontSize: 13, lineHeight: 1.4 }}>{aviso}</p>}
 
@@ -112,7 +156,7 @@ export default function LoginPage() {
           <button type="submit" disabled={carregando} style={botao(carregando)}>
             {carregando ? "Enviando..." : "Enviar e-mail de acesso"}
           </button>
-          {erro && <p style={{ color: "crimson", marginTop: 8, fontSize: 13 }}>{erro}</p>}
+          {erro && !MICROSOFT_ATIVO && <p style={{ color: "crimson", marginTop: 8, fontSize: 13 }}>{erro}</p>}
         </form>
       ) : (
         <form onSubmit={confirmarCodigo}>

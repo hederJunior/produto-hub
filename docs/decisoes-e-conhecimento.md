@@ -2116,3 +2116,33 @@ de "e-mail não chega" em 2026-09-22) — SMTP próprio resolve isso também. Op
   tenant costuma ter SMTP AUTH desativado — depende da TI.
 Quando o SMTP estiver ativo e os templates editados, o e-mail passa a trazer só o código e o modo
 híbrido da tela continua compatível (nenhuma mudança de código necessária).
+
+## 2026-10-16 — Login com Microsoft (Entra ID) + e-mail como fallback
+
+**Por quê:** a correção definitiva do `otp_expired` (scanner de e-mail consumindo o link) exigia SMTP
+próprio → DNS novo. Entra ID elimina o e-mail do fluxo (sem SMTP, sem DNS, sem link de uso único).
+
+**Código:** `app/api/auth/microsoft/route.ts` (GET → `signInWithOAuth({provider:"azure", scopes:"email"})`
+no servidor, PKCE em cookie, redireciona pra Microsoft); `app/auth/callback/route.ts` agora troca o
+`code`, **confere `AllowedUser`** (o middleware só exige sessão, e com SSO qualquer pessoa do tenant
+teria sessão) e, se não liberado, faz `signOut` e volta pra `/login?erro=nao_liberado`; erros
+(`oauth`, `sessao`, `microsoft_indisponivel`) viram mensagem na tela de login. O botão "Entrar com
+Microsoft" só aparece com `NEXT_PUBLIC_LOGIN_MICROSOFT=true` (build-time → exige redeploy). O login por
+e-mail/código (modo híbrido) segue intacto como fallback, e a allowlist também vale pro link de e-mail.
+
+**Passo a passo pra ativar (depende do TI criar o App Registration):**
+1. Entra ID → App registrations → New registration: single tenant; Redirect URI (Web)
+   `https://dcojvfhoskaxqhoxgadh.supabase.co/auth/v1/callback`.
+2. Token configuration → Add optional claim (ID token): `email`. API permissions: `openid`, `profile`,
+   `email`, `User.Read` (delegadas); "Grant admin consent" só se o tenant bloquear consentimento de usuário.
+3. Certificates & secrets → New client secret (anotar a data de expiração — máx. 24 meses; renovar antes
+   senão o login Microsoft cai).
+4. Supabase → Authentication → Providers → Azure: ligar; Client ID, Secret e Azure Tenant URL
+   `https://login.microsoftonline.com/<tenant-id>/v2.0`. Em URL Configuration, garantir
+   `https://produto-hub-nstech.vercel.app/auth/callback` nas Redirect URLs.
+5. Vercel → `NEXT_PUBLIC_LOGIN_MICROSOFT=true` → redeploy. Testar com um e-mail liberado e um NÃO liberado.
+
+**Atenção:** o e-mail devolvido pela Microsoft precisa ser o mesmo cadastrado em `AllowedUser`
+(UPN vs e-mail/alias pode divergir — se alguém for barrado indevidamente, conferir o log
+`[auth/callback] e-mail fora da allowlist` na Vercel). Mesmo e-mail já usado por OTP é vinculado à
+mesma conta pelo Supabase (account linking automático).

@@ -23,6 +23,12 @@ export type PbiGestaoCliente = {
   cliente: string;
   createdDate: string;
   dataAberturaProduto: string | null;
+  /** Campo "Classificação" do PBI ("" se vazio). */
+  classificacao: string;
+  /** Custom "Data Comitê" (data pura, ex. "2026-10-26T00:00:00Z") ou null. */
+  dataComite: string | null;
+  /** Effort do próprio PBI (Microsoft.VSTS.Scheduling.Effort), em horas — null se vazio. */
+  effort: number | null;
   /** System.CommentCount — usado pra só buscar comentário dos PBIs que têm algum. */
   qtdComentarios: number;
 };

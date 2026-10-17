@@ -5,7 +5,10 @@ import { useProduto } from "@/components/ProdutoContext";
 import { C } from "@/lib/kmm-theme";
 import PageHeader from "@/components/PageHeader";
 import MultiSelectFiltro from "@/components/MultiSelectFiltro";
+import DistribuicaoPorStatus from "@/components/DistribuicaoPorStatus";
+import BaseGeralDemandas from "@/components/BaseGeralDemandas";
 import { nomeCurtoDaSquad } from "@/lib/backlog";
+import { formatarChaveDia } from "@/lib/datas";
 import {
   calcularIndicadoresGestao,
   ordemDoStatus,
@@ -21,6 +24,9 @@ const SEM_CLIENTE = "Sem cliente";
 const TAMANHO_LOTE_COMENTARIOS = 40;
 const LOTES_EM_PARALELO = 3;
 const ORG_DEVOPS = "kmmbynstech";
+
+/** Colunas da tabela, na ordem exibida. */
+const COLUNAS = ["Chamado", "Tarefa", "PBI", "Status no board", "Data abertura produto", "Etapa", "PO", "Esteira", "Classificação", "Observação"];
 
 /** Cor do chip de cada status do board (paleta do app; um tom por status). */
 const COR_STATUS: Record<string, { bg: string; fg: string }> = {
@@ -42,6 +48,8 @@ export default function ClientesPage() {
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [clientesSel, setClientesSel] = useState<string[]>([]);
+  // Filtro "Squad" = Area Path do PBI (valor completo, ex. "KMM5\TMS - Dedicada Maroni").
+  const [squadsSel, setSquadsSel] = useState<string[]>([]);
   // Observação (último comentário) chega depois da tabela, em lotes: id → comentário | null.
   const [comentarios, setComentarios] = useState<Record<number, UltimoComentario | null>>({});
   const geracao = useRef(0);
@@ -109,10 +117,39 @@ export default function ClientesPage() {
     setClientesSel((sel) => sel.filter((c) => opcoesCliente.includes(c)));
   }, [opcoesCliente]);
 
+  const opcoesSquad = useMemo(
+    () =>
+      Array.from(new Set(itens.map((p) => p.areaPath).filter(Boolean))).sort((a, b) =>
+        nomeCurtoDaSquad(a).localeCompare(nomeCurtoDaSquad(b), "pt-BR")
+      ),
+    [itens]
+  );
+  useEffect(() => {
+    setSquadsSel((sel) => sel.filter((s) => opcoesSquad.includes(s)));
+  }, [opcoesSquad]);
+
+  // Nome mostrado no filtro: o curto da squad; se o mesmo nome existe em KMM4 e KMM5 (ex. "Melhorias"),
+  // acrescenta o projeto pra não haver duas opções iguais.
+  const rotuloSquad = useMemo(() => {
+    const repetidos = new Set<string>();
+    const vistos = new Set<string>();
+    for (const a of opcoesSquad) {
+      const curto = nomeCurtoDaSquad(a);
+      if (vistos.has(curto)) repetidos.add(curto);
+      vistos.add(curto);
+    }
+    return (areaPath: string) => {
+      const curto = nomeCurtoDaSquad(areaPath);
+      return repetidos.has(curto) ? `${curto} (${areaPath.split("\\")[0]})` : curto;
+    };
+  }, [opcoesSquad]);
+
   const visiveis = useMemo(() => {
-    const filtrados = clientesSel.length ? itens.filter((p) => clientesSel.includes(clienteDe(p))) : itens;
-    return [...filtrados].sort((a, b) => ordemDoStatus(a.state) - ordemDoStatus(b.state) || a.id - b.id);
-  }, [itens, clientesSel]);
+    const filtrados = itens.filter(
+      (p) => (!clientesSel.length || clientesSel.includes(clienteDe(p))) && (!squadsSel.length || squadsSel.includes(p.areaPath))
+    );
+    return filtrados.sort((a, b) => ordemDoStatus(a.state) - ordemDoStatus(b.state) || a.id - b.id);
+  }, [itens, clientesSel, squadsSel]);
 
   const ind = useMemo(() => calcularIndicadoresGestao(visiveis), [visiveis]);
   const valor = (v: number | null) => (carregando ? "…" : v == null ? "—" : String(v));
@@ -123,7 +160,23 @@ export default function ClientesPage() {
         titulo="Gestão de clientes"
         subtitulo="PBIs do Azure DevOps em Backlog, Orçamento, Execução, Teste Aceite Usuário e Aguardando Deploy."
       >
-        <MultiSelectFiltro rotuloTodos="Todos os clientes" opcoes={opcoesCliente} selecionados={clientesSel} onChange={setClientesSel} />
+        <MultiSelectFiltro
+          rotuloTodos="Todos os clientes"
+          opcoes={opcoesCliente}
+          selecionados={clientesSel}
+          onChange={setClientesSel}
+          pesquisavel
+          placeholderBusca="Digite o nome do cliente…"
+        />
+        <MultiSelectFiltro
+          rotuloTodos="Todas as squads"
+          opcoes={opcoesSquad}
+          selecionados={squadsSel}
+          onChange={setSquadsSel}
+          formatar={rotuloSquad}
+          pesquisavel
+          placeholderBusca="Digite o nome da squad…"
+        />
       </PageHeader>
 
       {erro && <div className="kmm-card" style={{ marginBottom: 16, fontSize: 13, color: C.red }}>{erro}</div>}
@@ -137,21 +190,27 @@ export default function ClientesPage() {
         <KpiCard titulo="AGGING DE VIABILIDADE" valor={valor(ind.agingViabilidadeDias)} unidade="dias" nota="Idade média dos itens em Backlog (sem KMM INTERNO)" />
       </div>
 
+      {/* Tabela à esquerda; painel "Distribuição por status" na lateral direita (empilha só em tela estreita). */}
+      <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
+      <div style={{ flex: "1 1 640px", minWidth: 0 }}>
       <div className="kmm-card" style={{ padding: 0, overflow: "hidden" }}>
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1100 }}>
+        {/* Área de rolagem PRÓPRIA da tabela (altura limitada à tela): sem isso a barra horizontal
+            ficava no fim da lista inteira, fora da vista, e parecia que não havia rolagem. Aqui as
+            barras (vertical e horizontal) ficam sempre visíveis e o cabeçalho acompanha a rolagem. */}
+        <div className="kmm-rolagem" style={{ overflow: "auto", maxHeight: "calc(100vh - 370px)", minHeight: 300 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1500 }}>
             <thead>
-              <tr style={{ textAlign: "left", background: C.dark }}>
-                {["Chamado", "Tarefa", "PBI", "Status no board", "Etapa", "PO", "Esteira", "Observação"].map((h) => (
-                  <th key={h} style={{ padding: "11px 14px", fontSize: 12.5, color: "#fff", fontWeight: 700, whiteSpace: "nowrap" }}>{h}</th>
+              <tr style={{ textAlign: "left" }}>
+                {COLUNAS.map((h) => (
+                  <th key={h} style={{ position: "sticky", top: 0, zIndex: 2, background: C.dark, padding: "11px 14px", fontSize: 12.5, color: "#fff", fontWeight: 700, whiteSpace: "nowrap" }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {carregando ? (
-                <tr><td style={{ padding: 18, color: C.muted }} colSpan={8}>Carregando…</td></tr>
+                <tr><td style={{ padding: 18, color: C.muted }} colSpan={COLUNAS.length}>Carregando…</td></tr>
               ) : visiveis.length === 0 ? (
-                <tr><td style={{ padding: 18, color: C.muted }} colSpan={8}>Nenhum PBI encontrado para os filtros atuais.</td></tr>
+                <tr><td style={{ padding: 18, color: C.muted }} colSpan={COLUNAS.length}>Nenhum PBI encontrado para os filtros atuais.</td></tr>
               ) : (
                 visiveis.map((p, i) => {
                   const cor = corDoStatus(p.state);
@@ -160,7 +219,9 @@ export default function ClientesPage() {
                   return (
                     <tr key={p.id} style={{ borderBottom: `1px solid ${C.border}`, background: i % 2 ? "#FAF9F7" : "#fff", fontSize: 13.5, verticalAlign: "top" }}>
                       <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>{p.idExterno || "—"}</td>
-                      <td style={{ padding: "10px 14px", minWidth: 260 }}>{p.titulo}</td>
+                      <td style={{ padding: "10px 14px", minWidth: 260 }} title={p.titulo}>
+                        <span style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{p.titulo}</span>
+                      </td>
                       <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>
                         <a
                           href={`https://dev.azure.com/${ORG_DEVOPS}/${encodeURIComponent(p.projeto)}/_workitems/edit/${p.id}`}
@@ -174,9 +235,13 @@ export default function ClientesPage() {
                       <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>
                         <span className="kmm-chip" style={{ background: cor.bg, color: cor.fg, borderColor: "transparent" }}>{p.state}</span>
                       </td>
+                      <td style={{ padding: "10px 14px", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
+                        {p.dataAberturaProduto ? formatarChaveDia(p.dataAberturaProduto.slice(0, 10)) : "—"}
+                      </td>
                       <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>{p.etapa || "—"}</td>
                       <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>{p.po || "—"}</td>
                       <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>{nomeCurtoDaSquad(p.areaPath) || "—"}</td>
+                      <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>{p.classificacao || "—"}</td>
                       <td style={{ padding: "10px 14px", minWidth: 260, color: com?.texto ? C.text : C.faint }} title={com ? `${com.autor}${com.data ? " · " + new Date(com.data).toLocaleDateString("pt-BR") : ""}` : undefined}>
                         {aguardandoComentario ? "…" : com?.texto ? (
                           <span style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{com.texto}</span>
@@ -193,6 +258,13 @@ export default function ClientesPage() {
       {!carregando && visiveis.length > 0 && (
         <div style={{ fontSize: 12, color: C.muted, marginTop: 8 }}>{visiveis.length} PBI(s) na visão.</div>
       )}
+      </div>
+      <div style={{ flex: "0 1 320px", minWidth: 280, position: "sticky", top: 16 }}>
+        <DistribuicaoPorStatus itens={visiveis} carregando={carregando} />
+      </div>
+      </div>
+
+      <BaseGeralDemandas itens={visiveis} carregando={carregando} />
     </div>
   );
 }

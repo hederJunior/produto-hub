@@ -20,6 +20,12 @@ export const FONTS = `
 .kmm-card{ background:${C.panel}; border:1px solid ${C.border}; border-radius:14px; padding:16px 18px;
   box-shadow:0 1px 2px rgba(20,16,12,.04), 0 10px 26px rgba(20,16,12,.03); }
 .kmm-painel .kmm-card{ box-shadow:none; }
+.kmm-rolagem{ scrollbar-width:auto; scrollbar-color:#A9A399 #EFEDE8; }
+.kmm-rolagem::-webkit-scrollbar{ width:13px; height:13px; }
+.kmm-rolagem::-webkit-scrollbar-track{ background:#EFEDE8; }
+.kmm-rolagem::-webkit-scrollbar-thumb{ background:#A9A399; border-radius:8px; border:3px solid #EFEDE8; }
+.kmm-rolagem::-webkit-scrollbar-thumb:hover{ background:#7F7A71; }
+.kmm-rolagem::-webkit-scrollbar-corner{ background:#EFEDE8; }
 .kmm-chip{ display:inline-flex; align-items:center; gap:6px; font-family:'Hanken Grotesk',sans-serif; font-size:12px; font-weight:600;
   padding:5px 10px; border-radius:999px; border:1px solid ${C.border}; background:#fff; color:${C.muted}; }
 .kmm-nav-item{ display:flex; align-items:center; gap:10px; padding:10px 14px; border-radius:10px; color:${C.muted};

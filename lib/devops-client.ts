@@ -1318,6 +1318,9 @@ export async function getPbisGestaoClientes(
     "Custom.PO",
     "Custom.Cliente",
     "Custom.DataAberturaProduto",
+    CAMPO_CLASSIFICACAO,
+    CAMPO_DATA_COMITE,
+    "Microsoft.VSTS.Scheduling.Effort",
     ...(campoIdExterno ? [campoIdExterno] : []),
   ];
 
@@ -1340,6 +1343,9 @@ export async function getPbisGestaoClientes(
         cliente: textoDeCampo(f["Custom.Cliente"]),
         createdDate: String(f["System.CreatedDate"] ?? ""),
         dataAberturaProduto: (f["Custom.DataAberturaProduto"] as string) ?? null,
+        classificacao: textoDeCampo(f[CAMPO_CLASSIFICACAO]),
+        dataComite: (f[CAMPO_DATA_COMITE] as string) ?? null,
+        effort: typeof f["Microsoft.VSTS.Scheduling.Effort"] === "number" ? (f["Microsoft.VSTS.Scheduling.Effort"] as number) : null,
         qtdComentarios: typeof qtd === "number" ? qtd : 0,
       });
     }

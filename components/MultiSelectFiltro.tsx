@@ -1,13 +1,22 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, Search } from "lucide-react";
 import { C } from "@/lib/kmm-theme";
+
+/** Minúsculo e sem acento — "Cotravale" casa "COOTRAVALE", "servicos" casa "Serviços". */
+function semAcento(s: string): string {
+  return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+}
 
 /**
  * Filtro de seleção múltipla (dropdown com checkboxes; nada marcado = "todos"). Mesmo visual do
  * MultiSelectFiltro do Road Map (app/(app)/roadmap/page.tsx, onde ainda existe uma cópia local) —
  * compartilhado aqui pra Gestão de clientes. `formatar` exibe um rótulo diferente do valor filtrado.
+ *
+ * `pesquisavel` (pedido por Heder em 2026-10-17): mostra uma caixa de texto no topo do dropdown pra
+ * digitar e reduzir a lista (ignora maiúsculas e acentos); Enter marca/desmarca quando sobra uma
+ * única opção. As opções já marcadas continuam marcadas mesmo escondidas pela busca.
  */
 export default function MultiSelectFiltro({
   rotuloTodos,
@@ -15,15 +24,21 @@ export default function MultiSelectFiltro({
   selecionados,
   onChange,
   formatar,
+  pesquisavel = false,
+  placeholderBusca = "Digite para buscar…",
 }: {
   rotuloTodos: string;
   opcoes: string[];
   selecionados: string[];
   onChange: (v: string[]) => void;
   formatar?: (v: string) => string;
+  pesquisavel?: boolean;
+  placeholderBusca?: string;
 }) {
   const [aberto, setAberto] = useState(false);
+  const [busca, setBusca] = useState("");
   const ref = useRef<HTMLDivElement>(null);
+  const campoBusca = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     function aoClicarFora(e: MouseEvent) {
@@ -33,15 +48,29 @@ export default function MultiSelectFiltro({
     return () => document.removeEventListener("mousedown", aoClicarFora);
   }, []);
 
+  // Fechou: limpa a busca. Abriu: foca a caixa de texto pra já sair digitando.
+  useEffect(() => {
+    if (!aberto) setBusca("");
+    else if (pesquisavel) campoBusca.current?.focus();
+  }, [aberto, pesquisavel]);
+
   function alternar(opcao: string) {
     onChange(selecionados.includes(opcao) ? selecionados.filter((s) => s !== opcao) : [...selecionados, opcao]);
   }
+
+  const rotuloDe = (v: string) => formatar?.(v) ?? v;
+
+  const visiveis = useMemo(() => {
+    const termo = semAcento(busca);
+    return termo ? opcoes.filter((op) => semAcento(rotuloDe(op)).includes(termo)) : opcoes;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opcoes, busca]);
 
   const rotulo =
     selecionados.length === 0
       ? rotuloTodos
       : selecionados.length === 1
-        ? formatar?.(selecionados[0]) ?? selecionados[0]
+        ? rotuloDe(selecionados[0])
         : `${selecionados.length} selecionados`;
 
   return (
@@ -58,20 +87,48 @@ export default function MultiSelectFiltro({
       {aberto && (
         <div
           className="kmm-card"
-          style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 30, minWidth: 240, maxHeight: 280, overflowY: "auto", padding: 8 }}
+          style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 30, minWidth: 260, maxHeight: 340, overflowY: "auto", padding: 8 }}
         >
-          <label
-            style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", fontSize: 13, cursor: "pointer", borderBottom: `1px solid ${C.border}`, marginBottom: 4 }}
-          >
-            <input type="checkbox" checked={selecionados.length === 0} onChange={() => onChange([])} />
-            {rotuloTodos}
-          </label>
-          {opcoes.map((op) => (
+          {pesquisavel && (
+            <div style={{ position: "sticky", top: -8, background: C.panel, margin: "-8px -8px 4px", padding: 8, borderBottom: `1px solid ${C.border}`, zIndex: 1 }}>
+              <div style={{ position: "relative" }}>
+                <Search size={13} color={C.muted} style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
+                <input
+                  ref={campoBusca}
+                  type="text"
+                  className="kmm-input"
+                  value={busca}
+                  placeholder={placeholderBusca}
+                  aria-label="Buscar nas opções"
+                  onChange={(e) => setBusca(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && visiveis.length === 1) {
+                      e.preventDefault();
+                      alternar(visiveis[0]);
+                    } else if (e.key === "Escape") {
+                      setAberto(false);
+                    }
+                  }}
+                  style={{ paddingLeft: 28, fontSize: 13 }}
+                />
+              </div>
+            </div>
+          )}
+          {!busca && (
+            <label
+              style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", fontSize: 13, cursor: "pointer", borderBottom: `1px solid ${C.border}`, marginBottom: 4 }}
+            >
+              <input type="checkbox" checked={selecionados.length === 0} onChange={() => onChange([])} />
+              {rotuloTodos}
+            </label>
+          )}
+          {visiveis.map((op) => (
             <label key={op} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", fontSize: 13, cursor: "pointer" }}>
               <input type="checkbox" checked={selecionados.includes(op)} onChange={() => alternar(op)} />
-              {formatar?.(op) ?? op}
+              {rotuloDe(op)}
             </label>
           ))}
+          {busca && visiveis.length === 0 && <div style={{ padding: "8px", fontSize: 12.5, color: C.muted }}>Nenhum resultado para “{busca}”.</div>}
         </div>
       )}
     </div>

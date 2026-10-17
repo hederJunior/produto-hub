@@ -19,6 +19,8 @@ import {
 } from "./alocacao-pbi";
 import { estadoIndicaConcluido } from "./kmm-theme";
 import { ESTEIRAS_CLIENTES_SQUADS, type ItemBacklog } from "./backlog";
+import { DEVOPS_PROJETOS, type Produto } from "./devops-projetos";
+import { ESTADOS_GESTAO_CLIENTES, htmlParaTexto, norm, type PbiGestaoCliente, type UltimoComentario } from "./gestao-clientes";
 
 // Toda chamada ao Azure DevOps neste módulo é SEM cache. O Next.js guarda no Data Cache o resultado
 // de fetch() feito dentro de Route Handlers (inclusive POST de WIQL/workitemsbatch, que têm a mesma
@@ -1218,4 +1220,163 @@ async function promoverPbiParaExecucao(org: string, pat: string, pbiId: number):
   });
   if (!patch.ok) throw new Error(`Falha ao atualizar a Etapa do PBI #${pbiId} (${patch.status}): ${await patch.text()}`);
   return { pbiId, atualizada: true };
+}
+
+
+// ===== Gestão de clientes (pedido por Heder em 2026-10-17). Só leitura. =====
+
+let cacheCampoIdExterno: { ref: string | null; ate: number } | null = null;
+
+/**
+ * Reference name do campo "ID Externo". É um campo custom (o reference name exato não é conhecido
+ * com certeza — erro real em 2026-09-20: um reference name chutado derrubou o lote inteiro com
+ * 400/TF51535), então ele é DESCOBERTO pela lista de campos da organização (casando pelo nome
+ * exibido "ID Externo") e guardado em memória por 1h. Override opcional por
+ * AZURE_DEVOPS_CAMPO_ID_EXTERNO. Se não achar, devolve null: a tela segue sem a coluna Chamado
+ * preenchida e avisa — nunca derruba o carregamento.
+ */
+async function resolverCampoIdExterno(org: string, pat: string): Promise<string | null> {
+  const override = process.env.AZURE_DEVOPS_CAMPO_ID_EXTERNO?.trim();
+  if (override) return override;
+  if (cacheCampoIdExterno && cacheCampoIdExterno.ate > Date.now()) return cacheCampoIdExterno.ref;
+
+  let ref: string | null = null;
+  try {
+    const res = await fetch(`https://dev.azure.com/${org}/_apis/wit/fields?api-version=${API_VERSION}`, { headers: authHeader(pat) });
+    if (res.ok) {
+      const lista = ((await res.json()) as { value?: { name: string; referenceName: string }[] }).value ?? [];
+      const alvo = lista.find((f) => norm(f.name) === "id externo") ?? lista.find((f) => norm(f.name).replace(/[\s_-]/g, "") === "idexterno");
+      ref = alvo?.referenceName ?? null;
+    } else {
+      console.error(`[gestao-clientes] falha ao listar campos (${res.status}): ${await res.text()}`);
+    }
+  } catch (err) {
+    console.error("[gestao-clientes] falha ao listar campos do Azure DevOps:", err);
+  }
+  cacheCampoIdExterno = { ref, ate: Date.now() + (ref ? 3_600_000 : 60_000) };
+  return ref;
+}
+
+/**
+ * PBIs (e só PBIs) dos produtos informados com State em ESTADOS_GESTAO_CLIENTES, nas áreas do
+ * produto (mesmo escopo da captura dos indicadores: Area Paths de DEVOPS_PROJETOS + raiz do
+ * projeto — assim o Agging bate com o da tela principal). Uma WIQL por status e por projeto, via
+ * allSettled: se um nome de status não existir num dos projetos (a WIQL rejeita valor de State
+ * inválido), só aquele status some e a tela recebe um aviso, em vez de falhar inteira.
+ */
+export async function getPbisGestaoClientes(
+  produtos: Produto[]
+): Promise<{ itens: PbiGestaoCliente[]; avisos: string[] }> {
+  const { org, pat } = getConfig();
+  const avisos: string[] = [];
+  const campoIdExterno = await resolverCampoIdExterno(org, pat);
+  if (!campoIdExterno) avisos.push('Campo "ID Externo" não encontrado no Azure DevOps — a coluna Chamado ficará vazia.');
+
+  const porProjeto = await Promise.all(
+    produtos.map(async (produto) => {
+      const { project, areaPaths } = DEVOPS_PROJETOS[produto];
+      const resultados = await Promise.allSettled(
+        ESTADOS_GESTAO_CLIENTES.map(async (estado) => {
+          const wiql = `
+            SELECT [System.Id]
+            FROM WorkItems
+            WHERE [System.TeamProject] = '${aspasWiql(project)}'
+              AND ${clausulaAreaPathsComRaiz(project, areaPaths)}
+              AND [System.WorkItemType] = 'Product Backlog Item'
+              AND [System.State] = '${aspasWiql(estado)}'
+            ORDER BY [System.Id]
+          `;
+          const res = await fetch(`https://dev.azure.com/${org}/${encodeURIComponent(project)}/_apis/wit/wiql?api-version=${API_VERSION}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...authHeader(pat) },
+            body: JSON.stringify({ query: wiql }),
+          });
+          if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+          return ((await res.json()) as { workItems: { id: number }[] }).workItems.map((w) => w.id);
+        })
+      );
+      const ids = new Set<number>();
+      resultados.forEach((r, i) => {
+        if (r.status === "fulfilled") r.value.forEach((id) => ids.add(id));
+        else {
+          console.error(`[gestao-clientes] WIQL do status "${ESTADOS_GESTAO_CLIENTES[i]}" falhou em ${project}:`, r.reason);
+          avisos.push(`Status "${ESTADOS_GESTAO_CLIENTES[i]}" não pôde ser consultado em ${project} (nome inexistente no board?).`);
+        }
+      });
+      return { project, ids: Array.from(ids) };
+    })
+  );
+
+  const campos = [
+    "System.Title",
+    "System.State",
+    "System.AreaPath",
+    "System.TeamProject",
+    "System.CreatedDate",
+    "System.CommentCount",
+    "Custom.Etapa",
+    "Custom.PO",
+    "Custom.Cliente",
+    "Custom.DataAberturaProduto",
+    ...(campoIdExterno ? [campoIdExterno] : []),
+  ];
+
+  const itens: PbiGestaoCliente[] = [];
+  for (const { project, ids } of porProjeto) {
+    if (!ids.length) continue;
+    const works = await buscarLoteCampos(org, pat, ids, campos);
+    for (const w of works) {
+      const f = w.fields;
+      const qtd = f["System.CommentCount"];
+      itens.push({
+        id: w.id,
+        projeto: String(f["System.TeamProject"] ?? project),
+        idExterno: campoIdExterno ? textoDeCampo(f[campoIdExterno]) || (f[campoIdExterno] != null ? String(f[campoIdExterno]).trim() : "") : "",
+        titulo: String(f["System.Title"] ?? `Item ${w.id}`),
+        state: String(f["System.State"] ?? ""),
+        etapa: textoDeCampo(f["Custom.Etapa"]),
+        po: textoDeCampo(f["Custom.PO"]),
+        areaPath: String(f["System.AreaPath"] ?? ""),
+        cliente: textoDeCampo(f["Custom.Cliente"]),
+        createdDate: String(f["System.CreatedDate"] ?? ""),
+        dataAberturaProduto: (f["Custom.DataAberturaProduto"] as string) ?? null,
+        qtdComentarios: typeof qtd === "number" ? qtd : 0,
+      });
+    }
+  }
+  return { itens, avisos };
+}
+
+/**
+ * Último comentário (aba Discussão) de cada PBI informado. O Azure só entrega comentários por
+ * work item (1 chamada cada), então o chamador manda LOTES pequenos e só dos PBIs com
+ * System.CommentCount > 0; aqui roda com concorrência limitada. Falha num item vira null (a tela
+ * mostra "—") sem derrubar o lote.
+ */
+export async function getUltimosComentarios(
+  itens: { id: number; projeto: string }[]
+): Promise<Record<number, UltimoComentario | null>> {
+  const { org, pat } = getConfig();
+  const saida: Record<number, UltimoComentario | null> = {};
+  const fila = [...itens];
+  const CONCORRENCIA = 8;
+
+  async function trabalhador() {
+    for (let item = fila.shift(); item; item = fila.shift()) {
+      try {
+        const url = `https://dev.azure.com/${org}/${encodeURIComponent(item.projeto)}/_apis/wit/workItems/${item.id}/comments?$top=1&order=desc&api-version=7.1-preview.4`;
+        const res = await fetch(url, { headers: authHeader(pat) });
+        if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+        const c = ((await res.json()) as { comments?: { text?: string; createdBy?: { displayName?: string }; createdDate?: string }[] }).comments?.[0];
+        saida[item.id] = c
+          ? { texto: htmlParaTexto(c.text), autor: c.createdBy?.displayName ?? "", data: c.createdDate ?? "" }
+          : null;
+      } catch (err) {
+        console.error(`[gestao-clientes] falha ao ler comentário do PBI ${item.id}:`, err);
+        saida[item.id] = null;
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(CONCORRENCIA, itens.length) }, trabalhador));
+  return saida;
 }

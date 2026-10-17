@@ -2146,3 +2146,40 @@ e-mail/código (modo híbrido) segue intacto como fallback, e a allowlist també
 (UPN vs e-mail/alias pode divergir — se alguém for barrado indevidamente, conferir o log
 `[auth/callback] e-mail fora da allowlist` na Vercel). Mesmo e-mail já usado por OTP é vinculado à
 mesma conta pelo Supabase (account linking automático).
+
+## 2026-10-17 — Gestão de clientes vira lista de PBIs do Azure (formato da planilha de acompanhamento)
+
+**Pedido (Heder):** trocar a tabela (vazia) por PBIs do Azure DevOps no formato da planilha: Chamado =
+"ID Externo", Tarefa = título do PBI, PBI = id, Status no board = State, **Etapa** (nova, `Custom.Etapa`),
+PO, Esteira = Area Path (nome curto), Observação = último comentário. Só Product Backlog Item. Filtro
+de Cliente (multi, `Custom.Cliente`) e o seletor global KMM4/KMM5/Ambos refletem na visão.
+
+**Escopo:** PBIs com State em Backlog, Orçamento, Execução, **Teste Aceite Usuário**, Aguardando Deploy
+(lista em `ESTADOS_GESTAO_CLIENTES`, `lib/gestao-clientes.ts`), nas áreas de `DEVOPS_PROJETOS` + raiz do
+projeto (mesmo escopo da captura dos indicadores, pra o Agging bater com a tela principal). Uma WIQL por
+status/projeto com `allSettled`: nome de status inexistente num projeto vira AVISO na tela, não erro.
+Linhas "Não encontrado" da planilha original não existem no Azure (sem PBI) e Bugs ficam de fora.
+
+**Indicadores (sobre a visão já filtrada por produto/cliente):**
+1. *Demandas em backlog* = State Backlog **e** Etapa ∈ {Backlog, Análise, Comitê}.
+2. *Demandas em etapa comercial* = State Orçamento **+** State Backlog com Etapa = Relacionamento Comercial.
+3. *Agging de Viabilidade* = mesma regra do painel da tela principal: só State Backlog, hoje − Data
+   Abertura Produto (se vazia, Created Date), dias inteiros (floor), média arredondada, **excluindo o cliente
+   "KMM (INTERNO)"**. Comparação de State/Etapa é sem acento/caixa (`norm`).
+
+**Chamado (ID Externo):** o reference name NÃO é conhecido — é descoberto em runtime pela lista de campos
+da organização (`/_apis/wit/fields`, casando o nome exibido "ID Externo"), cache de 1h; override por
+`AZURE_DEVOPS_CAMPO_ID_EXTERNO`. Motivo: reference name chutado derruba o lote inteiro (TF51535, 2026-09-20).
+
+**Observação (último comentário):** API de comentários é 1 chamada por PBI
+(`/_apis/wit/workItems/{id}/comments?$top=1&order=desc`, api 7.1-preview.4). Estratégia: a tabela carrega
+primeiro; depois a tela busca em lotes de 40 (3 lotes em paralelo, 8 chamadas simultâneas no servidor) SÓ
+dos PBIs com `System.CommentCount > 0`; HTML → texto (`htmlParaTexto`). Rotas: `GET /api/clientes/pbis`,
+`POST /api/clientes/pbis/comentarios` (valida id inteiro e projeto KMM4/KMM5).
+
+**O que ficou de fora/removido da tela:** botões "Novo cliente"/"Importar Excel" e os cards antigos. A
+tabela `Cliente` do banco e as APIs `/api/clientes` (+import, [id]) permanecem intactas.
+`components/MultiSelectFiltro.tsx` é cópia do filtro do Road Map (que ainda tem a versão local).
+
+**Não testado contra o Azure** (sem rede no sandbox): conferir 1) coluna Chamado preenchida, 2) se algum
+aviso de status aparece, 3) Observação carregando, 4) comparar o card de Agging com o da tela principal.

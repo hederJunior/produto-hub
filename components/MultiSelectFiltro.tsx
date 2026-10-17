@@ -26,6 +26,7 @@ export default function MultiSelectFiltro({
   formatar,
   pesquisavel = false,
   placeholderBusca = "Digite para buscar…",
+  unico = false,
 }: {
   rotuloTodos: string;
   opcoes: string[];
@@ -34,6 +35,12 @@ export default function MultiSelectFiltro({
   formatar?: (v: string) => string;
   pesquisavel?: boolean;
   placeholderBusca?: string;
+  /**
+   * Seleção ÚNICA (pedido por Heder em 2026-10-17, filtro de cliente da Gestão de clientes): sem a
+   * opção "todos", escolher uma opção troca a anterior e fecha a lista. `rotuloTodos` vira o texto de
+   * "nada escolhido ainda" (ex.: "Selecione um cliente"). `onChange` recebe sempre [opção].
+   */
+  unico?: boolean;
 }) {
   const [aberto, setAberto] = useState(false);
   const [busca, setBusca] = useState("");
@@ -55,6 +62,11 @@ export default function MultiSelectFiltro({
   }, [aberto, pesquisavel]);
 
   function alternar(opcao: string) {
+    if (unico) {
+      onChange([opcao]);
+      setAberto(false);
+      return;
+    }
     onChange(selecionados.includes(opcao) ? selecionados.filter((s) => s !== opcao) : [...selecionados, opcao]);
   }
 
@@ -114,7 +126,7 @@ export default function MultiSelectFiltro({
               </div>
             </div>
           )}
-          {!busca && (
+          {!busca && !unico && (
             <label
               style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", fontSize: 13, cursor: "pointer", borderBottom: `1px solid ${C.border}`, marginBottom: 4 }}
             >
@@ -124,7 +136,7 @@ export default function MultiSelectFiltro({
           )}
           {visiveis.map((op) => (
             <label key={op} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", fontSize: 13, cursor: "pointer" }}>
-              <input type="checkbox" checked={selecionados.includes(op)} onChange={() => alternar(op)} />
+              <input type={unico ? "radio" : "checkbox"} checked={selecionados.includes(op)} onChange={() => alternar(op)} />
               {rotuloDe(op)}
             </label>
           ))}

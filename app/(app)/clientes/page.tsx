@@ -6,7 +6,8 @@ import { C } from "@/lib/kmm-theme";
 import PageHeader from "@/components/PageHeader";
 import MultiSelectFiltro from "@/components/MultiSelectFiltro";
 import DistribuicaoPorStatus from "@/components/DistribuicaoPorStatus";
-import BaseGeralDemandas from "@/components/BaseGeralDemandas";
+import { DemandasAguardandoPriorizacao, DivisorSecao, LinhaBacklogOrcamento } from "@/components/BaseGeralDemandas";
+import { Users } from "lucide-react";
 import { nomeCurtoDaSquad } from "@/lib/backlog";
 import { formatarChaveDia } from "@/lib/datas";
 import {
@@ -47,18 +48,23 @@ export default function ClientesPage() {
   const [avisos, setAvisos] = useState<string[]>([]);
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(true);
-  const [clientesSel, setClientesSel] = useState<string[]>([]);
+  // Cliente: seleção ÚNICA e obrigatória (pedido por Heder em 2026-10-17) — a tela só mostra dados
+  // depois que um cliente é escolhido. null = nada escolhido ainda.
+  const [clienteSel, setClienteSel] = useState<string | null>(null);
   // Filtro "Squad" = Area Path do PBI (valor completo, ex. "KMM5\TMS - Dedicada Maroni").
   const [squadsSel, setSquadsSel] = useState<string[]>([]);
   // Observação (último comentário) chega depois da tabela, em lotes: id → comentário | null.
   const [comentarios, setComentarios] = useState<Record<number, UltimoComentario | null>>({});
   const geracao = useRef(0);
+  // Ids cujo comentário já foi pedido (evita repetir ao trocar de cliente e voltar).
+  const comentariosPedidos = useRef<Set<number>>(new Set());
 
   useEffect(() => {
     const minha = ++geracao.current;
     setCarregando(true);
     setErro(null);
     setComentarios({});
+    comentariosPedidos.current = new Set();
     (async () => {
       try {
         const res = await fetch(`/api/clientes/pbis?produto=${produto}`, { cache: "no-store" });
@@ -69,7 +75,6 @@ export default function ClientesPage() {
         setItens(lista);
         setAvisos(j.avisos ?? []);
         setCarregando(false);
-        carregarComentarios(lista, minha);
       } catch (e: any) {
         if (minha !== geracao.current) return;
         setErro(e.message ?? "Falha ao carregar os PBIs.");
@@ -112,17 +117,29 @@ export default function ClientesPage() {
   const clienteDe = (p: PbiGestaoCliente) => p.cliente || SEM_CLIENTE;
   const opcoesCliente = useMemo(() => Array.from(new Set(itens.map(clienteDe))).sort((a, b) => a.localeCompare(b, "pt-BR")), [itens]);
 
-  // Se a lista de clientes mudar (troca de produto), descarta seleções que não existem mais.
+  // Se a lista de clientes mudar (troca de produto) e o escolhido não existir mais, volta a "nada escolhido".
   useEffect(() => {
-    setClientesSel((sel) => sel.filter((c) => opcoesCliente.includes(c)));
+    setClienteSel((sel) => (sel && !opcoesCliente.includes(sel) ? null : sel));
   }, [opcoesCliente]);
 
+  // Observação (último comentário): só dos PBIs do cliente escolhido, sob demanda — antes de escolher
+  // um cliente nada é exibido, então buscar os comentários de todos seria trabalho jogado fora.
+  useEffect(() => {
+    if (!clienteSel) return;
+    const pendentes = itens.filter((p) => clienteDe(p) === clienteSel && p.qtdComentarios > 0 && !comentariosPedidos.current.has(p.id));
+    if (!pendentes.length) return;
+    pendentes.forEach((p) => comentariosPedidos.current.add(p.id));
+    carregarComentarios(pendentes, geracao.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clienteSel, itens]);
+
+  // Squads oferecidas = as do cliente escolhido (não adianta listar squad sem demanda dele).
   const opcoesSquad = useMemo(
     () =>
-      Array.from(new Set(itens.map((p) => p.areaPath).filter(Boolean))).sort((a, b) =>
+      Array.from(new Set(itens.filter((p) => clienteSel && clienteDe(p) === clienteSel).map((p) => p.areaPath).filter(Boolean))).sort((a, b) =>
         nomeCurtoDaSquad(a).localeCompare(nomeCurtoDaSquad(b), "pt-BR")
       ),
-    [itens]
+    [itens, clienteSel]
   );
   useEffect(() => {
     setSquadsSel((sel) => sel.filter((s) => opcoesSquad.includes(s)));
@@ -145,11 +162,10 @@ export default function ClientesPage() {
   }, [opcoesSquad]);
 
   const visiveis = useMemo(() => {
-    const filtrados = itens.filter(
-      (p) => (!clientesSel.length || clientesSel.includes(clienteDe(p))) && (!squadsSel.length || squadsSel.includes(p.areaPath))
-    );
+    if (!clienteSel) return [];
+    const filtrados = itens.filter((p) => clienteDe(p) === clienteSel && (!squadsSel.length || squadsSel.includes(p.areaPath)));
     return filtrados.sort((a, b) => ordemDoStatus(a.state) - ordemDoStatus(b.state) || a.id - b.id);
-  }, [itens, clientesSel, squadsSel]);
+  }, [itens, clienteSel, squadsSel]);
 
   const ind = useMemo(() => calcularIndicadoresGestao(visiveis), [visiveis]);
   const valor = (v: number | null) => (carregando ? "…" : v == null ? "—" : String(v));
@@ -161,10 +177,11 @@ export default function ClientesPage() {
         subtitulo="PBIs do Azure DevOps em Backlog, Orçamento, Execução, Teste Aceite Usuário e Aguardando Deploy."
       >
         <MultiSelectFiltro
-          rotuloTodos="Todos os clientes"
+          unico
+          rotuloTodos={carregando ? "Carregando clientes…" : "Selecione um cliente"}
           opcoes={opcoesCliente}
-          selecionados={clientesSel}
-          onChange={setClientesSel}
+          selecionados={clienteSel ? [clienteSel] : []}
+          onChange={(v) => setClienteSel(v[0] ?? null)}
           pesquisavel
           placeholderBusca="Digite o nome do cliente…"
         />
@@ -184,11 +201,21 @@ export default function ClientesPage() {
         <div key={a} className="kmm-card" style={{ marginBottom: 12, fontSize: 13, color: "#8a5a00", background: "#fff6e0" }}>{a}</div>
       ))}
 
+      {!clienteSel ? (
+        <EstadoSemCliente carregando={carregando} />
+      ) : (
+      <>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 24 }}>
         <KpiCard titulo="DEMANDAS EM BACKLOG" valor={valor(ind.demandasBacklog)} nota="Backlog nas etapas Backlog, Análise ou Comitê" />
         <KpiCard titulo="DEMANDAS EM ETAPA COMERCIAL" valor={valor(ind.demandasEtapaComercial)} nota="Orçamento + Backlog na etapa Relacionamento Comercial" />
         <KpiCard titulo="AGGING DE VIABILIDADE" valor={valor(ind.agingViabilidadeDias)} unidade="dias" nota="Idade média dos itens em Backlog (sem KMM INTERNO)" />
       </div>
+
+      {/* Linha 1: Demandas em backlog + Demandas em orçamento. */}
+      <LinhaBacklogOrcamento itens={visiveis} carregando={carregando} />
+
+      {/* Linha 2: base geral (tabela completa) + painel "Distribuição por status". */}
+      <DivisorSecao titulo="Base geral de demandas" />
 
       {/* Tabela à esquerda; painel "Distribuição por status" na lateral direita (empilha só em tela estreita). */}
       <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
@@ -264,7 +291,29 @@ export default function ClientesPage() {
       </div>
       </div>
 
-      <BaseGeralDemandas itens={visiveis} carregando={carregando} />
+      {/* Linha 3: Demandas aguardando priorização. */}
+      <div style={{ marginTop: 24 }}>
+        <DemandasAguardandoPriorizacao itens={visiveis} carregando={carregando} />
+      </div>
+      </>
+      )}
+    </div>
+  );
+}
+
+/** Tela antes de escolher o cliente: nada é exibido até haver uma seleção (pedido por Heder em 2026-10-17). */
+function EstadoSemCliente({ carregando }: { carregando: boolean }) {
+  return (
+    <div className="kmm-card" style={{ textAlign: "center", padding: "56px 24px" }}>
+      <div style={{ width: 54, height: 54, borderRadius: 14, background: "#FFF1EA", margin: "0 auto 16px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <Users size={26} color={C.orange} />
+      </div>
+      <div style={{ fontFamily: "Sora,sans-serif", fontWeight: 700, fontSize: 18, color: C.text }}>
+        {carregando ? "Carregando clientes…" : "Selecione um cliente"}
+      </div>
+      <div style={{ fontSize: 13.5, color: C.muted, marginTop: 6 }}>
+        {carregando ? "Buscando os PBIs no Azure DevOps." : "Escolha um cliente no filtro acima para ver os indicadores e as demandas."}
+      </div>
     </div>
   );
 }

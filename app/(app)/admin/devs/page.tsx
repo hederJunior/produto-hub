@@ -154,11 +154,11 @@ export default function CadastroDevsPage() {
         ) : devs.length === 0 ? (
           <p style={{ color: C.muted }}>Nenhum dev cadastrado pra {produto} ainda.</p>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <table className="kmm-tab">
             <thead>
-              <tr style={{ textAlign: "left", borderBottom: `1px solid ${C.border}` }}>
+              <tr>
                 {["Nome", "Função", ""].map((h) => (
-                  <th key={h} style={{ padding: "8px 10px", fontSize: 12, color: C.muted, fontWeight: 600 }}>
+                  <th key={h}>
                     {h}
                   </th>
                 ))}
@@ -166,16 +166,18 @@ export default function CadastroDevsPage() {
             </thead>
             <tbody>
               {devs.map((dev) => (
-                <tr key={dev.id} style={{ borderBottom: `1px solid ${C.border}` }}>
-                  <td style={{ padding: "8px 10px", fontWeight: 600 }}>{dev.nome}</td>
-                  <td style={{ padding: "8px 10px", color: C.muted }}>{dev.papel ?? "—"}</td>
-                  <td style={{ padding: "8px 10px", display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                <tr key={dev.id}>
+                  <td style={{ fontWeight: 600 }}>{dev.nome}</td>
+                  <td style={{ color: C.muted }}>{dev.papel ?? "—"}</td>
+                  <td style={{ width: 90 }}>
+                    <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                     <button className="kmm-btn" style={{ padding: 6 }} onClick={() => iniciarEdicao(dev)}>
                       <Pencil size={13} />
                     </button>
                     <button className="kmm-btn" style={{ padding: 6 }} onClick={() => excluir(dev)} title="Também remove as alocações desse dev em squad/sprint">
                       <Trash2 size={13} color={C.red} />
                     </button>
+                    </div>
                   </td>
                 </tr>
               ))}

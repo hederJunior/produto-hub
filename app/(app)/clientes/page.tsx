@@ -6,7 +6,8 @@ import { C } from "@/lib/kmm-theme";
 import PageHeader from "@/components/PageHeader";
 import MultiSelectFiltro from "@/components/MultiSelectFiltro";
 import DistribuicaoPorStatus from "@/components/DistribuicaoPorStatus";
-import { DivisorSecao, LinhaBacklogIndicadores, LinhaExecucao } from "@/components/BaseGeralDemandas";
+import AbasVisao from "@/components/AbasVisao";
+import { ALTURA_QUADRO, DivisorSecao, VisaoBacklogOrcamento, VisaoPorStatus } from "@/components/BaseGeralDemandas";
 import { Users } from "lucide-react";
 import { nomeCurtoDaSquad } from "@/lib/backlog";
 import { formatarChaveDia } from "@/lib/datas";
@@ -42,8 +43,11 @@ function corDoStatus(state: string) {
   return COR_STATUS[chave] ?? { bg: C.soft, fg: C.muted };
 }
 
+type VisaoDemandas = "backlog" | "execucao" | "testes";
+
 export default function ClientesPage() {
   const { produto } = useProduto();
+  const [visao, setVisao] = useState<VisaoDemandas>("backlog");
   const [itens, setItens] = useState<PbiGestaoCliente[]>([]);
   const [avisos, setAvisos] = useState<string[]>([]);
   const [erro, setErro] = useState<string | null>(null);
@@ -204,14 +208,7 @@ export default function ClientesPage() {
         <EstadoSemCliente carregando={carregando} />
       ) : (
       <>
-      {/* Linha 1: Demandas em backlog + coluna de 3 indicadores (o de "c/comercial" abre o painel de orçamento). */}
-      <LinhaBacklogIndicadores itens={visiveis} indicadores={ind} carregando={carregando} />
-
-      {/* Linha 2: gráfico de execução por etapa + Demandas em execução (com a última observação). */}
-      <DivisorSecao titulo="Demandas em execução" />
-      <LinhaExecucao itens={visiveis} comentarios={comentarios} carregando={carregando} />
-
-      {/* Linha 3: painel "Distribuição por status" (à esquerda) + base geral (tabela completa). */}
+      {/* Linha 1: base geral — painel "Distribuição por status" (esquerda) + tabela completa (direita). */}
       <DivisorSecao titulo="Base geral de demandas" />
 
       <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
@@ -220,15 +217,14 @@ export default function ClientesPage() {
       </div>
       <div style={{ flex: "1 1 640px", minWidth: 0 }}>
       <div className="kmm-card" style={{ padding: 0, overflow: "hidden" }}>
-        {/* Área de rolagem PRÓPRIA da tabela (altura limitada à tela): sem isso a barra horizontal
-            ficava no fim da lista inteira, fora da vista, e parecia que não havia rolagem. Aqui as
-            barras (vertical e horizontal) ficam sempre visíveis e o cabeçalho acompanha a rolagem. */}
-        <div className="kmm-rolagem" style={{ overflow: "auto", maxHeight: "calc(100vh - 370px)", minHeight: 300 }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1500 }}>
+        {/* Área de rolagem PRÓPRIA da tabela, com a mesma altura padrão dos demais quadros: as barras
+            (vertical e horizontal) ficam sempre visíveis e o cabeçalho acompanha a rolagem. */}
+        <div className="kmm-rolagem" style={{ overflow: "auto", height: ALTURA_QUADRO, minHeight: 340 }}>
+          <table className="kmm-tab" style={{ minWidth: 1500 }}>
             <thead>
-              <tr style={{ textAlign: "left" }}>
+              <tr>
                 {COLUNAS.map((h) => (
-                  <th key={h} style={{ position: "sticky", top: 0, zIndex: 2, background: C.dark, padding: "11px 14px", fontSize: 12.5, color: "#fff", fontWeight: 700, whiteSpace: "nowrap" }}>{h}</th>
+                  <th key={h}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -238,37 +234,38 @@ export default function ClientesPage() {
               ) : visiveis.length === 0 ? (
                 <tr><td style={{ padding: 18, color: C.muted }} colSpan={COLUNAS.length}>Nenhum PBI encontrado para os filtros atuais.</td></tr>
               ) : (
-                visiveis.map((p, i) => {
+                visiveis.map((p) => {
                   const cor = corDoStatus(p.state);
                   const com = comentarios[p.id];
                   const aguardandoComentario = p.qtdComentarios > 0 && com === undefined;
+                  const nowrap = { whiteSpace: "nowrap" } as const;
                   return (
-                    <tr key={p.id} style={{ borderBottom: `1px solid ${C.border}`, background: i % 2 ? "#FAF9F7" : "#fff", fontSize: 13.5, verticalAlign: "top" }}>
-                      <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>{p.idExterno || "—"}</td>
-                      <td style={{ padding: "10px 14px", minWidth: 260 }} title={p.titulo}>
+                    <tr key={p.id}>
+                      <td style={nowrap}>{p.idExterno || "—"}</td>
+                      <td style={{ minWidth: 260 }} title={p.titulo}>
                         <span style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{p.titulo}</span>
                       </td>
-                      <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>
+                      <td style={nowrap}>
                         <a
                           href={`https://dev.azure.com/${ORG_DEVOPS}/${encodeURIComponent(p.projeto)}/_workitems/edit/${p.id}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          style={{ color: C.blue, textDecoration: "none", fontWeight: 600 }}
+                          style={{ color: C.blue, textDecoration: "none", fontWeight: 500 }}
                         >
                           {p.id}
                         </a>
                       </td>
-                      <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>
+                      <td style={nowrap}>
                         <span className="kmm-chip" style={{ background: cor.bg, color: cor.fg, borderColor: "transparent" }}>{p.state}</span>
                       </td>
-                      <td style={{ padding: "10px 14px", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
+                      <td style={{ ...nowrap, fontVariantNumeric: "tabular-nums" }}>
                         {p.dataAberturaProduto ? formatarChaveDia(p.dataAberturaProduto.slice(0, 10)) : "—"}
                       </td>
-                      <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>{p.etapa || "—"}</td>
-                      <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>{p.po || "—"}</td>
-                      <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>{nomeCurtoDaSquad(p.areaPath) || "—"}</td>
-                      <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>{p.classificacao || "—"}</td>
-                      <td style={{ padding: "10px 14px", minWidth: 260, color: com?.texto ? C.text : C.faint }} title={com ? `${com.autor}${com.data ? " · " + new Date(com.data).toLocaleDateString("pt-BR") : ""}` : undefined}>
+                      <td style={nowrap}>{p.etapa || "—"}</td>
+                      <td style={nowrap}>{p.po || "—"}</td>
+                      <td style={nowrap}>{nomeCurtoDaSquad(p.areaPath) || "—"}</td>
+                      <td style={nowrap}>{p.classificacao || "—"}</td>
+                      <td style={{ minWidth: 260, color: com?.texto ? C.text : C.faint }} title={com ? `${com.autor}${com.data ? " · " + new Date(com.data).toLocaleDateString("pt-BR") : ""}` : undefined}>
                         {aguardandoComentario ? "…" : com?.texto ? (
                           <span style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{com.texto}</span>
                         ) : "—"}
@@ -285,6 +282,36 @@ export default function ClientesPage() {
         <div style={{ fontSize: 12, color: C.muted, marginTop: 8 }}>{visiveis.length} PBI(s) na visão.</div>
       )}
       </div>
+      </div>
+
+      {/* Linha 2: seletor de visão + conteúdo da visão (gráfico/indicadores à esquerda, tabela à direita, mesma proporção e altura). */}
+      <div style={{ marginTop: 30 }}>
+        <AbasVisao
+          rotulo="Visão das demandas"
+          opcoes={[
+            { valor: "backlog" as VisaoDemandas, label: "Backlog/Orçamento" },
+            { valor: "execucao" as VisaoDemandas, label: "Execução" },
+            { valor: "testes" as VisaoDemandas, label: "Testes do usuário" },
+          ]}
+          valor={visao}
+          onChange={setVisao}
+        />
+      </div>
+      <div style={{ marginTop: 16 }}>
+        {visao === "backlog" && <VisaoBacklogOrcamento itens={visiveis} indicadores={ind} carregando={carregando} />}
+        {visao === "execucao" && (
+          <VisaoPorStatus estado="Execução" tituloTabela="Demandas em execução" tituloGrafico="Execução por etapa" itens={visiveis} comentarios={comentarios} carregando={carregando} />
+        )}
+        {visao === "testes" && (
+          <VisaoPorStatus
+            estado="Teste Aceite Usuário"
+            tituloTabela="Demandas em testes do usuário"
+            tituloGrafico="Testes do usuário por etapa"
+            itens={visiveis}
+            comentarios={comentarios}
+            carregando={carregando}
+          />
+        )}
       </div>
       </>
       )}

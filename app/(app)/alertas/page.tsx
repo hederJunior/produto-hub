@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { AlertTriangle, Info, AlertOctagon } from "lucide-react";
-import { C } from "@/lib/kmm-theme";
+import { C, PASTEL } from "@/lib/kmm-theme";
 import PageHeader from "@/components/PageHeader";
 
 type ItemAviso = {
@@ -17,6 +17,12 @@ const SEVERIDADE_UI: Record<ItemAviso["severidade"], { label: string; bg: string
   CRITICO: { label: "Crítico", bg: "#FBE7E4", fg: C.red, icon: AlertOctagon },
   ATENCAO: { label: "Atenção", bg: "#FCEFD8", fg: C.amber, icon: AlertTriangle },
   INFORMATIVO: { label: "Informativo", bg: "#E7F5EC", fg: C.green, icon: Info },
+};
+
+const PASTEL_SEVERIDADE: Record<ItemAviso["severidade"], { bg: string; dot: string }> = {
+  CRITICO: PASTEL.red,
+  ATENCAO: PASTEL.amber,
+  INFORMATIVO: PASTEL.green,
 };
 
 export default function AlertasPage() {
@@ -38,11 +44,14 @@ export default function AlertasPage() {
     <div>
       <PageHeader titulo="Alertas e avisos" subtitulo="O que o time de Produto precisa olhar primeiro nesta semana." />
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 24 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 22 }}>
         {(["CRITICO", "ATENCAO", "INFORMATIVO"] as const).map((sev) => (
-          <div key={sev} className="kmm-card">
-            <div style={{ fontSize: 12, color: C.muted, fontWeight: 700, letterSpacing: ".04em" }}>{SEVERIDADE_UI[sev].label.toUpperCase()}</div>
-            <div style={{ fontSize: 32, fontWeight: 700, color: C.text, marginTop: 6 }}>{contagem[sev]}</div>
+          <div key={sev} style={{ background: PASTEL_SEVERIDADE[sev].bg, borderRadius: 16, padding: "14px 18px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, color: "#6F6B66" }}>
+              <i style={{ width: 8, height: 8, borderRadius: "50%", background: PASTEL_SEVERIDADE[sev].dot }} />
+              {SEVERIDADE_UI[sev].label}
+            </div>
+            <div style={{ fontFamily: "Sora,sans-serif", fontSize: 28, fontWeight: 600, color: C.text, marginTop: 6 }}>{contagem[sev]}</div>
           </div>
         ))}
       </div>

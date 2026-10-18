@@ -68,7 +68,7 @@ export default function BacklogEsteirasClientes({ itens, ordem, hoje }: { itens:
               <XAxis dataKey="nome" tickLine={false} axisLine={{ stroke: C.border }} interval={0} tick={{ fontSize: 12, fill: C.muted, fontWeight: 600 }} />
               <YAxis hide domain={[0, "dataMax + 2"]} />
               <Tooltip cursor={{ fill: "transparent" }} formatter={(v: number) => [`${v} ${v === 1 ? "item" : "itens"}`, "Backlog"]} />
-              <Bar dataKey="quantidade" radius={[10, 10, 10, 10]} maxBarSize={54} minPointSize={6}>
+              <Bar dataKey="quantidade" radius={[10, 10, 10, 10]} maxBarSize={54} minPointSize={6} isAnimationActive={false}>
                 {dadosGrafico.map((d) => (
                   <Cell key={d.nome} fill={d.cor} />
                 ))}
@@ -81,7 +81,7 @@ export default function BacklogEsteirasClientes({ itens, ordem, hoje }: { itens:
 
       <div style={{ overflowX: "auto" }}>
         <div style={{ minWidth: 1180 }}>
-          <div style={{ display: "grid", gridTemplateColumns: COLUNAS, padding: "0 0 6px", fontSize: 11, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.3 }}>
+          <div style={{ display: "grid", gridTemplateColumns: COLUNAS, padding: "10px 0", marginBottom: 6, fontSize: 11.5, fontWeight: 600, color: "#7A7680", background: "#F5F4F8", borderRadius: 10 }}>
             {["ID", "Título", "Cliente", "PO", "Created Date", "Abertura Produto", "Classificação", "Feature", "Priority", ""].map((h, i) => (
               <div key={`${h}-${i}`} style={{ padding: "0 10px" }}>
                 {h}
@@ -105,17 +105,19 @@ export default function BacklogEsteirasClientes({ itens, ordem, hoje }: { itens:
                   </button>
                   <span
                     style={{
-                      background: g.cor.bg,
-                      color: g.cor.fg,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 7,
+                      background: "#F5F4F8",
+                      color: C.text,
                       fontFamily: "Sora,sans-serif",
-                      fontWeight: 700,
-                      fontSize: 11.5,
-                      letterSpacing: 0.4,
-                      textTransform: "uppercase",
+                      fontWeight: 600,
+                      fontSize: 12.5,
                       padding: "4px 12px",
-                      borderRadius: 6,
+                      borderRadius: 999,
                     }}
                   >
+                    <i style={{ width: 8, height: 8, borderRadius: "50%", background: g.cor.bg }} />
                     {nomeCurtoDaSquad(g.squad)}
                   </span>
                   <span style={{ fontSize: 13, fontWeight: 700, color: C.muted, fontVariantNumeric: "tabular-nums" }}>{g.itens.length}</span>

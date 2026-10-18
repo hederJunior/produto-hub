@@ -5,6 +5,7 @@ import { Trash2, Pencil, X } from "lucide-react";
 import { C } from "@/lib/kmm-theme";
 import { mesLabel } from "@/lib/demandas-agregacao";
 import PageHeader from "@/components/PageHeader";
+import AbasVisao from "@/components/AbasVisao";
 
 type Painel = "FLUXO_DEMANDAS" | "AGGING_VIABILIDADE" | "BACKLOG_VIABILIDADE";
 
@@ -154,24 +155,8 @@ export default function IndicadoresManuaisPage() {
         </div>
       </PageHeader>
 
-      <div className="kmm-card" style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "flex-end", marginBottom: 20 }}>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {ABAS.map((a) => (
-            <button
-              key={a.key}
-              className="kmm-chip"
-              onClick={() => setAba(a.key)}
-              style={{
-                cursor: "pointer",
-                border: `1px solid ${aba === a.key ? C.orange : C.border}`,
-                color: aba === a.key ? C.orange : C.faint,
-                background: aba === a.key ? `${C.orange}14` : "#fff",
-              }}
-            >
-              {a.label}
-            </button>
-          ))}
-        </div>
+      <div style={{ marginBottom: 18 }}>
+        <AbasVisao rotulo="Indicador" opcoes={ABAS.map((a) => ({ valor: a.key, label: a.label }))} valor={aba} onChange={setAba} />
       </div>
 
       <div className="kmm-card" style={{ marginBottom: 20 }}>
@@ -244,42 +229,44 @@ export default function IndicadoresManuaisPage() {
         ) : itens.length === 0 ? (
           <p style={{ color: C.muted }}>Nenhum lançamento manual pra {produto} em {abaInfo.label}.</p>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <table className="kmm-tab">
             <thead>
-              <tr style={{ textAlign: "left", borderBottom: `1px solid ${C.border}` }}>
+              <tr>
                 {(aba === "FLUXO_DEMANDAS"
                   ? ["Mês", "Abertas", "Encerradas", "Canceladas", "Observação", ""]
                   : aba === "AGGING_VIABILIDADE"
                   ? ["Mês", "Aging médio", "Observação", ""]
                   : ["Mês", "Backlog", "Observação", ""]
                 ).map((h) => (
-                  <th key={h} style={{ padding: "8px 10px", fontSize: 12, color: C.muted, fontWeight: 600 }}>{h}</th>
+                  <th key={h}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {itens.map((item) => (
-                <tr key={item.id} style={{ borderBottom: `1px solid ${C.border}` }}>
-                  <td style={{ padding: "8px 10px", fontWeight: 600 }}>{mesLabel(item.mes)}</td>
+                <tr key={item.id}>
+                  <td style={{ fontWeight: 600 }}>{mesLabel(item.mes)}</td>
                   {aba === "FLUXO_DEMANDAS" && (
                     <>
-                      <td style={{ padding: "8px 10px" }}>{item.abertas ?? "—"}</td>
-                      <td style={{ padding: "8px 10px" }}>{item.encerradas ?? "—"}</td>
-                      <td style={{ padding: "8px 10px" }}>{item.canceladas ?? "—"}</td>
+                      <td>{item.abertas ?? "—"}</td>
+                      <td>{item.encerradas ?? "—"}</td>
+                      <td>{item.canceladas ?? "—"}</td>
                     </>
                   )}
-                  {aba === "AGGING_VIABILIDADE" && <td style={{ padding: "8px 10px" }}>{item.agingMedio ?? "—"}</td>}
-                  {aba === "BACKLOG_VIABILIDADE" && <td style={{ padding: "8px 10px" }}>{item.backlogQtd ?? "—"}</td>}
-                  <td style={{ padding: "8px 10px", color: C.muted, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={item.observacao ?? ""}>
+                  {aba === "AGGING_VIABILIDADE" && <td>{item.agingMedio ?? "—"}</td>}
+                  {aba === "BACKLOG_VIABILIDADE" && <td>{item.backlogQtd ?? "—"}</td>}
+                  <td style={{ color: C.muted, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={item.observacao ?? ""}>
                     {item.observacao ?? "—"}
                   </td>
-                  <td style={{ padding: "8px 10px", display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                  <td style={{ width: 90 }}>
+                    <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                     <button className="kmm-btn" style={{ padding: 6 }} onClick={() => iniciarEdicao(item)}>
                       <Pencil size={13} />
                     </button>
                     <button className="kmm-btn" style={{ padding: 6 }} onClick={() => excluir(item.id)}>
                       <Trash2 size={13} color={C.red} />
                     </button>
+                    </div>
                   </td>
                 </tr>
               ))}

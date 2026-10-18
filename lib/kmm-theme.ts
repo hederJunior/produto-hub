@@ -1,43 +1,73 @@
 // Paleta e tipografia compartilhadas com components/PainelIndicadores.jsx (mesmos valores),
 // para as telas novas (shell, clientes, roadmap, alertas) usarem o mesmo padrão visual do KMM.
 // Mantido como um módulo à parte para não mexer no componente já validado.
+// Visual "suave" (2026-10-18, pedido do Heder: tom mais moderno e harmonioso em todas as telas):
+// fundo quente quase branco, bordas finas e claras, cantos de 16px, tipografia mais leve (pesos
+// 500/600), tons pastéis nos indicadores. Os valores abaixo alimentam todas as telas; mexer aqui
+// muda o app inteiro de uma vez.
 export const C = {
-  bg: "#F4F3F0", panel: "#FFFFFF", border: "#E7E3DC", soft: "#F0EEE9",
-  text: "#16130F", muted: "#6E7178", faint: "#A6A39D",
+  bg: "#F9F7F4", panel: "#FFFFFF", border: "#ECE7E0", soft: "#F4F2EE",
+  text: "#1E1B18", muted: "#6E7178", faint: "#A6A39D",
   orange: "#FC4C02", orangeDark: "#E04300", dark: "#201D1A", blue: "#3E7CB1",
   green: "#2E9E5B", amber: "#E8920C", red: "#DD3322", grid: "#ECE9E3",
 };
 
+/** Pastéis dos indicadores/pontos de status: fundo suave + cor do ponto (mesma família do painel de distribuição). */
+export const PASTEL = {
+  slate: { bg: "#F4F5FB", dot: "#64748B" },
+  indigo: { bg: "#F1F1FD", dot: "#6366F1" },
+  sky: { bg: "#EFF7FD", dot: "#0EA5E9" },
+  amber: { bg: "#FFF6EC", dot: "#F59E0B" },
+  purple: { bg: "#F7F1FD", dot: "#A855F7" },
+  green: { bg: "#EEF8F1", dot: "#22A55B" },
+  red: { bg: "#FDF1F0", dot: "#EF4444" },
+  orange: { bg: "#FFF3EC", dot: "#F0742F" },
+} as const;
+
+/** Laranja suave das barras de gráfico (o tom forte, `C.orange`, fica pro destaque). */
+export const BARRA_SUAVE = "#F2A57A";
+export const BARRA_FORTE = "#E8703A";
+
 export const FONTS = `
-@import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Hanken+Grotesk:ital,wght@0,400;0,500;0,600;1,500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600&family=Hanken+Grotesk:ital,wght@0,400;0,500;0,600;1,500&display=swap');
 .kmm-root *{ box-sizing:border-box; }
-.kmm-btn{ font-family:'Hanken Grotesk',sans-serif; font-size:13px; font-weight:600;
-  border-radius:9px; padding:9px 15px; cursor:pointer; border:1px solid ${C.border};
+.kmm-root h1, .kmm-root h2, .kmm-root h3{ font-weight:600; }
+/* Normalização tipográfica: o app usa muito fontWeight 700/800 inline (títulos e rótulos); no visual
+   suave o máximo é 600. Esta regra afina tudo de uma vez, sem editar cada tela. */
+.kmm-root [style*="font-weight: 800"], .kmm-root [style*="font-weight: 700"]{ font-weight:600 !important; }
+.kmm-btn{ font-family:'Hanken Grotesk',sans-serif; font-size:13px; font-weight:500;
+  border-radius:10px; padding:8px 14px; cursor:pointer; border:1px solid ${C.border};
   background:#fff; color:${C.text}; transition:all .15s ease; }
-.kmm-btn:hover{ border-color:${C.orange}; color:${C.orange}; }
-.kmm-btn.primary{ background:${C.orange}; color:#fff; border-color:${C.orange}; }
+.kmm-btn:hover{ border-color:#F5C5AA; color:${C.orange}; background:#FFFAF6; }
+.kmm-btn.primary{ background:${C.orange}; color:#fff; border-color:${C.orange}; font-weight:600; }
 .kmm-btn.primary:hover{ background:${C.orangeDark}; color:#fff; }
-.kmm-card{ background:${C.panel}; border:1px solid ${C.border}; border-radius:14px; padding:16px 18px;
-  box-shadow:0 1px 2px rgba(20,16,12,.04), 0 10px 26px rgba(20,16,12,.03); }
-.kmm-painel .kmm-card{ box-shadow:none; }
+.kmm-card{ background:${C.panel}; border:1px solid ${C.border}; border-radius:16px; padding:18px 20px;
+  box-shadow:0 1px 2px rgba(20,16,12,.03); }
+/* Tabela suave: cabeçalho claro (cinza-lilás), linhas separadas por fio fino, realce ao passar o mouse. */
+.kmm-tab{ width:100%; border-collapse:collapse; font-size:12.5px; color:#2A2622; }
+.kmm-tab th{ position:sticky; top:0; z-index:2; background:#F5F4F8; color:#7A7680; font-weight:600; font-size:11.5px;
+  text-align:left; padding:10px 12px; white-space:nowrap; }
+.kmm-tab td{ padding:9px 12px; border-top:1px solid #F0ECE7; vertical-align:top; background:#fff; }
+.kmm-tab tbody tr:hover td{ background:#FBFAF8; }
 .kmm-rolagem{ scrollbar-width:auto; scrollbar-color:#A9A399 #EFEDE8; }
 .kmm-rolagem::-webkit-scrollbar{ width:13px; height:13px; }
 .kmm-rolagem::-webkit-scrollbar-track{ background:#EFEDE8; }
 .kmm-rolagem::-webkit-scrollbar-thumb{ background:#A9A399; border-radius:8px; border:3px solid #EFEDE8; }
 .kmm-rolagem::-webkit-scrollbar-thumb:hover{ background:#7F7A71; }
 .kmm-rolagem::-webkit-scrollbar-corner{ background:#EFEDE8; }
-.kmm-chip{ display:inline-flex; align-items:center; gap:6px; font-family:'Hanken Grotesk',sans-serif; font-size:12px; font-weight:600;
-  padding:5px 10px; border-radius:999px; border:1px solid ${C.border}; background:#fff; color:${C.muted}; }
-.kmm-nav-item{ display:flex; align-items:center; gap:10px; padding:10px 14px; border-radius:10px; color:${C.muted};
-  font-family:'Hanken Grotesk',sans-serif; font-size:14px; font-weight:600; cursor:pointer; text-decoration:none; }
+.kmm-chip{ display:inline-flex; align-items:center; gap:6px; font-family:'Hanken Grotesk',sans-serif; font-size:12px; font-weight:500;
+  padding:4px 10px; border-radius:999px; border:1px solid ${C.border}; background:#fff; color:${C.muted}; }
+.kmm-nav-item{ display:flex; align-items:center; gap:10px; padding:10px 14px; border-radius:12px; color:${C.muted};
+  font-family:'Hanken Grotesk',sans-serif; font-size:14px; font-weight:500; cursor:pointer; text-decoration:none; }
 .kmm-nav-item:hover{ background:${C.soft}; color:${C.text}; }
-.kmm-nav-item.active{ background:#FFF1EA; color:${C.orange}; }
-.kmm-seg{ display:flex; border:1px solid ${C.border}; border-radius:10px; overflow:hidden; background:#fff; }
-.kmm-seg-item{ font-family:'Sora',sans-serif; font-size:13px; font-weight:600; padding:8px 16px; cursor:pointer; color:${C.muted}; border-right:1px solid ${C.border}; }
-.kmm-seg-item:last-child{ border-right:none; }
-.kmm-seg-item.active{ background:${C.soft}; color:${C.text}; }
+.kmm-nav-item.active{ background:#FFF1EA; color:${C.orange}; font-weight:600; }
+/* Seletor segmentado (pílulas): trilho cinza-lilás claro, item ativo um tom acima — mesmo desenho das abas de visão. */
+.kmm-seg{ display:inline-flex; gap:2px; padding:3px; border-radius:12px; background:#F2F2F6; }
+.kmm-seg-item{ font-family:'Hanken Grotesk',sans-serif; font-size:12.5px; font-weight:500; padding:6px 13px; border-radius:9px; cursor:pointer; color:#7A7680; transition:background .15s ease, color .15s ease; }
+.kmm-seg-item:hover{ color:${C.text}; }
+.kmm-seg-item.active{ background:#E6E7EE; color:${C.text}; font-weight:600; }
 .kmm-input{ background:#fff; border:1px solid ${C.border}; color:${C.text};
-  font-family:'Sora',sans-serif; font-size:14px; border-radius:8px; padding:7px 9px; width:100%; outline:none; }
+  font-family:'Hanken Grotesk',sans-serif; font-size:13.5px; border-radius:10px; padding:7px 10px; width:100%; outline:none; }
 .kmm-input:focus{ border-color:${C.orange}; box-shadow:0 0 0 3px rgba(252,76,2,.12); }
 @keyframes kmm-spin{ from{ transform:rotate(0deg); } to{ transform:rotate(360deg); } }
 .kmm-spin{ animation:kmm-spin 0.9s linear infinite; }

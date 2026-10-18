@@ -8,6 +8,7 @@ import { useProduto } from "@/components/ProdutoContext";
 import { C, corDaArea, corDeAreaTabela, corDeEstadoDevOps, corDeStatus, corDoDev, estadoIndicaConcluido, infoPrioridade } from "@/lib/kmm-theme";
 import { chaveDia, diasEntreChaves, formatarChaveDia } from "@/lib/datas";
 import BacklogEsteirasClientes, { type OrdemBacklog } from "@/components/BacklogEsteirasClientes";
+import AbasVisao from "@/components/AbasVisao";
 import type { ItemBacklog } from "@/lib/backlog";
 import PainelCapacidade from "@/components/PainelCapacidade";
 import PageHeader from "@/components/PageHeader";
@@ -581,7 +582,7 @@ export default function RoadmapPage() {
           filtros à esquerda, ações empurradas pra direita (marginLeft:auto). */}
       <div
         className="kmm-painel"
-        style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: "0 14px 14px 14px", padding: 18, minHeight: 260 }}
+        style={{ minHeight: 260, marginTop: 18 }}
       >
       <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 18 }}>
         {visao === "backlog" && (
@@ -926,52 +927,23 @@ export default function RoadmapPage() {
 }
 
 /**
- * Seletor de SEÇÃO da página (Backlog | Comitê | Sprints | Road Map), como abas de pasta coladas no
- * painel de conteúdo logo abaixo: a aba ativa se funde ao painel (mesmo fundo, sem a borda de
- * baixo, borda laranja no topo e ícone laranja); as inativas ficam num cinza-areia "recuado".
- * Escolhido pelo Heder em 2026-10-14 (opção D, com os ícones da opção C).
+ * Seletor de SEÇÃO da página (Backlog | Comitê | Sprints | Road Map): mesmo objeto (abas em pílula,
+ * com ícone) usado nas demais telas que trocam de visão — ver components/AbasVisao.tsx. Substitui as
+ * abas de pasta (2026-10-14) na normalização visual de 2026-10-18.
  */
 function VisaoFiltro({ visao, setVisao }: { visao: Visao; setVisao: (v: Visao) => void }) {
-  const opcoes: { valor: Visao; label: string; icone: React.ReactNode }[] = [
-    { valor: "backlog", label: "Backlog", icone: <ListTodo size={16} /> },
-    { valor: "comites", label: "Comitê", icone: <Users size={16} /> },
-    { valor: "sprints", label: "Sprints", icone: <CalendarRange size={16} /> },
-    { valor: "roadmap", label: "Road Map", icone: <MapIcon size={16} /> },
-  ];
   return (
-    <div role="tablist" aria-label="Seção" style={{ display: "flex", gap: 4, alignItems: "flex-end", marginBottom: -1, position: "relative", zIndex: 2, flexWrap: "wrap" }}>
-      {opcoes.map((o) => {
-        const ativo = visao === o.valor;
-        return (
-          <button
-            key={o.valor}
-            role="tab"
-            aria-selected={ativo}
-            onClick={() => setVisao(o.valor)}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 8,
-              fontFamily: "Sora,sans-serif",
-              fontSize: 14,
-              fontWeight: ativo ? 700 : 600,
-              padding: ativo ? "11px 20px" : "9px 18px",
-              borderRadius: "12px 12px 0 0",
-              cursor: "pointer",
-              background: ativo ? C.panel : "#ECE9E3",
-              color: ativo ? C.text : C.muted,
-              border: ativo ? `1px solid ${C.border}` : "1px solid transparent",
-              borderTop: ativo ? `3px solid ${C.orange}` : "1px solid transparent",
-              borderBottom: ativo ? `1px solid ${C.panel}` : "1px solid transparent",
-              transition: "background .15s ease, color .15s ease",
-            }}
-          >
-            <span style={{ display: "flex", color: ativo ? C.orange : C.muted }}>{o.icone}</span>
-            {o.label}
-          </button>
-        );
-      })}
-    </div>
+    <AbasVisao<Visao>
+      rotulo="Seção"
+      valor={visao}
+      onChange={setVisao}
+      opcoes={[
+        { valor: "backlog", label: "Backlog", icone: <ListTodo size={15} /> },
+        { valor: "comites", label: "Comitê", icone: <Users size={15} /> },
+        { valor: "sprints", label: "Sprints", icone: <CalendarRange size={15} /> },
+        { valor: "roadmap", label: "Road Map", icone: <MapIcon size={15} /> },
+      ]}
+    />
   );
 }
 
@@ -1826,108 +1798,79 @@ function DemandasComiteLista({ demandas, hoje }: { demandas: DemandaComite[]; ho
   }, [demandas, hojeChave]);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {secoes.map((secao) => {
         const aberta = !recolhidas[secao.chave];
-        const cor = secao.atrasado ? C.red : C.green;
+        // Tons pastéis (visual suave): vermelho = atrasado, verde = no prazo.
+        const pill = secao.atrasado ? { bg: "#FDF1F0", fg: "#B4392E", dot: "#EF4444" } : { bg: "#EEF8F1", fg: "#1F7A44", dot: "#22A55B" };
         return (
-          <section key={secao.chave}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: aberta ? 8 : 0 }}>
+          <section key={secao.chave} className="kmm-card" style={{ padding: 0, overflow: "hidden" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px" }}>
               <button
                 type="button"
                 onClick={() => setRecolhidas((r) => ({ ...r, [secao.chave]: aberta }))}
                 aria-expanded={aberta}
                 title={aberta ? "Comprimir" : "Expandir"}
-                style={{
-                  width: 34,
-                  height: 34,
-                  borderRadius: "50%",
-                  border: `2px solid ${cor}`,
-                  background: "#fff",
-                  color: cor,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  cursor: "pointer",
-                  padding: 0,
-                  flexShrink: 0,
-                }}
+                style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 8, border: `1px solid ${C.border}`, background: "#fff", color: C.muted, cursor: "pointer", padding: 0, flexShrink: 0 }}
               >
-                <ChevronRight size={18} style={{ transform: aberta ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
+                <ChevronRight size={16} style={{ transform: aberta ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
               </button>
               <span
-                style={{
-                  fontFamily: "Sora,sans-serif",
-                  fontWeight: 700,
-                  fontSize: 17,
-                  padding: "4px 26px",
-                  borderRadius: 8,
-                  border: `2px solid ${cor}`,
-                  background: secao.atrasado ? cor : "#fff",
-                  color: secao.atrasado ? "#fff" : cor,
-                  fontVariantNumeric: "tabular-nums",
-                }}
+                style={{ display: "inline-flex", alignItems: "center", gap: 7, fontFamily: "Sora,sans-serif", fontWeight: 600, fontSize: 13.5, padding: "4px 13px", borderRadius: 999, background: pill.bg, color: pill.fg, fontVariantNumeric: "tabular-nums" }}
               >
+                <i style={{ width: 7, height: 7, borderRadius: "50%", background: pill.dot }} />
                 {secao.rotulo}
               </span>
-              <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>
+              <span style={{ fontSize: 12, color: C.muted }}>
                 {secao.itens.length} {secao.itens.length === 1 ? "PBI" : "PBIs"}
               </span>
             </div>
 
             {aberta && (
-              <div style={{ overflowX: "auto" }}>
-                <div style={{ minWidth: 880 }}>
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: COLUNAS_COMITE,
-                      gap: 2,
-                      padding: "0 0 4px",
-                      fontSize: 11,
-                      fontWeight: 700,
-                      color: C.muted,
-                      textTransform: "uppercase",
-                      letterSpacing: 0.3,
-                    }}
-                  >
-                    <div />
-                    <div style={{ padding: "0 10px" }}>Título</div>
-                    <div style={{ padding: "0 10px" }}>Cliente</div>
-                    <div style={{ padding: "0 10px" }}>PO</div>
-                    <div style={{ padding: "0 10px" }}>Área</div>
-                    <div style={{ padding: "0 10px", textAlign: "right" }}>Agging</div>
-                  </div>
-                  {secao.itens.map((d) => {
-                    const area = corDeAreaTabela(d.areaPath);
-                    const agging = d.createdDate ? Math.max(0, diasEntreChaves(chaveDia(d.createdDate), hojeChave)) : null;
-                    const celula: React.CSSProperties = { background: C.soft, padding: "9px 10px", fontSize: 12.5, display: "flex", alignItems: "center", minWidth: 0 };
-                    return (
-                      <div key={d.id} style={{ display: "grid", gridTemplateColumns: COLUNAS_COMITE, gap: 2, marginBottom: 2 }}>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-                          <span
-                            title={secao.atrasado ? "Atrasado" : "No prazo"}
-                            style={{ width: 12, height: 12, borderRadius: "50%", background: secao.atrasado ? C.orangeDark : C.green, border: `2px solid ${secao.atrasado ? C.red : "#1F8449"}` }}
-                          />
-                        </div>
-                        <div style={{ ...celula, color: C.text, fontWeight: 500, borderRadius: "6px 0 0 6px" }}>
-                          #{d.id} · {d.titulo}
-                        </div>
-                        <div style={{ ...celula, color: C.text }}>{d.cliente || "—"}</div>
-                        <div style={{ ...celula, color: C.muted, fontStyle: "italic", fontWeight: 600 }}>{d.po || "—"}</div>
-                        <div style={{ ...celula, background: area.bg, color: area.fg, fontWeight: 700, fontStyle: "italic" }}>
-                          {d.areaPath.split("\\").pop() || d.areaPath}
-                        </div>
-                        <div
-                          style={{ ...celula, justifyContent: "flex-end", color: C.text, fontWeight: 700, fontVariantNumeric: "tabular-nums", borderRadius: "0 6px 6px 0" }}
-                          title={d.createdDate ? `Criado em ${formatarChaveDia(chaveDia(d.createdDate))}` : undefined}
-                        >
-                          {agging ?? "—"}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+              <div className="kmm-rolagem" style={{ overflow: "auto", maxHeight: "min(460px, calc(100vh - 280px))", borderTop: `1px solid ${C.border}` }}>
+                <table className="kmm-tab" style={{ minWidth: 960, tableLayout: "fixed" }}>
+                  <thead>
+                    <tr>
+                      <th style={{ width: 30 }} />
+                      <th>Título</th>
+                      <th style={{ width: 150 }}>Cliente</th>
+                      <th style={{ width: 200 }}>PO</th>
+                      <th style={{ width: 240 }}>Área</th>
+                      <th style={{ width: 80, textAlign: "right" }}>Agging</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {secao.itens.map((d) => {
+                      const area = corDeAreaTabela(d.areaPath);
+                      const agging = d.createdDate ? Math.max(0, diasEntreChaves(chaveDia(d.createdDate), hojeChave)) : null;
+                      return (
+                        <tr key={d.id}>
+                          <td style={{ textAlign: "center" }}>
+                            <i title={secao.atrasado ? "Atrasado" : "No prazo"} style={{ display: "inline-block", width: 9, height: 9, borderRadius: "50%", background: pill.dot, marginTop: 4 }} />
+                          </td>
+                          <td style={{ minWidth: 260, fontWeight: 500 }}>
+                            <span style={{ color: C.muted }}>#{d.id} · </span>
+                            {d.titulo}
+                          </td>
+                          <td style={{ whiteSpace: "nowrap" }}>{d.cliente || "—"}</td>
+                          <td style={{ color: C.muted }}>{d.po || "—"}</td>
+                          <td style={{ whiteSpace: "nowrap" }}>
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+                              <i style={{ width: 9, height: 9, borderRadius: 3, background: area.bg, flexShrink: 0 }} />
+                              {d.areaPath.split("\\").pop() || d.areaPath}
+                            </span>
+                          </td>
+                          <td
+                            style={{ textAlign: "right", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}
+                            title={d.createdDate ? `Criado em ${formatarChaveDia(chaveDia(d.createdDate))}` : undefined}
+                          >
+                            {agging ?? "—"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             )}
           </section>

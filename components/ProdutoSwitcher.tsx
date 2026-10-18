@@ -16,7 +16,7 @@ export default function ProdutoSwitcher({ cheio = false }: { cheio?: boolean }) 
     { valor: "AMBOS", label: "Ambos" },
   ];
   return (
-    <div className="kmm-seg">
+    <div className="kmm-seg" style={cheio ? { display: "flex" } : undefined}>
       {opcoes.map((o) => (
         <div
           key={o.valor}

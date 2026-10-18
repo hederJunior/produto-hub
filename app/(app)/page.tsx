@@ -7,7 +7,7 @@ import {
 import { X, ChevronDown, Eraser } from "lucide-react";
 import { useProduto } from "@/components/ProdutoContext";
 import PageHeader from "@/components/PageHeader";
-import { C } from "@/lib/kmm-theme";
+import { BARRA_FORTE, C } from "@/lib/kmm-theme";
 import { mesLabel, classificarEncerramento } from "@/lib/demandas-agregacao";
 
 // Limites de fallback do slider de Data enquanto a 1ª resposta da API não chega (que traz o
@@ -851,7 +851,7 @@ export default function PainelIndicadoresAutomaticoPage() {
                     <XAxis dataKey="t" stroke={C.border} tick={axisTick} interval="preserveStartEnd" minTickGap={14} />
                     <YAxis stroke={C.border} tick={axisTick} allowDecimals={false} width={34} />
                     <Tooltip contentStyle={tipStyle} cursor={{ fill: "rgba(0,0,0,.03)" }} />
-                    <Bar dataKey="v" name="Backlog" fill={C.orange} radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="v" name="Backlog" fill={BARRA_FORTE} radius={[6, 6, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>

@@ -6,7 +6,7 @@ import { C } from "@/lib/kmm-theme";
 import PageHeader from "@/components/PageHeader";
 import MultiSelectFiltro from "@/components/MultiSelectFiltro";
 import DistribuicaoPorStatus from "@/components/DistribuicaoPorStatus";
-import { DivisorSecao, LinhaBacklogOrcamento, LinhaPriorizacaoExecucao } from "@/components/BaseGeralDemandas";
+import { DivisorSecao, LinhaBacklogIndicadores, LinhaExecucao } from "@/components/BaseGeralDemandas";
 import { Users } from "lucide-react";
 import { nomeCurtoDaSquad } from "@/lib/backlog";
 import { formatarChaveDia } from "@/lib/datas";
@@ -168,7 +168,6 @@ export default function ClientesPage() {
   }, [itens, clienteSel, squadsSel]);
 
   const ind = useMemo(() => calcularIndicadoresGestao(visiveis), [visiveis]);
-  const valor = (v: number | null) => (carregando ? "…" : v == null ? "—" : String(v));
 
   return (
     <div>
@@ -205,25 +204,20 @@ export default function ClientesPage() {
         <EstadoSemCliente carregando={carregando} />
       ) : (
       <>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 24 }}>
-        <KpiCard titulo="DEMANDAS EM BACKLOG" valor={valor(ind.demandasBacklog)} nota="Backlog nas etapas Backlog, Análise ou Comitê" />
-        <KpiCard titulo="DEMANDAS EM ETAPA COMERCIAL" valor={valor(ind.demandasEtapaComercial)} nota="Orçamento + Backlog na etapa Relacionamento Comercial" />
-        <KpiCard titulo="AGGING DE VIABILIDADE" valor={valor(ind.agingViabilidadeDias)} unidade="dias" nota="Idade média dos itens em Backlog (sem KMM INTERNO)" />
-      </div>
+      {/* Linha 1: Demandas em backlog + coluna de 3 indicadores (o de "c/comercial" abre o painel de orçamento). */}
+      <LinhaBacklogIndicadores itens={visiveis} indicadores={ind} carregando={carregando} />
 
-      {/* Linha 1: Demandas em backlog + Demandas em orçamento. */}
-      <LinhaBacklogOrcamento itens={visiveis} carregando={carregando} />
+      {/* Linha 2: gráfico de execução por etapa + Demandas em execução (com a última observação). */}
+      <DivisorSecao titulo="Demandas em execução" />
+      <LinhaExecucao itens={visiveis} comentarios={comentarios} carregando={carregando} />
 
-      {/* Linha 2: Demandas aguardando priorização + Demandas em execução (com a última observação). */}
-      <div style={{ marginTop: 16 }}>
-        <LinhaPriorizacaoExecucao itens={visiveis} comentarios={comentarios} carregando={carregando} />
-      </div>
-
-      {/* Linha 3: base geral (tabela completa) + painel "Distribuição por status". */}
+      {/* Linha 3: painel "Distribuição por status" (à esquerda) + base geral (tabela completa). */}
       <DivisorSecao titulo="Base geral de demandas" />
 
-      {/* Tabela à esquerda; painel "Distribuição por status" na lateral direita (empilha só em tela estreita). */}
       <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
+      <div style={{ flex: "0 1 320px", minWidth: 280, position: "sticky", top: 16 }}>
+        <DistribuicaoPorStatus itens={visiveis} carregando={carregando} />
+      </div>
       <div style={{ flex: "1 1 640px", minWidth: 0 }}>
       <div className="kmm-card" style={{ padding: 0, overflow: "hidden" }}>
         {/* Área de rolagem PRÓPRIA da tabela (altura limitada à tela): sem isso a barra horizontal
@@ -291,9 +285,6 @@ export default function ClientesPage() {
         <div style={{ fontSize: 12, color: C.muted, marginTop: 8 }}>{visiveis.length} PBI(s) na visão.</div>
       )}
       </div>
-      <div style={{ flex: "0 1 320px", minWidth: 280, position: "sticky", top: 16 }}>
-        <DistribuicaoPorStatus itens={visiveis} carregando={carregando} />
-      </div>
       </div>
       </>
       )}
@@ -314,19 +305,6 @@ function EstadoSemCliente({ carregando }: { carregando: boolean }) {
       <div style={{ fontSize: 13.5, color: C.muted, marginTop: 6 }}>
         {carregando ? "Buscando os PBIs no Azure DevOps." : "Escolha um cliente no filtro acima para ver os indicadores e as demandas."}
       </div>
-    </div>
-  );
-}
-
-function KpiCard({ titulo, valor, unidade, nota }: { titulo: string; valor: string; unidade?: string; nota?: string }) {
-  return (
-    <div className="kmm-card">
-      <div style={{ fontSize: 12, color: C.muted, fontWeight: 700, letterSpacing: ".04em" }}>{titulo}</div>
-      <div style={{ fontSize: 32, fontWeight: 700, color: C.text, marginTop: 6 }}>
-        {valor}
-        {unidade && valor !== "—" && valor !== "…" && <span style={{ fontSize: 14, fontWeight: 500, color: C.muted }}> {unidade}</span>}
-      </div>
-      {nota && <div style={{ fontSize: 11.5, color: C.muted, marginTop: 4 }}>{nota}</div>}
     </div>
   );
 }

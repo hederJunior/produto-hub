@@ -20,7 +20,7 @@ import {
 import { estadoIndicaConcluido } from "./kmm-theme";
 import { ESTEIRAS_CLIENTES_SQUADS, type ItemBacklog } from "./backlog";
 import { DEVOPS_PROJETOS, type Produto } from "./devops-projetos";
-import { emAguardandoPriorizacao, ESTADOS_GESTAO_CLIENTES, htmlParaTexto, norm, type PbiGestaoCliente, type UltimoComentario } from "./gestao-clientes";
+import { ESTADOS_GESTAO_CLIENTES, htmlParaTexto, norm, type PbiGestaoCliente, type UltimoComentario } from "./gestao-clientes";
 
 // Toda chamada ao Azure DevOps neste módulo é SEM cache. O Next.js guarda no Data Cache o resultado
 // de fetch() feito dentro de Route Handlers (inclusive POST de WIQL/workitemsbatch, que têm a mesma
@@ -1346,28 +1346,11 @@ export async function getPbisGestaoClientes(
         classificacao: textoDeCampo(f[CAMPO_CLASSIFICACAO]),
         dataComite: (f[CAMPO_DATA_COMITE] as string) ?? null,
         effort: typeof f["Microsoft.VSTS.Scheduling.Effort"] === "number" ? (f["Microsoft.VSTS.Scheduling.Effort"] as number) : null,
-        descricao: "",
         qtdComentarios: typeof qtd === "number" ? qtd : 0,
       });
     }
   }
 
-  // Descrição (HTML grande) só dos PBIs da tabela "Demandas aguardando priorização" — buscar de
-  // todos os PBIs da tela pesaria à toa. Falha aqui não derruba a tela: a coluna fica "—".
-  const idsPrioridade = itens.filter(emAguardandoPriorizacao).map((p) => p.id);
-  if (idsPrioridade.length) {
-    try {
-      const descricoes = await buscarLoteCampos(org, pat, idsPrioridade, ["System.Description"]);
-      const porId = new Map(descricoes.map((w) => [w.id, htmlParaTexto(String(w.fields["System.Description"] ?? ""))]));
-      for (const p of itens) {
-        const texto = porId.get(p.id) ?? "";
-        p.descricao = texto.length > 1500 ? `${texto.slice(0, 1500)}…` : texto;
-      }
-    } catch (err) {
-      console.error("[gestao-clientes] falha ao buscar descrições dos PBIs aguardando priorização:", err);
-      avisos.push("Não foi possível carregar as descrições da tabela Demandas aguardando priorização.");
-    }
-  }
   return { itens, avisos };
 }
 

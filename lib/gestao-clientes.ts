@@ -29,11 +29,6 @@ export type PbiGestaoCliente = {
   dataComite: string | null;
   /** Effort do próprio PBI (Microsoft.VSTS.Scheduling.Effort), em horas — null se vazio. */
   effort: number | null;
-  /**
-   * System.Description em texto simples (truncado). Só vem preenchida para os PBIs da tabela
-   * "Demandas aguardando priorização" (a descrição é HTML grande — buscar de todos pesaria à toa).
-   */
-  descricao: string;
   /** System.CommentCount — usado pra só buscar comentário dos PBIs que têm algum. */
   qtdComentarios: number;
 };
@@ -56,11 +51,6 @@ const ETAPAS_BACKLOG_DEMANDA = new Set(["backlog", "analise", "comite"]);
 /** Indicador 1 — "Demandas em backlog": State = Backlog e Etapa em Backlog, Análise ou Comitê. */
 export function emBacklogDemanda(p: Pick<PbiGestaoCliente, "state" | "etapa">): boolean {
   return norm(p.state) === "backlog" && ETAPAS_BACKLOG_DEMANDA.has(norm(p.etapa));
-}
-
-/** Tabela "Demandas aguardando priorização": State = Execução e Etapa = Aguardando Priorização. */
-export function emAguardandoPriorizacao(p: Pick<PbiGestaoCliente, "state" | "etapa">): boolean {
-  return norm(p.state) === "execucao" && norm(p.etapa) === "aguardando priorizacao";
 }
 
 /** Indicador 2 — "Demandas em etapa comercial": State = Orçamento + State = Backlog com Etapa = Relacionamento Comercial. */

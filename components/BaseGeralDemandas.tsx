@@ -1,23 +1,26 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { Bar, BarChart, Cell, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { ExternalLink, X } from "lucide-react";
 import { C } from "@/lib/kmm-theme";
 import { nomeCurtoDaSquad } from "@/lib/backlog";
 import { formatarChaveDia } from "@/lib/datas";
-import { agingDiasPbi, emAguardandoPriorizacao, emBacklogDemanda, norm, type PbiGestaoCliente, type UltimoComentario } from "@/lib/gestao-clientes";
+import { agingDiasPbi, emBacklogDemanda, norm, type IndicadoresGestao, type PbiGestaoCliente, type UltimoComentario } from "@/lib/gestao-clientes";
 
 const ORG_DEVOPS = "kmmbynstech";
 
 /**
- * Tabelas da Gestão de clientes (pedidos do Heder, 2026-10-17). Todas recebem os PBIs JÁ filtrados
- * (cliente/squad) e rolam DENTRO do próprio quadro (altura limitada, cabeçalho fixo e barras sempre
- * visíveis) — a página não vira uma lista gigante com a rolagem lá no fim.
+ * Blocos da Gestão de clientes (pedidos do Heder, 2026-10-17/18). Todos recebem os PBIs JÁ filtrados
+ * (cliente/squad) e as tabelas rolam DENTRO do próprio quadro (altura limitada, cabeçalho fixo e
+ * barras sempre visíveis) — a página não vira uma lista gigante com a rolagem lá no fim.
  *
- * - LinhaBacklogOrcamento (linha 1): "Demandas em backlog" (State = Backlog nas etapas Backlog,
+ * - LinhaBacklogIndicadores (linha 1): "Demandas em backlog" (State = Backlog nas etapas Backlog,
  *   Análise ou Comitê — mesma regra do indicador; Agging aberto = agingDiasPbi, a mesma regra do
- *   indicador de Agging de Viabilidade) + "Demandas em orçamento" (State = Orçamento, com o total
- *   do Effort). A coluna da direita tem largura mínima fixa (470px) pra a tabela de orçamento caber
- *   SEM barra de rolagem horizontal; a de backlog fica com o resto (proporção ≈ 3 : 1 em telas largas).
- * - LinhaPriorizacaoExecucao (linha 2): "Demandas aguardando priorização" + "Demandas em execução".
+ *   indicador de Agging de Viabilidade) + coluna com 3 indicadores. O "Demandas c/comercial" tem um
+ *   ícone discreto que abre o painel com os PBIs em State = Orçamento (e o total do Effort).
+ * - LinhaExecucao (linha 2): gráfico de barras dos PBIs em State = Execução por Etapa + tabela
+ *   "Demandas em execução" (com a Observação = último comentário, que chega depois da tabela).
  */
 
 export function DivisorSecao({ titulo }: { titulo: string }) {
@@ -31,72 +34,163 @@ export function DivisorSecao({ titulo }: { titulo: string }) {
   );
 }
 
-export function LinhaBacklogOrcamento({ itens, carregando }: { itens: PbiGestaoCliente[]; carregando: boolean }) {
+/** Cartão de indicador (título pequeno em maiúsculas, valor grande, nota) com ação discreta opcional. */
+export function IndicadorCard({
+  titulo,
+  valor,
+  unidade,
+  nota,
+  acao,
+}: {
+  titulo: string;
+  valor: string;
+  unidade?: string;
+  nota?: string;
+  /** Ícone/botão discreto no canto do cartão (ex.: abrir um painel de detalhe). */
+  acao?: { rotulo: string; onClick: () => void };
+}) {
+  return (
+    <div className="kmm-card" style={{ position: "relative" }}>
+      <div style={{ fontSize: 12, color: C.muted, fontWeight: 700, letterSpacing: ".04em", paddingRight: acao ? 24 : 0 }}>{titulo}</div>
+      <div style={{ fontSize: 32, fontWeight: 700, color: C.text, marginTop: 6 }}>
+        {valor}
+        {unidade && valor !== "—" && valor !== "…" && <span style={{ fontSize: 14, fontWeight: 500, color: C.muted }}> {unidade}</span>}
+      </div>
+      {nota && <div style={{ fontSize: 11.5, color: C.muted, marginTop: 4 }}>{nota}</div>}
+      {acao && (
+        <button
+          type="button"
+          onClick={acao.onClick}
+          title={acao.rotulo}
+          aria-label={acao.rotulo}
+          style={{ position: "absolute", top: 12, right: 12, background: "none", border: "none", cursor: "pointer", padding: 4, color: C.faint, display: "flex", borderRadius: 6 }}
+        >
+          <ExternalLink size={15} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+export function LinhaBacklogIndicadores({
+  itens,
+  indicadores,
+  carregando,
+}: {
+  itens: PbiGestaoCliente[];
+  indicadores: IndicadoresGestao;
+  carregando: boolean;
+}) {
+  const [orcamentoAberto, setOrcamentoAberto] = useState(false);
   const backlog = itens.filter(emBacklogDemanda);
   const orcamento = itens.filter((p) => norm(p.state) === "orcamento");
-  const totalEffort = orcamento.reduce((acc, p) => acc + (p.effort ?? 0), 0);
   const agora = Date.now();
+  const valor = (v: number | null) => (carregando ? "…" : v == null ? "—" : String(v));
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 3fr) minmax(470px, 1fr)", gap: 16, alignItems: "start" }}>
-      <Quadro titulo="Demandas em backlog" contagem={carregando ? null : backlog.length}>
-        <Tabela
-          colunas={["Chamado", "Tarefa", "PBI", "Esteira", "PO", "Data abertura produto", "Etapa", "Data comitê", "Agging aberto"]}
-          vazio={carregando ? "Carregando…" : "Nenhuma demanda em backlog para os filtros atuais."}
-          linhas={backlog.map((p) => {
-            const aging = agingDiasPbi(p, agora);
-            return [
-              { k: "chamado", v: p.idExterno || "—", nowrap: true },
-              { k: "tarefa", v: p.titulo, largo: true },
-              { k: "pbi", v: <LinkPbi p={p} />, nowrap: true },
-              { k: "esteira", v: nomeCurtoDaSquad(p.areaPath) || "—", nowrap: true },
-              { k: "po", v: p.po || "—", largo: true, minW: 150 },
-              { k: "abertura", v: dataCurta(p.dataAberturaProduto), nowrap: true, num: true },
-              { k: "etapa", v: p.etapa || "—", nowrap: true },
-              { k: "comite", v: dataCurta(p.dataComite), nowrap: true, num: true },
-              { k: "aging", v: aging == null ? "—" : `${aging} d`, nowrap: true, num: true, forte: true },
-            ];
-          })}
-          chaves={backlog.map((p) => p.id)}
-          minWidth={1100}
-        />
-      </Quadro>
+    <>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 3fr) minmax(260px, 1fr)", gap: 16, alignItems: "start" }}>
+        <Quadro titulo="Demandas em backlog" contagem={carregando ? null : backlog.length}>
+          <Tabela
+            colunas={["Chamado", "Tarefa", "PBI", "Esteira", "PO", "Data abertura produto", "Etapa", "Data comitê", "Agging aberto"]}
+            vazio={carregando ? "Carregando…" : "Nenhuma demanda em backlog para os filtros atuais."}
+            linhas={backlog.map((p) => {
+              const aging = agingDiasPbi(p, agora);
+              return [
+                { k: "chamado", v: p.idExterno || "—", nowrap: true },
+                { k: "tarefa", v: p.titulo, largo: true },
+                { k: "pbi", v: <LinkPbi p={p} />, nowrap: true },
+                { k: "esteira", v: nomeCurtoDaSquad(p.areaPath) || "—", nowrap: true },
+                { k: "po", v: p.po || "—", largo: true, minW: 150 },
+                { k: "abertura", v: dataCurta(p.dataAberturaProduto), nowrap: true, num: true },
+                { k: "etapa", v: p.etapa || "—", nowrap: true },
+                { k: "comite", v: dataCurta(p.dataComite), nowrap: true, num: true },
+                { k: "aging", v: aging == null ? "—" : `${aging} d`, nowrap: true, num: true, forte: true },
+              ];
+            })}
+            chaves={backlog.map((p) => p.id)}
+            minWidth={1100}
+          />
+        </Quadro>
 
-      <Quadro
-        titulo="Demandas em orçamento"
-        contagem={carregando ? null : orcamento.length}
-        rodape={
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.4 }}>Total effort</span>
-            <span style={{ fontSize: 16, fontWeight: 800, color: C.text, fontVariantNumeric: "tabular-nums" }}>{carregando ? "…" : `${formatarNumero(totalEffort)} h`}</span>
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <IndicadorCard titulo="DEMANDAS EM BACKLOG" valor={valor(indicadores.demandasBacklog)} nota="Backlog nas etapas Backlog, Análise ou Comitê" />
+          <IndicadorCard
+            titulo="AGGING DE VIABILIDADE"
+            valor={valor(indicadores.agingViabilidadeDias)}
+            unidade="dias"
+            nota="Idade média dos itens em Backlog (sem KMM INTERNO)"
+          />
+          <IndicadorCard
+            titulo="DEMANDAS C/COMERCIAL"
+            valor={valor(indicadores.demandasEtapaComercial)}
+            nota="Orçamento + Backlog na etapa Relacionamento Comercial"
+            acao={{ rotulo: "Ver demandas em orçamento", onClick: () => setOrcamentoAberto(true) }}
+          />
+        </div>
+      </div>
+
+      {orcamentoAberto && <PainelOrcamento orcamento={orcamento} onFechar={() => setOrcamentoAberto(false)} />}
+    </>
+  );
+}
+
+/** Painel (modal) com os PBIs em State = Orçamento e o total do Effort — aberto pelo ícone do indicador "Demandas c/comercial". */
+function PainelOrcamento({ orcamento, onFechar }: { orcamento: PbiGestaoCliente[]; onFechar: () => void }) {
+  const totalEffort = orcamento.reduce((acc, p) => acc + (p.effort ?? 0), 0);
+
+  useEffect(() => {
+    const aoTeclar = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onFechar();
+    };
+    window.addEventListener("keydown", aoTeclar);
+    return () => window.removeEventListener("keydown", aoTeclar);
+  }, [onFechar]);
+
+  return (
+    <div
+      onClick={onFechar}
+      style={{ position: "fixed", inset: 0, background: "rgba(22,19,15,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: 20 }}
+    >
+      <div onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Demandas em orçamento" className="kmm-card" style={{ width: "100%", maxWidth: 780, padding: 0, overflow: "hidden" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "16px 18px 12px" }}>
+          <div>
+            <div style={{ fontFamily: "Sora,sans-serif", fontWeight: 800, fontSize: 16, color: C.text }}>Demandas em orçamento</div>
+            <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+              {orcamento.length} {orcamento.length === 1 ? "demanda" : "demandas"} com status Orçamento.
+            </div>
           </div>
-        }
-      >
+          <button onClick={onFechar} aria-label="Fechar" style={{ background: "none", border: "none", cursor: "pointer", color: C.muted, padding: 4 }}>
+            <X size={18} />
+          </button>
+        </div>
         <Tabela
           colunas={["Chamado", "Tarefa", "PBI", "Data comitê", "Effort"]}
-          vazio={carregando ? "Carregando…" : "Nenhuma demanda em orçamento para os filtros atuais."}
+          vazio="Nenhuma demanda em orçamento para os filtros atuais."
           linhas={orcamento.map((p) => [
             { k: "chamado", v: p.idExterno || "—", nowrap: true },
-            { k: "tarefa", v: p.titulo, largo: true },
+            { k: "tarefa", v: p.titulo, largo: true, minW: 260 },
             { k: "pbi", v: <LinkPbi p={p} />, nowrap: true },
             { k: "comite", v: dataCurta(p.dataComite), nowrap: true, num: true },
             { k: "effort", v: p.effort == null ? "—" : `${formatarNumero(p.effort)} h`, nowrap: true, num: true, forte: true },
           ])}
           chaves={orcamento.map((p) => p.id)}
-          minWidth={430}
-          larguraTarefa={120}
+          minWidth={620}
         />
-      </Quadro>
+        <div style={{ padding: "11px 18px", borderTop: `1px solid ${C.border}`, background: C.soft, display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.4 }}>Total effort</span>
+          <span style={{ fontSize: 16, fontWeight: 800, color: C.text, fontVariantNumeric: "tabular-nums" }}>{formatarNumero(totalEffort)} h</span>
+        </div>
+      </div>
     </div>
   );
 }
 
 /**
- * Linha 2: "Demandas aguardando priorização" (State = Execução + Etapa = Aguardando Priorização) ao
- * lado de "Demandas em execução" (todos os PBIs em State = Execução, com a Observação = último
- * comentário do PBI, que chega depois da tabela — "…" enquanto carrega).
+ * Linha 2: gráfico de barras dos PBIs em State = Execução por Etapa (barras horizontais — os nomes
+ * das etapas são longos, ex. "Aguardando Priorização") + tabela "Demandas em execução".
  */
-export function LinhaPriorizacaoExecucao({
+export function LinhaExecucao({
   itens,
   comentarios,
   carregando,
@@ -105,28 +199,11 @@ export function LinhaPriorizacaoExecucao({
   comentarios: Record<number, UltimoComentario | null>;
   carregando: boolean;
 }) {
-  const aguardando = itens.filter(emAguardandoPriorizacao);
   const execucao = itens.filter((p) => norm(p.state) === "execucao");
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 5fr) minmax(0, 7fr)", gap: 16, alignItems: "start" }}>
-      <Quadro titulo="Demandas aguardando priorização" contagem={carregando ? null : aguardando.length}>
-        <Tabela
-          colunas={["Chamado", "PBI", "Descrição", "Esteira", "PO", "Classificação"]}
-          vazio={carregando ? "Carregando…" : "Nenhuma demanda aguardando priorização para os filtros atuais."}
-          linhas={aguardando.map((p) => [
-            { k: "chamado", v: p.idExterno || "—", nowrap: true },
-            { k: "pbi", v: <LinkPbi p={p} />, nowrap: true },
-            { k: "descricao", v: p.descricao || "—", largo: true, clamp: 3 },
-            { k: "esteira", v: nomeCurtoDaSquad(p.areaPath) || "—", nowrap: true },
-            { k: "po", v: p.po || "—", largo: true, minW: 150 },
-            { k: "classificacao", v: p.classificacao || "—", nowrap: true },
-          ])}
-          chaves={aguardando.map((p) => p.id)}
-          minWidth={760}
-          larguraTarefa={280}
-        />
-      </Quadro>
+      <GraficoExecucaoPorEtapa execucao={execucao} carregando={carregando} />
 
       <Quadro titulo="Demandas em execução" contagem={carregando ? null : execucao.length}>
         <Tabela
@@ -155,6 +232,47 @@ export function LinhaPriorizacaoExecucao({
           minWidth={1150}
         />
       </Quadro>
+    </div>
+  );
+}
+
+function GraficoExecucaoPorEtapa({ execucao, carregando }: { execucao: PbiGestaoCliente[]; carregando: boolean }) {
+  const porEtapa = new Map<string, number>();
+  for (const p of execucao) {
+    const etapa = p.etapa || "Sem etapa";
+    porEtapa.set(etapa, (porEtapa.get(etapa) ?? 0) + 1);
+  }
+  const dados = Array.from(porEtapa, ([etapa, qtd]) => ({ etapa, qtd })).sort((a, b) => b.qtd - a.qtd || a.etapa.localeCompare(b.etapa, "pt-BR"));
+  const altura = Math.max(150, dados.length * 40 + 24);
+
+  return (
+    <div className="kmm-card" style={{ padding: "14px 16px 12px", minWidth: 0 }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
+        <div style={{ fontFamily: "Sora,sans-serif", fontWeight: 700, fontSize: 15, color: C.text }}>Execução por etapa</div>
+        <div style={{ fontSize: 12, color: C.muted, fontWeight: 600, whiteSpace: "nowrap" }}>
+          {carregando ? "…" : `${execucao.length} ${execucao.length === 1 ? "demanda" : "demandas"}`}
+        </div>
+      </div>
+      <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>Distribuição dos PBIs em Execução entre as etapas.</div>
+      {dados.length === 0 ? (
+        <div style={{ padding: "28px 4px 16px", fontSize: 13, color: C.muted }}>{carregando ? "Carregando…" : "Nenhuma demanda em execução para os filtros atuais."}</div>
+      ) : (
+        <div style={{ height: altura, marginTop: 8 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={dados} layout="vertical" margin={{ top: 4, right: 36, left: 4, bottom: 4 }}>
+              <XAxis type="number" hide domain={[0, "dataMax"]} />
+              <YAxis type="category" dataKey="etapa" width={185} tickLine={false} axisLine={false} interval={0} tick={{ fontSize: 12, fill: C.text, fontWeight: 600 }} />
+              <Tooltip cursor={{ fill: "transparent" }} formatter={(v: number) => [`${v} ${v === 1 ? "demanda" : "demandas"}`, "Execução"]} />
+              <Bar dataKey="qtd" radius={[0, 8, 8, 0]} barSize={22} minPointSize={4} isAnimationActive={false}>
+                {dados.map((d) => (
+                  <Cell key={d.etapa} fill={C.orange} />
+                ))}
+                <LabelList dataKey="qtd" position="right" style={{ fontSize: 13, fontWeight: 700, fill: C.text }} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
     </div>
   );
 }
@@ -222,7 +340,7 @@ function Tabela({
   chaves: number[];
   vazio: string;
   minWidth: number;
-  /** Largura mínima da coluna de texto longo ("Tarefa"/"Descrição"). */
+  /** Largura mínima da coluna de texto longo ("Tarefa"/"Título"). */
   larguraTarefa?: number;
 }) {
   return (

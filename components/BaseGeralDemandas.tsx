@@ -3,7 +3,7 @@
 import { C } from "@/lib/kmm-theme";
 import { nomeCurtoDaSquad } from "@/lib/backlog";
 import { formatarChaveDia } from "@/lib/datas";
-import { agingDiasPbi, emAguardandoPriorizacao, emBacklogDemanda, norm, type PbiGestaoCliente } from "@/lib/gestao-clientes";
+import { agingDiasPbi, emAguardandoPriorizacao, emBacklogDemanda, norm, type PbiGestaoCliente, type UltimoComentario } from "@/lib/gestao-clientes";
 
 const ORG_DEVOPS = "kmmbynstech";
 
@@ -17,7 +17,7 @@ const ORG_DEVOPS = "kmmbynstech";
  *   indicador de Agging de Viabilidade) + "Demandas em orçamento" (State = Orçamento, com o total
  *   do Effort). A coluna da direita tem largura mínima fixa (470px) pra a tabela de orçamento caber
  *   SEM barra de rolagem horizontal; a de backlog fica com o resto (proporção ≈ 3 : 1 em telas largas).
- * - DemandasAguardandoPriorizacao: State = Execução e Etapa = Aguardando Priorização.
+ * - LinhaPriorizacaoExecucao (linha 2): "Demandas aguardando priorização" + "Demandas em execução".
  */
 
 export function DivisorSecao({ titulo }: { titulo: string }) {
@@ -91,26 +91,71 @@ export function LinhaBacklogOrcamento({ itens, carregando }: { itens: PbiGestaoC
   );
 }
 
-export function DemandasAguardandoPriorizacao({ itens, carregando }: { itens: PbiGestaoCliente[]; carregando: boolean }) {
-  const lista = itens.filter(emAguardandoPriorizacao);
+/**
+ * Linha 2: "Demandas aguardando priorização" (State = Execução + Etapa = Aguardando Priorização) ao
+ * lado de "Demandas em execução" (todos os PBIs em State = Execução, com a Observação = último
+ * comentário do PBI, que chega depois da tabela — "…" enquanto carrega).
+ */
+export function LinhaPriorizacaoExecucao({
+  itens,
+  comentarios,
+  carregando,
+}: {
+  itens: PbiGestaoCliente[];
+  comentarios: Record<number, UltimoComentario | null>;
+  carregando: boolean;
+}) {
+  const aguardando = itens.filter(emAguardandoPriorizacao);
+  const execucao = itens.filter((p) => norm(p.state) === "execucao");
+
   return (
-    <Quadro titulo="Demandas aguardando priorização" contagem={carregando ? null : lista.length}>
-      <Tabela
-        colunas={["Chamado", "PBI", "Descrição", "Esteira", "PO", "Classificação"]}
-        vazio={carregando ? "Carregando…" : "Nenhuma demanda aguardando priorização para os filtros atuais."}
-        linhas={lista.map((p) => [
-          { k: "chamado", v: p.idExterno || "—", nowrap: true },
-          { k: "pbi", v: <LinkPbi p={p} />, nowrap: true },
-          { k: "descricao", v: p.descricao || "—", largo: true, clamp: 3 },
-          { k: "esteira", v: nomeCurtoDaSquad(p.areaPath) || "—", nowrap: true },
-          { k: "po", v: p.po || "—", largo: true, minW: 150 },
-          { k: "classificacao", v: p.classificacao || "—", nowrap: true },
-        ])}
-        chaves={lista.map((p) => p.id)}
-        minWidth={900}
-        larguraTarefa={420}
-      />
-    </Quadro>
+    <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 5fr) minmax(0, 7fr)", gap: 16, alignItems: "start" }}>
+      <Quadro titulo="Demandas aguardando priorização" contagem={carregando ? null : aguardando.length}>
+        <Tabela
+          colunas={["Chamado", "PBI", "Descrição", "Esteira", "PO", "Classificação"]}
+          vazio={carregando ? "Carregando…" : "Nenhuma demanda aguardando priorização para os filtros atuais."}
+          linhas={aguardando.map((p) => [
+            { k: "chamado", v: p.idExterno || "—", nowrap: true },
+            { k: "pbi", v: <LinkPbi p={p} />, nowrap: true },
+            { k: "descricao", v: p.descricao || "—", largo: true, clamp: 3 },
+            { k: "esteira", v: nomeCurtoDaSquad(p.areaPath) || "—", nowrap: true },
+            { k: "po", v: p.po || "—", largo: true, minW: 150 },
+            { k: "classificacao", v: p.classificacao || "—", nowrap: true },
+          ])}
+          chaves={aguardando.map((p) => p.id)}
+          minWidth={760}
+          larguraTarefa={280}
+        />
+      </Quadro>
+
+      <Quadro titulo="Demandas em execução" contagem={carregando ? null : execucao.length}>
+        <Tabela
+          colunas={["Chamado", "PBI", "Título", "Esteira", "PO", "Classificação", "Observação"]}
+          vazio={carregando ? "Carregando…" : "Nenhuma demanda em execução para os filtros atuais."}
+          linhas={execucao.map((p) => {
+            const com = comentarios[p.id];
+            const aguardandoComentario = p.qtdComentarios > 0 && com === undefined;
+            return [
+              { k: "chamado", v: p.idExterno || "—", nowrap: true },
+              { k: "pbi", v: <LinkPbi p={p} />, nowrap: true },
+              { k: "titulo", v: p.titulo, largo: true, minW: 220 },
+              { k: "esteira", v: nomeCurtoDaSquad(p.areaPath) || "—", nowrap: true },
+              { k: "po", v: p.po || "—", largo: true, minW: 150 },
+              { k: "classificacao", v: p.classificacao || "—", nowrap: true },
+              {
+                k: "observacao",
+                v: aguardandoComentario ? "…" : com?.texto || "—",
+                largo: true,
+                minW: 280,
+                dica: com?.texto ? `${com.autor}${com.data ? " · " + new Date(com.data).toLocaleDateString("pt-BR") : ""}\n${com.texto}` : undefined,
+              },
+            ];
+          })}
+          chaves={execucao.map((p) => p.id)}
+          minWidth={1150}
+        />
+      </Quadro>
+    </div>
   );
 }
 
@@ -157,6 +202,8 @@ type Celula = {
   largo?: boolean;
   clamp?: number;
   minW?: number;
+  /** Texto do tooltip (por padrão, o próprio texto da célula). */
+  dica?: string;
   num?: boolean;
   forte?: boolean;
 };
@@ -214,7 +261,7 @@ function Tabela({
                     }}
                   >
                     {c.largo ? (
-                      <span style={{ display: "-webkit-box", WebkitLineClamp: c.clamp ?? 2, WebkitBoxOrient: "vertical", overflow: "hidden" }} title={typeof c.v === "string" ? c.v : undefined}>
+                      <span style={{ display: "-webkit-box", WebkitLineClamp: c.clamp ?? 2, WebkitBoxOrient: "vertical", overflow: "hidden" }} title={c.dica ?? (typeof c.v === "string" ? c.v : undefined)}>
                         {c.v}
                       </span>
                     ) : (

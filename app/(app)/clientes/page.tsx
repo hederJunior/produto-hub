@@ -6,7 +6,7 @@ import { C } from "@/lib/kmm-theme";
 import PageHeader from "@/components/PageHeader";
 import MultiSelectFiltro from "@/components/MultiSelectFiltro";
 import DistribuicaoPorStatus from "@/components/DistribuicaoPorStatus";
-import { DemandasAguardandoPriorizacao, DivisorSecao, LinhaBacklogOrcamento } from "@/components/BaseGeralDemandas";
+import { DivisorSecao, LinhaBacklogOrcamento, LinhaPriorizacaoExecucao } from "@/components/BaseGeralDemandas";
 import { Users } from "lucide-react";
 import { nomeCurtoDaSquad } from "@/lib/backlog";
 import { formatarChaveDia } from "@/lib/datas";
@@ -214,7 +214,12 @@ export default function ClientesPage() {
       {/* Linha 1: Demandas em backlog + Demandas em orçamento. */}
       <LinhaBacklogOrcamento itens={visiveis} carregando={carregando} />
 
-      {/* Linha 2: base geral (tabela completa) + painel "Distribuição por status". */}
+      {/* Linha 2: Demandas aguardando priorização + Demandas em execução (com a última observação). */}
+      <div style={{ marginTop: 16 }}>
+        <LinhaPriorizacaoExecucao itens={visiveis} comentarios={comentarios} carregando={carregando} />
+      </div>
+
+      {/* Linha 3: base geral (tabela completa) + painel "Distribuição por status". */}
       <DivisorSecao titulo="Base geral de demandas" />
 
       {/* Tabela à esquerda; painel "Distribuição por status" na lateral direita (empilha só em tela estreita). */}
@@ -289,11 +294,6 @@ export default function ClientesPage() {
       <div style={{ flex: "0 1 320px", minWidth: 280, position: "sticky", top: 16 }}>
         <DistribuicaoPorStatus itens={visiveis} carregando={carregando} />
       </div>
-      </div>
-
-      {/* Linha 3: Demandas aguardando priorização. */}
-      <div style={{ marginTop: 24 }}>
-        <DemandasAguardandoPriorizacao itens={visiveis} carregando={carregando} />
       </div>
       </>
       )}

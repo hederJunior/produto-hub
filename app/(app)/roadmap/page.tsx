@@ -3,11 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { BarChart3, Calendar, CalendarRange, ChevronDown, ChevronRight, ChevronUp, Clock, Download, Eraser, Flag, ListTodo, Map as MapIcon, Maximize2, Users, X } from "lucide-react";
+import { BarChart3, Calendar, CalendarRange, ChevronDown, ChevronRight, ChevronUp, Clock, Download, Eraser, Flag, Gauge, ListTodo, Map as MapIcon, Maximize2, Users, X } from "lucide-react";
 import { useProduto } from "@/components/ProdutoContext";
 import { C, COR_BARRA_EPIC, COR_BARRA_FEATURE, corDaArea, corDeAreaTabela, corDeEstadoDevOps, corDeStatus, corDoDev, estadoIndicaConcluido, infoPrioridade } from "@/lib/kmm-theme";
 import { chaveDia, diasEntreChaves, formatarChaveDia } from "@/lib/datas";
 import BacklogEsteirasClientes, { type OrdemBacklog } from "@/components/BacklogEsteirasClientes";
+import PriorizacaoGut from "@/components/PriorizacaoGut";
 import AbasVisao from "@/components/AbasVisao";
 import type { ItemBacklog } from "@/lib/backlog";
 import PainelCapacidade from "@/components/PainelCapacidade";
@@ -300,6 +301,8 @@ export default function RoadmapPage() {
   const [carregandoBacklog, setCarregandoBacklog] = useState(true);
   const [erroBacklog, setErroBacklog] = useState<string | null>(null);
   const [ordemBacklog, setOrdemBacklog] = useState<OrdemBacklog | null>(null);
+  // Sub-visões do Backlog: Esteiras Clientes | Priorização GUT (débitos técnicos da área SWAT, 2026-10-19).
+  const [visaoBacklog, setVisaoBacklog] = useState<"esteiras" | "gut">("esteiras");
 
   const [demandasComite, setDemandasComite] = useState<DemandaComite[]>([]);
   const [carregandoComites, setCarregandoComites] = useState(true);
@@ -597,12 +600,30 @@ export default function RoadmapPage() {
       <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 18 }}>
         {visao === "backlog" && (
           <>
-            {/* Visões do Backlog: por enquanto só "Esteiras Clientes" (a primeira de várias previstas). */}
+            {/* Visões do Backlog: Esteiras Clientes | Priorização GUT. */}
             <div className="kmm-seg">
-              <div className="kmm-seg-item active" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div
+                className={`kmm-seg-item${visaoBacklog === "esteiras" ? " active" : ""}`}
+                role="button"
+                tabIndex={0}
+                style={{ display: "flex", alignItems: "center", gap: 6 }}
+                onClick={() => setVisaoBacklog("esteiras")}
+                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setVisaoBacklog("esteiras")}
+              >
                 <Users size={13} /> Esteiras Clientes
               </div>
+              <div
+                className={`kmm-seg-item${visaoBacklog === "gut" ? " active" : ""}`}
+                role="button"
+                tabIndex={0}
+                style={{ display: "flex", alignItems: "center", gap: 6 }}
+                onClick={() => setVisaoBacklog("gut")}
+                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setVisaoBacklog("gut")}
+              >
+                <Gauge size={13} /> Priorização GUT
+              </div>
             </div>
+            {visaoBacklog === "esteiras" && (
             <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, marginLeft: "auto" }}>
               {(
                 [
@@ -621,6 +642,7 @@ export default function RoadmapPage() {
                 </button>
               ))}
             </div>
+            )}
           </>
         )}
 
@@ -794,7 +816,9 @@ export default function RoadmapPage() {
       </div>
 
       <div>
-        {visao === "backlog" ? (
+        {visao === "backlog" && visaoBacklog === "gut" ? (
+          <PriorizacaoGut />
+        ) : visao === "backlog" ? (
           <>
             {carregandoBacklog && <p style={{ color: C.muted }}>Carregando backlog do Azure DevOps…</p>}
             {erroBacklog && (

@@ -287,3 +287,19 @@ model AlocacaoCapacidade {
   @@unique([devId, sprint])
   @@index([produto, sprint])
 }
+
+/// Priorização GUT dos débitos técnicos da área SWAT (Roadmap e entregas > Backlog > Priorização GUT,
+/// 2026-10-19): preenchimento da squad sobre cada PBI — notas G/U/T (1–5, validadas na API),
+/// justificativa, ação recomendada e status da avaliação. Pontuação e prioridade NÃO são gravadas:
+/// são calculadas (lib/priorizacao-gut.ts). 1 linha por work item do Azure DevOps.
+model PriorizacaoGut {
+  workItemId    Int      @id
+  gravidade     Int?
+  urgencia      Int?
+  tendencia     Int?
+  justificativa String?
+  acao          String?
+  status        String   @default("Pendente de avaliação")
+  atualizadoPor String?
+  atualizadoEm  DateTime @default(now())
+}

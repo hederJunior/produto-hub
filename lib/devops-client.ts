@@ -20,6 +20,7 @@ import {
 import { estadoIndicaConcluido } from "./kmm-theme";
 import { ESTEIRAS_CLIENTES_SQUADS, type ItemBacklog } from "./backlog";
 import { DEVOPS_PROJETOS, type Produto } from "./devops-projetos";
+import type { ItemGut } from "./priorizacao-gut";
 import { ESTADOS_GESTAO_CLIENTES, htmlParaTexto, norm, type PbiGestaoCliente, type UltimoComentario } from "./gestao-clientes";
 
 // Toda chamada ao Azure DevOps neste módulo é SEM cache. O Next.js guarda no Data Cache o resultado
@@ -1386,4 +1387,85 @@ export async function getUltimosComentarios(
   }
   await Promise.all(Array.from({ length: Math.min(CONCORRENCIA, itens.length) }, trabalhador));
   return saida;
+}
+
+
+// ===== Priorização GUT — débitos técnicos da área SWAT (pedido por Heder em 2026-10-19). Só leitura. =====
+
+/** Nós de Area Path cujo NOME é "SWAT" (ex.: "TMS - SWAT"), em qualquer profundidade, como Area Path completo. */
+function acharAreasSwat(no: { name: string; children?: any[] }, prefixo: string, saida: string[]) {
+  for (const filho of no.children ?? []) {
+    const caminho = `${prefixo}\\${filho.name}`;
+    if (/\bswat\b/i.test(filho.name)) saida.push(caminho);
+    else acharAreasSwat(filho, caminho, saida);
+  }
+}
+
+/**
+ * PBIs com State = "Backlog" da(s) área(s) SWAT do projeto (a área é descoberta na árvore de áreas
+ * do Azure, porque não está em DEVOPS_PROJETOS; consultar Area Path inexistente falha com TF51011).
+ * Mesmas colunas da planilha de priorização GUT. `areas` volta vazio se não existir área SWAT.
+ */
+export async function getPbisSwat(project: string): Promise<{ itens: ItemGut[]; areas: string[] }> {
+  const { org, pat } = getConfig();
+
+  const arvore = await fetch(
+    `https://dev.azure.com/${org}/${encodeURIComponent(project)}/_apis/wit/classificationnodes/areas?$depth=4&api-version=${API_VERSION}`,
+    { headers: authHeader(pat) }
+  );
+  if (!arvore.ok) throw new Error(`Falha ao ler as áreas de ${project} (${arvore.status}): ${await arvore.text()}`);
+  const areas: string[] = [];
+  acharAreasSwat((await arvore.json()) as { name: string; children?: any[] }, project, areas);
+  if (!areas.length) return { itens: [], areas };
+
+  const wiql = `
+    SELECT [System.Id]
+    FROM WorkItems
+    WHERE [System.TeamProject] = '${aspasWiql(project)}'
+      AND [System.WorkItemType] = 'Product Backlog Item'
+      AND [System.State] = 'Backlog'
+      AND (${areas.map((a) => `[System.AreaPath] UNDER '${aspasWiql(a)}'`).join(" OR ")})
+    ORDER BY [System.Id]
+  `;
+  const wiqlRes = await fetch(`https://dev.azure.com/${org}/${encodeURIComponent(project)}/_apis/wit/wiql?api-version=${API_VERSION}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeader(pat) },
+    body: JSON.stringify({ query: wiql }),
+  });
+  if (!wiqlRes.ok) throw new Error(`Falha na consulta WIQL da Priorização GUT (${wiqlRes.status}): ${await wiqlRes.text()}`);
+  const ids = ((await wiqlRes.json()) as { workItems: { id: number }[] }).workItems.map((w) => w.id);
+  if (!ids.length) return { itens: [], areas };
+
+  const works = await buscarLoteCampos(org, pat, ids, [
+    "System.Title",
+    "System.WorkItemType",
+    "System.AssignedTo",
+    "System.State",
+    "System.Tags",
+    "Custom.Cliente",
+    "System.BoardColumn",
+    CAMPO_CLASSIFICACAO,
+    CAMPO_DATA_COMITE,
+    "Custom.DataAberturaProduto",
+  ]);
+
+  const itens = works
+    .map((w): ItemGut => {
+      const f = w.fields;
+      return {
+        id: w.id,
+        titulo: String(f["System.Title"] ?? `Item ${w.id}`),
+        tipo: String(f["System.WorkItemType"] ?? ""),
+        responsavel: textoDeCampo(f["System.AssignedTo"]),
+        state: String(f["System.State"] ?? ""),
+        tags: String(f["System.Tags"] ?? ""),
+        cliente: textoDeCampo(f["Custom.Cliente"]),
+        colunaBoard: String(f["System.BoardColumn"] ?? ""),
+        classificacao: textoDeCampo(f[CAMPO_CLASSIFICACAO]),
+        dataComite: (f[CAMPO_DATA_COMITE] as string) ?? null,
+        dataAberturaProduto: (f["Custom.DataAberturaProduto"] as string) ?? null,
+      };
+    })
+    .sort((a, b) => a.id - b.id);
+  return { itens, areas };
 }

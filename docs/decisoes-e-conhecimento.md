@@ -2194,3 +2194,34 @@ Pedido (Heder), aba Road Map e Entregas > Road Map:
   nada marcado = todos), no header ao lado do filtro de Área. Combina (E) com trimestre e área.
 - Removidos o **percentual** dentro da barra do Epic (a bolinha branca da ponta ficou) e o card **"Progresso médio"**.
   `progressoDoEpic` continua existindo: alimenta o card "Em andamento" e o status de prazo (No prazo/Atenção/Atrasado).
+
+## 2026-10-19 — Backlog > Priorização GUT (débitos técnicos da área SWAT)
+
+**Origem:** planilha `Priorizacao_GUT_Debitos_Tecnicos.xlsx` (3 abas) recriada como 2ª sub-visão do Backlog
+(botão "Priorização GUT" ao lado de "Esteiras Clientes"; `components/PriorizacaoGut.tsx`, regras em `lib/priorizacao-gut.ts`).
+
+**Interpretação da planilha:**
+- *Priorização GUT* (30 PBIs, todos State Backlog): colunas A–K vêm do Azure (ID, Title, Work Item Type, Assigned To,
+  State, Tags, Cliente, Board Column, Classificação, Data Comitê, Data Abertura Produto); L–N = notas G/U/T inteiras
+  1–5; O = `SE(3 notas; G×U×T; vazio)`; P = faixa (≥80 P1 Crítica, ≥40 P2 Alta, ≥15 P3 Média, senão P4 Baixa; vazia sem
+  pontuação), com cores por faixa; Q Justificativa, R Ação recomendada, S Status (Pendente de avaliação / Em avaliação /
+  Avaliado). Legenda: cinza = Azure, amarelo = squad, azul = calculado.
+- *Critérios GUT* (oculta): faixas editáveis, escalas 1–5 de G/U/T e orientações → botão "Critérios GUT" (modal).
+- *Resumo*: total, avaliados (3 notas), pendentes (= total − avaliados), % avaliado, contagem por prioridade e por status
+  → cartões e chips no topo da tela.
+
+**Decisões do Heder:** itens = PBIs com State Backlog da área SWAT; **só KMM5** (com KMM4 selecionado a tela avisa);
+**só administradores editam** (todos veem); **faixas fixas no código** (80/40/15/1).
+
+**Área SWAT:** não está em `DEVOPS_PROJETOS` — é descoberta na árvore de áreas do KMM5 (`getPbisSwat`, nó cujo nome é a
+palavra "SWAT", ex. "TMS - SWAT", qualquer profundidade; Area Path inexistente na WIQL daria TF51011).
+
+**Persistência:** tabela nova `PriorizacaoGut` (1 linha por work item: gravidade, urgencia, tendencia, justificativa,
+acao, status, atualizadoPor, atualizadoEm). Pontuação e prioridade NÃO são gravadas (calculadas). Rotas:
+`GET /api/priorizacao-gut` (itens + avaliações + `podeEditar`), `POST /api/priorizacao-gut/avaliacao` (admin; valida
+nota 1–5, status, ≤4000 caracteres). Selects gravam na hora; justificativa/ação gravam ao sair do campo.
+**PRECISA RODAR A MIGRATION** `prisma/migrations/20261019120000_priorizacao_gut` (`npx prisma migrate deploy`, ou colar o
+SQL no Supabase). Sem ela a tela abre, mostra os itens e avisa que não salva (leitura/edição desligadas).
+
+**Não testado contra o Azure/Supabase** (sem rede no sandbox): conferir se a área SWAT é encontrada, se as colunas vêm
+preenchidas (Board Column, Classificação, Data Comitê) e se salvar/recarregar mantém as notas.

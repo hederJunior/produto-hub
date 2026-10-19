@@ -28,6 +28,14 @@ export const PASTEL = {
 export const BARRA_SUAVE = "#F2A57A";
 export const BARRA_FORTE = "#E8703A";
 
+/**
+ * Cores padrão das barras do Gantt do Road Map (pedido por Heder em 2026-10-19): Epic = laranja NS
+ * TECH (mesmo laranja da marca, C.orange); Feature = mesmo laranja ~30% mais claro. Fixas — não
+ * variam por Área nem por status.
+ */
+export const COR_BARRA_EPIC = C.orange;
+export const COR_BARRA_FEATURE = "#FD824E";
+
 export const FONTS = `
 @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600&family=Hanken+Grotesk:ital,wght@0,400;0,500;0,600;1,500&display=swap');
 .kmm-root *{ box-sizing:border-box; }

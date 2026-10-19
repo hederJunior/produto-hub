@@ -2183,3 +2183,14 @@ tabela `Cliente` do banco e as APIs `/api/clientes` (+import, [id]) permanecem i
 
 **Não testado contra o Azure** (sem rede no sandbox): conferir 1) coluna Chamado preenchida, 2) se algum
 aviso de status aparece, 3) Observação carregando, 4) comparar o card de Agging com o da tela principal.
+
+## 2026-10-19 — Road Map: cores fixas das barras, filtro de status do Epic, sem % e sem "Progresso médio"
+
+Pedido (Heder), aba Road Map e Entregas > Road Map:
+- **Barra do Epic** = laranja NS TECH (`C.orange`, #FC4C02) como PADRÃO — constante `COR_BARRA_EPIC` em
+  `lib/kmm-theme.ts` (antes era `C.orangeDark`). **Barra da Feature** = mesmo laranja ~30% mais claro
+  (`COR_BARRA_FEATURE` = #FD824E); antes variava pelo State da Feature. As duas são fixas (não variam por Área/status).
+- **Filtro "Status do Epic"** (multi-seleção, `epic.state`; opções = valores distintos dos Epics carregados;
+  nada marcado = todos), no header ao lado do filtro de Área. Combina (E) com trimestre e área.
+- Removidos o **percentual** dentro da barra do Epic (a bolinha branca da ponta ficou) e o card **"Progresso médio"**.
+  `progressoDoEpic` continua existindo: alimenta o card "Em andamento" e o status de prazo (No prazo/Atenção/Atrasado).

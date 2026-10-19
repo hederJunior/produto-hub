@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { BarChart3, Calendar, CalendarRange, ChevronDown, ChevronRight, ChevronUp, Clock, Download, Eraser, Flag, Gauge, ListTodo, Map as MapIcon, Maximize2, Users, X } from "lucide-react";
+import { BarChart3, Calendar, CalendarRange, ChevronDown, ChevronRight, ChevronUp, Clock, Download, Eraser, Flag, ListTodo, Map as MapIcon, Maximize2, Users, X } from "lucide-react";
 import { useProduto } from "@/components/ProdutoContext";
-import { C, corDaArea, corDeAreaTabela, corDeEstadoDevOps, corDeStatus, corDoDev, estadoIndicaConcluido, infoPrioridade } from "@/lib/kmm-theme";
+import { C, COR_BARRA_EPIC, COR_BARRA_FEATURE, corDaArea, corDeAreaTabela, corDeEstadoDevOps, corDeStatus, corDoDev, estadoIndicaConcluido, infoPrioridade } from "@/lib/kmm-theme";
 import { chaveDia, diasEntreChaves, formatarChaveDia } from "@/lib/datas";
 import BacklogEsteirasClientes, { type OrdemBacklog } from "@/components/BacklogEsteirasClientes";
 import AbasVisao from "@/components/AbasVisao";
@@ -274,6 +274,7 @@ export default function RoadmapPage() {
   const [carregandoRoadmap, setCarregandoRoadmap] = useState(true);
   const [erroRoadmap, setErroRoadmap] = useState<string | null>(null);
   const [areaSelecionada, setAreaSelecionada] = useState("todas");
+  const [statusEpicSelecionados, setStatusEpicSelecionados] = useState<string[]>([]);
   // Filtro por trimestre do Road Map (pedido por Heder em 2026-09-29): toggle multi-seleção, só
   // pros 4 trimestres de 2026 (não é derivado dos dados — lista fixa, como pedido). Vazio = sem
   // filtro (mostra todos os Epics, de qualquer ano).
@@ -411,10 +412,20 @@ export default function RoadmapPage() {
       .finally(() => setCarregandoBacklog(false));
   }, [produto]);
 
+  const statusEpicDisponiveis = useMemo(
+    () => Array.from(new Set(epicos.map((e) => e.state).filter(Boolean))).sort((a, b) => a.localeCompare(b, "pt-BR")),
+    [epicos]
+  );
+  // Troca de produto/recarga: descarta seleções de status que não existem mais na lista.
+  useEffect(() => {
+    setStatusEpicSelecionados((sel) => (sel.every((s) => statusEpicDisponiveis.includes(s)) ? sel : sel.filter((s) => statusEpicDisponiveis.includes(s))));
+  }, [statusEpicDisponiveis]);
+
   const areasDisponiveis = useMemo(() => Array.from(new Set(epicos.map((e) => e.areaPath))).sort(), [epicos]);
 
   const epicosExibidos = useMemo(() => {
     let lista = areaSelecionada === "todas" ? epicos : epicos.filter((e) => e.areaPath === areaSelecionada);
+    if (statusEpicSelecionados.length) lista = lista.filter((e) => statusEpicSelecionados.includes(e.state));
     if (quartersSelecionados.length) {
       const janelas = QUARTERS_FILTRO.filter((q) => quartersSelecionados.includes(q.id));
       lista = lista.filter((e) => {
@@ -428,7 +439,7 @@ export default function RoadmapPage() {
       });
     }
     return lista;
-  }, [epicos, areaSelecionada, quartersSelecionados]);
+  }, [epicos, areaSelecionada, statusEpicSelecionados, quartersSelecionados]);
 
   const sprintsDisponiveis = useMemo(
     () =>
@@ -519,7 +530,6 @@ export default function RoadmapPage() {
   const progressos = epicosExibidos.map((e) => progressoDoEpic(e));
   const entregasNaVisao = epicosExibidos.length;
   const emAndamento = progressos.filter((p) => p > 0 && p < 100).length;
-  const progressoMedio = progressos.length ? Math.round(progressos.reduce((a, b) => a + b, 0) / progressos.length) : 0;
   const gruposTrimestre = agruparPorTrimestre(meses);
   const horizonte = !gruposTrimestre.length
     ? "—"
@@ -630,6 +640,12 @@ export default function RoadmapPage() {
                 </option>
               ))}
             </select>
+            <MultiSelectFiltro
+              rotuloTodos="Todos os status do Epic"
+              opcoes={statusEpicDisponiveis}
+              selecionados={statusEpicSelecionados}
+              onChange={setStatusEpicSelecionados}
+            />
             <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
               <button
                 className="kmm-btn"
@@ -811,7 +827,6 @@ export default function RoadmapPage() {
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 20 }}>
                   <StatTile icon={<Flag size={18} color={C.orange} />} bg="#FDEDE7" label="Entregas na visão" valor={String(entregasNaVisao)} />
                   <StatTile icon={<Clock size={18} color={C.blue} />} bg="#E9F1FB" label="Em andamento" valor={String(emAndamento)} />
-                  <StatTile icon={<Gauge size={18} color="#8B5CF6" />} bg="#F1ECFB" label="Progresso médio" valor={`${progressoMedio}%`} />
                   <StatTile icon={<Calendar size={18} color={C.orangeDark} />} bg="#FDEDE0" label="Horizonte" valor={horizonte} />
                 </div>
 
@@ -1149,11 +1164,10 @@ function EpicRow({
         <div style={{ flex: 1, position: "relative", minHeight: 64 }}>
           <GradeMeses totalMeses={meses.length} />
           {epic.startDate && epic.targetDate && (
-            <BarraComProgresso
+            <BarraEpic
               inicioPct={posicaoPercentual(epic.startDate, inicioMs, fimMs)}
               fimPct={posicaoPercentual(epic.targetDate, inicioMs, fimMs)}
-              cor={C.orangeDark}
-              progresso={progresso}
+              cor={COR_BARRA_EPIC}
               label={`Epic #${epic.id}: ${formatarData(epic.startDate)} – ${formatarData(epic.targetDate)}`}
             />
           )}
@@ -1188,7 +1202,7 @@ function EpicRow({
                   <BarraSimples
                     inicioPct={posicaoPercentual(f.startDate, inicioMs, fimMs)}
                     fimPct={posicaoPercentual(f.targetDate, inicioMs, fimMs)}
-                    cor={corDeEstadoDevOps(f.state).fg}
+                    cor={COR_BARRA_FEATURE}
                     label={`${formatarData(f.startDate)} – ${formatarData(f.targetDate)}`}
                   />
                 ) : (
@@ -1225,17 +1239,15 @@ function BarraSimples({ inicioPct, fimPct, cor, label }: { inicioPct: number; fi
   );
 }
 
-function BarraComProgresso({
+function BarraEpic({
   inicioPct,
   fimPct,
   cor,
-  progresso,
   label,
 }: {
   inicioPct: number;
   fimPct: number;
   cor: string;
-  progresso: number;
   label: string;
 }) {
   const largura = Math.max(fimPct - inicioPct, 6);
@@ -1259,7 +1271,6 @@ function BarraComProgresso({
         whiteSpace: "nowrap",
       }}
     >
-      <span style={{ fontSize: 11, fontWeight: 700, color: "#fff" }}>{progresso}% concluído</span>
       <span
         style={{
           position: "absolute",

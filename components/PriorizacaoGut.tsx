@@ -46,6 +46,7 @@ const COLUNAS: Coluna[] = [
   { titulo: "Work Item Type", largura: 130, origem: COR_AZURE },
   { titulo: "Assigned To", largura: 170, origem: COR_AZURE },
   { titulo: "State", largura: 86, origem: COR_AZURE },
+  { titulo: "Etapa", largura: 120, origem: COR_AZURE },
   { titulo: "Tags", largura: 150, origem: COR_AZURE },
   { titulo: "Cliente", largura: 130, origem: COR_AZURE },
   { titulo: "Board Column", largura: 150, origem: COR_AZURE },
@@ -183,7 +184,7 @@ export default function PriorizacaoGut() {
       <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
         <MultiSelectFiltro rotuloTodos="Todos os status" opcoes={[...STATUS_AVALIACAO]} selecionados={statusSel} onChange={setStatusSel} />
         <MultiSelectFiltro rotuloTodos="Todas as prioridades" opcoes={[...FAIXAS_GUT.map((f) => f.codigo), SEM_PONTUACAO]} selecionados={prioridadeSel} onChange={setPrioridadeSel} />
-        <MultiSelectFiltro rotuloTodos="Todos os clientes" opcoes={opcoesCliente} selecionados={clientesSel} onChange={setClientesSel} />
+        <MultiSelectFiltro pesquisavel rotuloTodos="Todos os clientes" opcoes={opcoesCliente} selecionados={clientesSel} onChange={setClientesSel} />
         <div style={{ display: "flex", gap: 8, marginLeft: "auto", flexWrap: "wrap" }}>
           <button
             className="kmm-btn"
@@ -298,6 +299,7 @@ export default function PriorizacaoGut() {
                           <td style={td(COR_AZURE.cel)}>{i.tipo}</td>
                           <td style={td(COR_AZURE.cel)}>{i.responsavel || "—"}</td>
                           <td style={td(COR_AZURE.cel)}>{i.state}</td>
+                          <td style={td(COR_AZURE.cel)}>{i.etapa || "—"}</td>
                           <td style={td(COR_AZURE.cel)}>{i.tags || "—"}</td>
                           <td style={td(COR_AZURE.cel)}>{i.cliente || "—"}</td>
                           <td style={td(COR_AZURE.cel)}>{i.colunaBoard || "—"}</td>

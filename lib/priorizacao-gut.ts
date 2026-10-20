@@ -19,6 +19,8 @@ export type ItemGut = {
   tipo: string;
   responsavel: string;
   state: string;
+  /** Custom.Etapa (etapa do fluxo, ao lado do State). */
+  etapa: string;
   tags: string;
   cliente: string;
   colunaBoard: string;

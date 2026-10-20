@@ -620,7 +620,7 @@ export default function RoadmapPage() {
                 onClick={() => setVisaoBacklog("gut")}
                 onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setVisaoBacklog("gut")}
               >
-                <Gauge size={13} /> Priorização GUT
+                <Gauge size={13} /> Priorização SWAT
               </div>
             </div>
             {visaoBacklog === "esteiras" && (

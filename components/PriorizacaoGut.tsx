@@ -111,7 +111,7 @@ export default function PriorizacaoGut() {
         setPodeEditar(Boolean(j.podeEditar));
         setAvisos(j.avisos ?? []);
       })
-      .catch(() => !cancelado && setErro("Não foi possível carregar a Priorização GUT."))
+      .catch(() => !cancelado && setErro("Não foi possível carregar a Priorização SWAT."))
       .finally(() => !cancelado && setCarregando(false));
     return () => {
       cancelado = true;
@@ -172,7 +172,7 @@ export default function PriorizacaoGut() {
   }, [itens, avaliacoes, statusSel, clientesSel, prioridadeSel, ordenarPorPontuacao]);
 
   if (semSwat) {
-    return <p style={{ color: C.muted }}>A área SWAT existe apenas no KMM5. Selecione KMM5 ou Ambos no topo da página para ver a Priorização GUT.</p>;
+    return <p style={{ color: C.muted }}>A área SWAT existe apenas no KMM5. Selecione KMM5 ou Ambos no topo da página para ver a Priorização SWAT.</p>;
   }
 
   const controleBase = { fontFamily: "inherit", fontSize: 13, border: `1px solid ${C.border}`, borderRadius: 7, background: "#fff", color: C.text, padding: "5px 7px" } as const;

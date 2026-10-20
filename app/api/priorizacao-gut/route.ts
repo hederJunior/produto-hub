@@ -49,6 +49,6 @@ export async function GET() {
     return NextResponse.json({ itens, avaliacoes, podeEditar: podeEditar && !salvamentoIndisponivel, salvamentoIndisponivel, avisos });
   } catch (err) {
     console.error("[priorizacao-gut] falha:", err);
-    return NextResponse.json({ erro: "Não foi possível carregar a Priorização GUT do Azure DevOps.", itens: [], avaliacoes: {}, podeEditar: false, avisos: [] }, { status: 502 });
+    return NextResponse.json({ erro: "Não foi possível carregar a Priorização SWAT do Azure DevOps.", itens: [], avaliacoes: {}, podeEditar: false, avisos: [] }, { status: 502 });
   }
 }

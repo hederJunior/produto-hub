@@ -10,6 +10,7 @@ import { chaveDia, diasEntreChaves, formatarChaveDia } from "@/lib/datas";
 import BacklogEsteirasClientes, { type OrdemBacklog } from "@/components/BacklogEsteirasClientes";
 import PriorizacaoGut from "@/components/PriorizacaoGut";
 import AbasVisao from "@/components/AbasVisao";
+import MultiSelectFiltro from "@/components/MultiSelectFiltro";
 import type { ItemBacklog } from "@/lib/backlog";
 import PainelCapacidade from "@/components/PainelCapacidade";
 import PageHeader from "@/components/PageHeader";
@@ -160,82 +161,6 @@ const QUARTERS_FILTRO: { id: string; label: string; inicio: Date; fim: Date }[] 
   { id: "2026-3", label: "Q3-2026", inicio: new Date(2026, 6, 1), fim: new Date(2026, 8, 30, 23, 59, 59) },
   { id: "2026-4", label: "Q4-2026", inicio: new Date(2026, 9, 1), fim: new Date(2026, 11, 31, 23, 59, 59) },
 ];
-
-/**
- * Dropdown de multi-seleção por checkbox (mesmo padrão do MultiSelectSquad em app/(app)/page.tsx,
- * generalizado aqui pros filtros de Área e Cliente da aba Comitês — pedido por Heder em
- * 2026-09-28: antes eram <select> de escolha única). `selecionados` vazio = sem filtro ("todas"/
- * "todos"). `formatar` é opcional, pra exibir um rótulo diferente do valor usado no filtro (ex.:
- * Área mostra só o último segmento do Area Path, mas filtra pelo path completo).
- */
-function MultiSelectFiltro({
-  rotuloTodos,
-  opcoes,
-  selecionados,
-  onChange,
-  formatar,
-}: {
-  rotuloTodos: string;
-  opcoes: string[];
-  selecionados: string[];
-  onChange: (v: string[]) => void;
-  formatar?: (v: string) => string;
-}) {
-  const [aberto, setAberto] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function aoClicarFora(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setAberto(false);
-    }
-    document.addEventListener("mousedown", aoClicarFora);
-    return () => document.removeEventListener("mousedown", aoClicarFora);
-  }, []);
-
-  function alternar(opcao: string) {
-    onChange(selecionados.includes(opcao) ? selecionados.filter((s) => s !== opcao) : [...selecionados, opcao]);
-  }
-
-  const rotulo =
-    selecionados.length === 0
-      ? rotuloTodos
-      : selecionados.length === 1
-        ? formatar?.(selecionados[0]) ?? selecionados[0]
-        : `${selecionados.length} selecionados`;
-
-  return (
-    <div ref={ref} style={{ position: "relative" }}>
-      <button
-        type="button"
-        className="kmm-input"
-        onClick={() => setAberto((a) => !a)}
-        style={{ width: "auto", textAlign: "left", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, minWidth: 180, cursor: "pointer" }}
-      >
-        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{rotulo}</span>
-        <ChevronDown size={14} color={C.muted} style={{ flexShrink: 0 }} />
-      </button>
-      {aberto && (
-        <div
-          className="kmm-card"
-          style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 30, minWidth: 240, maxHeight: 280, overflowY: "auto", padding: 8 }}
-        >
-          <label
-            style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", fontSize: 13, cursor: "pointer", borderBottom: `1px solid ${C.border}`, marginBottom: 4 }}
-          >
-            <input type="checkbox" checked={selecionados.length === 0} onChange={() => onChange([])} />
-            {rotuloTodos}
-          </label>
-          {opcoes.map((op) => (
-            <label key={op} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", fontSize: 13, cursor: "pointer" }}>
-              <input type="checkbox" checked={selecionados.includes(op)} onChange={() => alternar(op)} />
-              {formatar?.(op) ?? op}
-            </label>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 /**
  * Filtro por trimestre do Road Map (toggle multi-seleção, pedido por Heder em 2026-09-29): cada
@@ -1978,6 +1903,9 @@ function PainelAlocacaoPorSprint({
   const [inicial, setInicial] = useState<string | null>(null);
   const [sprintsFiltro, setSprintsFiltro] = useState<string[]>([]);
   const [funcoesFiltro, setFuncoesFiltro] = useState<string[]>([]);
+  // Filtro "Recurso" (modo Alocação por sprint) e "PBI" (modo Demandas; ids em texto), ao lado de "Expandir todos".
+  const [recursosFiltro, setRecursosFiltro] = useState<string[]>([]);
+  const [pbisFiltro, setPbisFiltro] = useState<string[]>([]);
   const [comprimidos, setComprimidos] = useState<Record<string, boolean>>({});
 
   // Datas das sprints + roster de devs (papel) — complementos, falha silenciosa.
@@ -2053,7 +1981,7 @@ function PainelAlocacaoPorSprint({
 
   // Linhas: quem tem Task/Bug (já com o filtro de Área) + roster inteiro quando não há filtro de
   // Área (pra mostrar quem está livre). Chave por nome normalizado (displayName do Azure × Cadastro).
-  const linhas = useMemo(() => {
+  const linhasBase = useMemo(() => {
     const papelPorNome = new Map<string, string | null>();
     for (const d of roster) {
       const k = normalizarNomePessoa(d.nome);
@@ -2082,6 +2010,12 @@ function PainelAlocacaoPorSprint({
     ];
   }, [tarefasFiltradas, roster, areasFiltro, clientesFiltro, funcoesFiltro]);
 
+  const opcoesRecurso = useMemo(() => linhasBase.map((l) => l.nome), [linhasBase]);
+  const linhas = useMemo(
+    () => (recursosFiltro.length ? linhasBase.filter((l) => recursosFiltro.includes(l.nome)) : linhasBase),
+    [linhasBase, recursosFiltro]
+  );
+
   const celulas = useMemo(() => {
     const mapa = new Map<string, TaskAlocada[]>();
     for (const t of tarefasFiltradas) {
@@ -2108,11 +2042,21 @@ function PainelAlocacaoPorSprint({
       if (sprintsVisiveis.includes(t.sprint)) ids.add(t.pbiPaiId);
     }
     return Array.from(ids)
+      .filter((id) => !pbisFiltro.length || (id !== null && pbisFiltro.includes(String(id))))
       .sort((a, b) => (a === null ? 1 : 0) - (b === null ? 1 : 0) || (a ?? 0) - (b ?? 0))
       .map((pbiId) => ({ chave: chaveDoPbi(pbiId), pbiId }));
   })();
 
   const linhasAtivas = modo === "demandas" ? linhasPbi : linhas;
+
+  // Opções do filtro de PBI: os PBIs pai com Task/Bug nas sprints visíveis. O valor é o ID; o rótulo
+  // "ID · título" é o que a busca do filtro compara (então acha por ID e por título).
+  const opcoesPbi = useMemo(() => {
+    const ids = new Set<number>();
+    for (const t of tarefasFiltradas) if (t.pbiPaiId != null && sprintsVisiveis.includes(t.sprint)) ids.add(t.pbiPaiId);
+    return Array.from(ids).sort((a, b) => a - b).map(String);
+  }, [tarefasFiltradas, sprintsVisiveis]);
+  const rotuloPbi = (v: string) => (pais[Number(v)]?.titulo ? `${v} · ${pais[Number(v)].titulo}` : v);
 
   const fmtCurta = (iso: string) => iso.slice(0, 10).split("-").reverse().slice(0, 2).join("/");
   const BORDA = `1px solid ${C.border}`;
@@ -2158,6 +2102,26 @@ function PainelAlocacaoPorSprint({
       {slotAcoes &&
         createPortal(
           <>
+            {modo === "alocacao" && (
+              <MultiSelectFiltro
+                pesquisavel
+                rotuloTodos="Todos os recursos"
+                opcoes={opcoesRecurso}
+                selecionados={recursosFiltro}
+                onChange={setRecursosFiltro}
+              />
+            )}
+            {modo === "demandas" && (
+              <MultiSelectFiltro
+                pesquisavel
+                placeholderBusca="Buscar por ID ou título…"
+                rotuloTodos="Todos os PBIs"
+                opcoes={opcoesPbi}
+                selecionados={pbisFiltro}
+                onChange={setPbisFiltro}
+                formatar={rotuloPbi}
+              />
+            )}
             <button className="kmm-btn" onClick={() => setComprimidos({})}>
               Expandir todos
             </button>

@@ -7,6 +7,8 @@ import { C, corDeAreaTabela, infoPrioridade } from "@/lib/kmm-theme";
 import { chaveDia, diasEntreChaves, formatarChaveDia } from "@/lib/datas";
 import { DIAS_ALERTA_BACKLOG, ESTEIRAS_CLIENTES_SQUADS, nomeCurtoDaSquad, nomeDaSquad, type ItemBacklog } from "@/lib/backlog";
 
+const ORG_DEVOPS = "kmmbynstech";
+
 export type OrdemBacklog = "prioridade" | "data";
 
 // id | Título | Cliente | PO | Created Date | Data Abertura Produto | Classificação | Feature | Priority | alerta
@@ -132,7 +134,17 @@ export default function BacklogEsteirasClientes({ itens, ordem, hoje }: { itens:
                     const prioridade = infoPrioridade(i.prioridade);
                     return (
                       <div key={i.id} style={{ display: "grid", gridTemplateColumns: COLUNAS, borderTop: `1px solid ${C.border}`, alignItems: "center" }}>
-                        <div style={{ ...celula, color: C.muted, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{i.id}</div>
+                        <div style={{ ...celula, fontVariantNumeric: "tabular-nums" }}>
+                          <a
+                            href={`https://dev.azure.com/${ORG_DEVOPS}/${encodeURIComponent(i.areaPath.split("\\")[0])}/_workitems/edit/${i.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="Abrir o PBI no Azure DevOps"
+                            style={{ color: C.blue, textDecoration: "none", fontWeight: 500 }}
+                          >
+                            {i.id}
+                          </a>
+                        </div>
                         <div style={{ ...celula, fontWeight: 600 }} title={i.titulo}>
                           <span style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{i.titulo}</span>
                         </div>

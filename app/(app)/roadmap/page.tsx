@@ -1948,7 +1948,7 @@ function ehPapelQA(papel: string | null | undefined): boolean {
 
 function PainelAlocacaoPorSprint({
   modo,
-  tarefas,
+  tarefas: tarefasBrutas,
   produto,
   areasDisponiveis,
   pais,
@@ -1970,6 +1970,8 @@ function PainelAlocacaoPorSprint({
   slotFiltros: HTMLElement | null;
   slotAcoes: HTMLElement | null;
 }) {
+  // Tasks/Bugs com State "Cancelado" não entram na Alocação por sprint nem em Demandas (pedido por Heder em 2026-10-22).
+  const tarefas = useMemo(() => tarefasBrutas.filter((t) => !/^cancel/i.test(t.state.trim())), [tarefasBrutas]);
   const [datas, setDatas] = useState<Record<string, { inicio: string | null; fim: string | null }>>({});
   const [roster, setRoster] = useState<{ nome: string; papel: string | null }[]>([]);
   const [areasFiltro, setAreasFiltro] = useState<string[]>([]);

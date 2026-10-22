@@ -258,7 +258,7 @@ export function VisaoPorStatus({
 
       <Quadro titulo={tituloTabela} contagem={carregando ? null : doStatus.length}>
         <Tabela
-          colunas={["Chamado", "PBI", "Título", "Esteira", "PO", "Classificação", "Observação"]}
+          colunas={["Chamado", "PBI", "Título", "Esteira", "Etapa", "PO", "Classificação", "Observação"]}
           vazio={carregando ? "Carregando…" : `Nenhuma demanda em ${estado.toLowerCase()} para os filtros atuais.`}
           linhas={doStatus.map((p) => {
             const com = comentarios[p.id];
@@ -268,6 +268,7 @@ export function VisaoPorStatus({
               { k: "pbi", v: <LinkPbi p={p} />, nowrap: true },
               { k: "titulo", v: p.titulo, largo: true, minW: 220 },
               { k: "esteira", v: nomeCurtoDaSquad(p.areaPath) || "—", nowrap: true },
+              { k: "etapa", v: p.etapa || "—", nowrap: true },
               { k: "po", v: p.po || "—", largo: true, minW: 150 },
               { k: "classificacao", v: p.classificacao || "—", nowrap: true },
               {
@@ -280,7 +281,7 @@ export function VisaoPorStatus({
             ];
           })}
           chaves={doStatus.map((p) => p.id)}
-          minWidth={1150}
+          minWidth={1270}
         />
       </Quadro>
     </div>

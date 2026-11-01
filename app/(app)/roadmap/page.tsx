@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { BarChart3, Calendar, CalendarRange, ChevronDown, ChevronRight, ChevronUp, Clock, Download, Eraser, Flag, Gauge, ListTodo, Map as MapIcon, Maximize2, UserCheck, Users, X } from "lucide-react";
+import { BarChart3, Calendar, CheckCheck, CalendarRange, ChevronDown, ChevronRight, ChevronUp, Clock, Download, Eraser, Flag, Gauge, ListTodo, Map as MapIcon, Maximize2, Rocket, UserCheck, Users, X } from "lucide-react";
 import { useProduto } from "@/components/ProdutoContext";
 import { C, COR_BARRA_EPIC, COR_BARRA_FEATURE, corDaArea, corDeAreaTabela, corDeEstadoDevOps, corDeStatus, corDoDev, estadoIndicaConcluido, infoPrioridade } from "@/lib/kmm-theme";
 import { chaveDia, diasEntreChaves, formatarChaveDia } from "@/lib/datas";
@@ -1863,26 +1863,42 @@ function DemandasComiteLista({ demandas, hoje }: { demandas: DemandaComite[]; ho
  */
 const SEM_RESPONSAVEL = "Sem responsável";
 
-/** Estado "Teste Aceite Usuário" (sem diferenciar acento/caixa): o card ganha moldura dupla + selo no canto. */
-function emTesteAceiteUsuario(state: string): boolean {
-  return /teste\s*aceite/.test(state.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase());
+function semAcentoMin(txt: string): string {
+  return txt.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+}
+
+/**
+ * Estados que ganham sinalização no card (moldura dupla + selo no canto), comparados sem acento/caixa:
+ * Teste Aceite Usuário (2026-11-01), Aguardando Deploy e Finalizado (pedido por Heder em 2026-11-02).
+ * Cada um tem um ícone próprio no selo e um item no toggle de estado.
+ */
+const STATUS_SINALIZADOS: { chave: "teste" | "deploy" | "finalizado"; label: string; casa: (estado: string) => boolean; Icone: typeof UserCheck }[] = [
+  { chave: "teste", label: "Teste aceite usuário", casa: (e) => /teste\s*aceite/.test(semAcentoMin(e)), Icone: UserCheck },
+  { chave: "deploy", label: "Aguardando deploy", casa: (e) => /aguardando\s*deploy/.test(semAcentoMin(e)), Icone: Rocket },
+  { chave: "finalizado", label: "Finalizado", casa: (e) => /^finalizad/.test(semAcentoMin(e)), Icone: CheckCheck },
+];
+type StatusSinalizado = (typeof STATUS_SINALIZADOS)[number];
+
+function sinalDoEstado(estado: string | null | undefined): StatusSinalizado | undefined {
+  return estado ? STATUS_SINALIZADOS.find((x) => x.casa(estado)) : undefined;
 }
 function emExecucao(state: string): boolean {
-  return /^(em )?execu/.test(state.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase());
+  return /^(em )?execu/.test(semAcentoMin(state));
 }
-type VisaoEstadoTask = "todos" | "execucao" | "teste";
+type VisaoEstadoTask = "todos" | "execucao" | StatusSinalizado["chave"];
 
 /** Moldura dupla (branca por dentro, escura por fora): aparece em qualquer cor de Área. */
-const MOLDURA_TESTE_ACEITE = "0 0 0 2px #fff, 0 0 0 4px #201D1A";
+const MOLDURA_SINALIZADA = "0 0 0 2px #fff, 0 0 0 4px #201D1A";
 
-function SeloTesteAceite() {
+function SeloStatus({ sinal }: { sinal: StatusSinalizado }) {
+  const Icone = sinal.Icone;
   return (
     <span
-      title="Em Teste aceite usuário"
-      aria-label="Em Teste aceite usuário"
+      title={`Em ${sinal.label}`}
+      aria-label={`Em ${sinal.label}`}
       style={{ position: "absolute", top: -9, right: -9, width: 22, height: 22, borderRadius: "50%", background: "#201D1A", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 0 2px #fff" }}
     >
-      <UserCheck size={13} />
+      <Icone size={13} />
     </span>
   );
 }
@@ -1930,7 +1946,7 @@ function PainelAlocacaoPorSprint({
   // Filtro "Recurso" (modo Alocação por sprint) e "PBI" (modo Demandas; ids em texto), ao lado de "Expandir todos".
   const [recursosFiltro, setRecursosFiltro] = useState<string[]>([]);
   const [pbisFiltro, setPbisFiltro] = useState<string[]>([]);
-  // Toggle "Todos / Execução / Teste aceite usuário": filtra os cards pelo State da Task/Bug.
+  // Toggle "Execução / Teste aceite usuário / Aguardando deploy / Finalizado / Todos": filtra os cards pelo State da Task/Bug.
   const [visaoEstado, setVisaoEstado] = useState<VisaoEstadoTask>("todos");
   const [comprimidos, setComprimidos] = useState<Record<string, boolean>>({});
 
@@ -1965,12 +1981,15 @@ function PainelAlocacaoPorSprint({
     };
   }, [produto]);
 
-  // Estado que o card mostra: em "Alocação por sprint" o card é o PBI pai (estado do PBI); em "Demandas" é a Task/Bug.
-  // Em "Demandas" vale também o estado da própria Task/Bug (as Tasks herdam o do PBI, ver PainelDemandaLinha).
-  const cardNoEstado = (t: TaskAlocada, casa: (estado: string) => boolean) => {
-    const estadoPai = t.pbiPaiId != null ? pais[t.pbiPaiId]?.estado ?? "" : "";
-    return casa(estadoPai) || (modo === "demandas" && casa(t.state));
+  // Sinalização do card (a mesma que o selo mostra): em "Alocação por sprint" o card é o PBI pai (estado do PBI);
+  // em "Demandas" vale o estado da própria Task/Bug e, se ele não for sinalizado, o do PBI (ver PainelDemandaLinha).
+  const sinalDoCard = (t: TaskAlocada) => {
+    const sinalPai = sinalDoEstado(t.pbiPaiId != null ? pais[t.pbiPaiId]?.estado : undefined);
+    return modo === "demandas" ? sinalDoEstado(t.state) ?? sinalPai : sinalPai;
   };
+  // "Execução" = card em execução (PBI ou, em Demandas, Task) que não é um dos estados sinalizados.
+  const cardEmExecucao = (t: TaskAlocada) =>
+    !sinalDoCard(t) && (emExecucao(t.pbiPaiId != null ? pais[t.pbiPaiId]?.estado ?? "" : "") || (modo === "demandas" && emExecucao(t.state)));
 
   const tarefasFiltradas = useMemo(
     () =>
@@ -1978,8 +1997,7 @@ function PainelAlocacaoPorSprint({
         (t) =>
           (!areasFiltro.length || areasFiltro.includes(t.areaPath)) &&
           (!clientesFiltro.length || clientesFiltro.includes(clienteDaTarefa(t, pais))) &&
-          (visaoEstado === "todos" ||
-            cardNoEstado(t, visaoEstado === "execucao" ? emExecucao : emTesteAceiteUsuario))
+          (visaoEstado === "todos" || (visaoEstado === "execucao" ? cardEmExecucao(t) : sinalDoCard(t)?.chave === visaoEstado))
       ),
     [tarefas, areasFiltro, clientesFiltro, pais, visaoEstado, modo]
   );
@@ -2110,7 +2128,7 @@ function PainelAlocacaoPorSprint({
               rotulo="Estado da Task"
               opcoes={[
                 { valor: "execucao" as VisaoEstadoTask, label: "Execução" },
-                { valor: "teste" as VisaoEstadoTask, label: "Teste aceite usuário" },
+                ...STATUS_SINALIZADOS.map((x) => ({ valor: x.chave as VisaoEstadoTask, label: x.label })),
                 { valor: "todos" as VisaoEstadoTask, label: "Todos" },
               ]}
               valor={visaoEstado}
@@ -2336,8 +2354,8 @@ function PainelDemandaLinha({
 }) {
   const pai = linha.pbiId != null ? pais[linha.pbiId] : undefined;
   const titulo = linha.pbiId == null ? "Sem PBI pai" : pai ? pai.titulo : carregandoPais ? "…" : "(título indisponível)";
-  // O estado "Teste Aceite Usuário" é do PBI: as Tasks/Bugs dele herdam a sinalização.
-  const paiEmTeste = emTesteAceiteUsuario(pai?.estado ?? "");
+  // Estados sinalizados (ex.: "Teste Aceite Usuário") são do PBI: as Tasks/Bugs dele herdam a sinalização.
+  const sinalPai = sinalDoEstado(pai?.estado);
   return (
     <>
       <div
@@ -2361,7 +2379,7 @@ function PainelDemandaLinha({
             {pai?.estado && (
               <span
                 className="kmm-chip"
-                style={{ padding: "1px 8px", fontSize: 10.5, ...(paiEmTeste ? { background: "#201D1A", color: "#fff", borderColor: "transparent" } : {}) }}
+                style={{ padding: "1px 8px", fontSize: 10.5, ...(sinalPai ? { background: "#201D1A", color: "#fff", borderColor: "transparent" } : {}) }}
               >
                 {pai.estado}
               </span>
@@ -2394,6 +2412,7 @@ function PainelDemandaLinha({
                 `Responsável: ${t.responsavel?.nome ?? "sem responsável"}`,
                 t.spEstimados != null ? `Effort: ${t.spEstimados}h` : "Sem effort",
               ].join("\n");
+              const sinal = sinalDoEstado(t.state) ?? sinalPai;
               return (
                 <div
                   key={t.id}
@@ -2407,10 +2426,10 @@ function PainelDemandaLinha({
                     marginBottom: 8,
                     fontSize: 11.5,
                     lineHeight: 1.35,
-                    ...(paiEmTeste || emTesteAceiteUsuario(t.state) ? { boxShadow: MOLDURA_TESTE_ACEITE } : {}),
+                    ...(sinal ? { boxShadow: MOLDURA_SINALIZADA } : {}),
                   }}
                 >
-                  {(paiEmTeste || emTesteAceiteUsuario(t.state)) && <SeloTesteAceite />}
+                  {sinal && <SeloStatus sinal={sinal} />}
                   <div style={{ fontWeight: 700, fontSize: 12, display: "-webkit-box", WebkitLineClamp: comprimido ? 1 : 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
                     {rotulo}
                   </div>
@@ -2518,6 +2537,7 @@ function PainelAlocacaoLinha({
                 `PBI pai: ${rotuloPai}`,
                 ...g.itens.map((t) => `${t.tipo === "Bug" ? "Bug" : "Task"} #${t.id} · ${t.titulo} [${t.state}]${t.spEstimados != null ? ` · ${t.spEstimados}h` : ""}`),
               ].join("\n");
+              const sinal = sinalDoEstado(pai?.estado);
               return (
                 <div
                   key={`${g.areaPath}|${g.pbiPaiId ?? 0}`}
@@ -2531,10 +2551,10 @@ function PainelAlocacaoLinha({
                     marginBottom: 8,
                     fontSize: 11.5,
                     lineHeight: 1.35,
-                    ...(emTesteAceiteUsuario(pai?.estado ?? "") ? { boxShadow: MOLDURA_TESTE_ACEITE } : {}),
+                    ...(sinal ? { boxShadow: MOLDURA_SINALIZADA } : {}),
                   }}
                 >
-                  {emTesteAceiteUsuario(pai?.estado ?? "") && <SeloTesteAceite />}
+                  {sinal && <SeloStatus sinal={sinal} />}
                   <div
                     style={{ fontWeight: 700, fontSize: 12, marginBottom: comprimido ? 0 : 3, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}
                   >

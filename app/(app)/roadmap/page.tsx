@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { BarChart3, Calendar, CalendarRange, ChevronDown, ChevronRight, ChevronUp, Clock, Download, Eraser, Flag, Gauge, ListTodo, Map as MapIcon, Maximize2, Users, X } from "lucide-react";
+import { BarChart3, Calendar, CalendarRange, ChevronDown, ChevronRight, ChevronUp, Clock, Download, Eraser, Flag, Gauge, ListTodo, Map as MapIcon, Maximize2, UserCheck, Users, X } from "lucide-react";
 import { useProduto } from "@/components/ProdutoContext";
 import { C, COR_BARRA_EPIC, COR_BARRA_FEATURE, corDaArea, corDeAreaTabela, corDeEstadoDevOps, corDeStatus, corDoDev, estadoIndicaConcluido, infoPrioridade } from "@/lib/kmm-theme";
 import { chaveDia, diasEntreChaves, formatarChaveDia } from "@/lib/datas";
@@ -1863,6 +1863,30 @@ function DemandasComiteLista({ demandas, hoje }: { demandas: DemandaComite[]; ho
  */
 const SEM_RESPONSAVEL = "Sem responsável";
 
+/** Estado "Teste Aceite Usuário" (sem diferenciar acento/caixa): o card ganha moldura dupla + selo no canto. */
+function emTesteAceiteUsuario(state: string): boolean {
+  return /teste\s*aceite/.test(state.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase());
+}
+function emExecucao(state: string): boolean {
+  return /^(em )?execu/.test(state.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase());
+}
+type VisaoEstadoTask = "todos" | "execucao" | "teste";
+
+/** Moldura dupla (branca por dentro, escura por fora): aparece em qualquer cor de Área. */
+const MOLDURA_TESTE_ACEITE = "0 0 0 2px #fff, 0 0 0 4px #201D1A";
+
+function SeloTesteAceite() {
+  return (
+    <span
+      title="Em Teste aceite usuário"
+      aria-label="Em Teste aceite usuário"
+      style={{ position: "absolute", top: -9, right: -9, width: 22, height: 22, borderRadius: "50%", background: "#201D1A", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 0 2px #fff" }}
+    >
+      <UserCheck size={13} />
+    </span>
+  );
+}
+
 function normalizarNomePessoa(nome: string): string {
   return nome.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
 }
@@ -1906,6 +1930,8 @@ function PainelAlocacaoPorSprint({
   // Filtro "Recurso" (modo Alocação por sprint) e "PBI" (modo Demandas; ids em texto), ao lado de "Expandir todos".
   const [recursosFiltro, setRecursosFiltro] = useState<string[]>([]);
   const [pbisFiltro, setPbisFiltro] = useState<string[]>([]);
+  // Toggle "Todos / Execução / Teste aceite usuário": filtra os cards pelo State da Task/Bug.
+  const [visaoEstado, setVisaoEstado] = useState<VisaoEstadoTask>("todos");
   const [comprimidos, setComprimidos] = useState<Record<string, boolean>>({});
 
   // Datas das sprints + roster de devs (papel) — complementos, falha silenciosa.
@@ -1939,14 +1965,23 @@ function PainelAlocacaoPorSprint({
     };
   }, [produto]);
 
+  // Estado que o card mostra: em "Alocação por sprint" o card é o PBI pai (estado do PBI); em "Demandas" é a Task/Bug.
+  // Em "Demandas" vale também o estado da própria Task/Bug (as Tasks herdam o do PBI, ver PainelDemandaLinha).
+  const cardNoEstado = (t: TaskAlocada, casa: (estado: string) => boolean) => {
+    const estadoPai = t.pbiPaiId != null ? pais[t.pbiPaiId]?.estado ?? "" : "";
+    return casa(estadoPai) || (modo === "demandas" && casa(t.state));
+  };
+
   const tarefasFiltradas = useMemo(
     () =>
       tarefas.filter(
         (t) =>
           (!areasFiltro.length || areasFiltro.includes(t.areaPath)) &&
-          (!clientesFiltro.length || clientesFiltro.includes(clienteDaTarefa(t, pais)))
+          (!clientesFiltro.length || clientesFiltro.includes(clienteDaTarefa(t, pais))) &&
+          (visaoEstado === "todos" ||
+            cardNoEstado(t, visaoEstado === "execucao" ? emExecucao : emTesteAceiteUsuario))
       ),
-    [tarefas, areasFiltro, clientesFiltro, pais]
+    [tarefas, areasFiltro, clientesFiltro, pais, visaoEstado, modo]
   );
 
   // Colunas: todas as sprints com Task/Bug (mesmo com filtro de Área, pra grade não "pular").
@@ -1993,7 +2028,7 @@ function PainelAlocacaoPorSprint({
       if (!porChave.has(chave)) porChave.set(chave, { chave, nome, qa: ehPapelQA(papelPorNome.get(chave)) });
     };
     for (const t of tarefasFiltradas) adicionar(t.responsavel?.nome ?? SEM_RESPONSAVEL);
-    if (!areasFiltro.length && !clientesFiltro.length) for (const d of roster) adicionar(d.nome);
+    if (!areasFiltro.length && !clientesFiltro.length && visaoEstado === "todos") for (const d of roster) adicionar(d.nome);
     const semResp = normalizarNomePessoa(SEM_RESPONSAVEL);
     const ordenar = (a: { nome: string }, b: { nome: string }) => a.nome.localeCompare(b.nome, "pt-BR");
     // Filtro de Função (Dev/QA): vazio = todas. "Sem responsável" não tem função, então some
@@ -2008,7 +2043,7 @@ function PainelAlocacaoPorSprint({
       ...todos.filter((l) => l.qa && l.chave !== semResp).sort(ordenar),
       ...todos.filter((l) => l.chave === semResp),
     ];
-  }, [tarefasFiltradas, roster, areasFiltro, clientesFiltro, funcoesFiltro]);
+  }, [tarefasFiltradas, roster, areasFiltro, clientesFiltro, funcoesFiltro, visaoEstado]);
 
   const opcoesRecurso = useMemo(() => linhasBase.map((l) => l.nome), [linhasBase]);
   const linhas = useMemo(
@@ -2071,6 +2106,16 @@ function PainelAlocacaoPorSprint({
       {slotFiltros &&
         createPortal(
           <>
+            <AbasVisao
+              rotulo="Estado da Task"
+              opcoes={[
+                { valor: "execucao" as VisaoEstadoTask, label: "Execução" },
+                { valor: "teste" as VisaoEstadoTask, label: "Teste aceite usuário" },
+                { valor: "todos" as VisaoEstadoTask, label: "Todos" },
+              ]}
+              valor={visaoEstado}
+              onChange={setVisaoEstado}
+            />
             {modo === "alocacao" && (
               <MultiSelectFiltro
                 rotuloTodos="Todas as funções"
@@ -2291,6 +2336,8 @@ function PainelDemandaLinha({
 }) {
   const pai = linha.pbiId != null ? pais[linha.pbiId] : undefined;
   const titulo = linha.pbiId == null ? "Sem PBI pai" : pai ? pai.titulo : carregandoPais ? "…" : "(título indisponível)";
+  // O estado "Teste Aceite Usuário" é do PBI: as Tasks/Bugs dele herdam a sinalização.
+  const paiEmTeste = emTesteAceiteUsuario(pai?.estado ?? "");
   return (
     <>
       <div
@@ -2312,7 +2359,10 @@ function PainelDemandaLinha({
         {(pai?.estado || pai?.cliente) && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 4, paddingLeft: 18 }}>
             {pai?.estado && (
-              <span className="kmm-chip" style={{ padding: "1px 8px", fontSize: 10.5 }}>
+              <span
+                className="kmm-chip"
+                style={{ padding: "1px 8px", fontSize: 10.5, ...(paiEmTeste ? { background: "#201D1A", color: "#fff", borderColor: "transparent" } : {}) }}
+              >
                 {pai.estado}
               </span>
             )}
@@ -2348,8 +2398,19 @@ function PainelDemandaLinha({
                 <div
                   key={t.id}
                   title={dica}
-                  style={{ background: cor.bg, color: cor.fg, borderRadius: 6, padding: "6px 8px", marginBottom: 4, fontSize: 11.5, lineHeight: 1.35 }}
+                  style={{
+                    position: "relative",
+                    background: cor.bg,
+                    color: cor.fg,
+                    borderRadius: 6,
+                    padding: "6px 8px",
+                    marginBottom: 8,
+                    fontSize: 11.5,
+                    lineHeight: 1.35,
+                    ...(paiEmTeste || emTesteAceiteUsuario(t.state) ? { boxShadow: MOLDURA_TESTE_ACEITE } : {}),
+                  }}
                 >
+                  {(paiEmTeste || emTesteAceiteUsuario(t.state)) && <SeloTesteAceite />}
                   <div style={{ fontWeight: 700, fontSize: 12, display: "-webkit-box", WebkitLineClamp: comprimido ? 1 : 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
                     {rotulo}
                   </div>
@@ -2461,8 +2522,19 @@ function PainelAlocacaoLinha({
                 <div
                   key={`${g.areaPath}|${g.pbiPaiId ?? 0}`}
                   title={dica}
-                  style={{ background: cor.bg, color: cor.fg, borderRadius: 6, padding: "6px 8px", marginBottom: 4, fontSize: 11.5, lineHeight: 1.35 }}
+                  style={{
+                    position: "relative",
+                    background: cor.bg,
+                    color: cor.fg,
+                    borderRadius: 6,
+                    padding: "6px 8px",
+                    marginBottom: 8,
+                    fontSize: 11.5,
+                    lineHeight: 1.35,
+                    ...(emTesteAceiteUsuario(pai?.estado ?? "") ? { boxShadow: MOLDURA_TESTE_ACEITE } : {}),
+                  }}
                 >
+                  {emTesteAceiteUsuario(pai?.estado ?? "") && <SeloTesteAceite />}
                   <div
                     style={{ fontWeight: 700, fontSize: 12, marginBottom: comprimido ? 0 : 3, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}
                   >

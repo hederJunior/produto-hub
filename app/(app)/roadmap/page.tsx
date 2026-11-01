@@ -248,7 +248,7 @@ export default function RoadmapPage() {
   // Filtro de CLIENTE das 3 telas de Sprints (pedido por Heder em 2026-10-15). O cliente é o
   // Custom.Cliente do PBI pai da Task/Bug (não existe na Task), então os PBIs pai são buscados aqui,
   // uma vez, e compartilhados pelas três telas. Vazio = todos os clientes.
-  const [paisSprints, setPaisSprints] = useState<Record<number, { titulo: string; tipo: string; estado: string; cliente?: string }>>({});
+  const [paisSprints, setPaisSprints] = useState<Record<number, { titulo: string; tipo: string; estado: string; etapa?: string; cliente?: string }>>({});
   const [carregandoPaisSprints, setCarregandoPaisSprints] = useState(false);
   const [clientesSprints, setClientesSprints] = useState<string[]>([]);
   const [slotFiltros, setSlotFiltros] = useState<HTMLElement | null>(null);
@@ -1928,7 +1928,7 @@ function PainelAlocacaoPorSprint({
   produto: string;
   areasDisponiveis: string[];
   /** PBIs pai (título, estado, cliente) — buscados pela página, compartilhados com as outras telas. */
-  pais: Record<number, { titulo: string; tipo: string; estado: string; cliente?: string }>;
+  pais: Record<number, { titulo: string; tipo: string; estado: string; etapa?: string; cliente?: string }>;
   carregandoPais: boolean;
   /** Filtro de cliente da página (vazio = todos). */
   clientesFiltro: string[];
@@ -2346,7 +2346,7 @@ function PainelDemandaLinha({
   linha: { chave: string; pbiId: number | null };
   sprints: string[];
   celulas: Map<string, TaskAlocada[]>;
-  pais: Record<number, { titulo: string; tipo: string; estado: string; cliente?: string }>;
+  pais: Record<number, { titulo: string; tipo: string; estado: string; etapa?: string; cliente?: string }>;
   carregandoPais: boolean;
   borda: string;
   comprimido: boolean;
@@ -2374,7 +2374,7 @@ function PainelDemandaLinha({
             {titulo}
           </span>
         </button>
-        {(pai?.estado || pai?.cliente) && (
+        {(pai?.estado || pai?.etapa || pai?.cliente) && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 4, paddingLeft: 18 }}>
             {pai?.estado && (
               <span
@@ -2382,6 +2382,11 @@ function PainelDemandaLinha({
                 style={{ padding: "1px 8px", fontSize: 10.5, ...(sinalPai ? { background: "#201D1A", color: "#fff", borderColor: "transparent" } : {}) }}
               >
                 {pai.estado}
+              </span>
+            )}
+            {pai?.etapa && (
+              <span className="kmm-chip" style={{ padding: "1px 8px", fontSize: 10.5 }}>
+                {pai.etapa}
               </span>
             )}
             {pai?.cliente && (

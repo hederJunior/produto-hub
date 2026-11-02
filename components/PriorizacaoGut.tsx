@@ -35,7 +35,7 @@ const SEM_PONTUACAO = "Sem pontuação";
 const NOTAS = Array.from({ length: NOTA_MAX - NOTA_MIN + 1 }, (_, i) => NOTA_MIN + i);
 
 // Cores do cabeçalho por origem da coluna (legenda da planilha: cinza = Azure, amarelo = squad, azul = calculada).
-const COR_AZURE = { head: C.dark, cel: "#F3F4F6" };
+const COR_AZURE = { head: C.dark, cel: "#FFFFFF" };
 const COR_SQUAD = { head: "#B7791F", cel: "#FFFBEA" };
 const COR_CALC = { head: C.blue, cel: "#EAF2FB" };
 

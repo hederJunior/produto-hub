@@ -3,15 +3,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { BarChart3, Calendar, CheckCheck, CalendarRange, ChevronDown, ChevronRight, ChevronUp, Clock, Download, Eraser, Flag, Gauge, ListTodo, Map as MapIcon, Maximize2, Rocket, UserCheck, Users, X } from "lucide-react";
+import { BarChart3, Calendar, CheckCheck, CalendarRange, ChevronDown, ChevronRight, ChevronUp, Clock, Download, Eraser, Flag, Gauge, ListTodo, Map as MapIcon, Maximize2, Rocket, Wrench, UserCheck, Users, X } from "lucide-react";
 import { useProduto } from "@/components/ProdutoContext";
 import { C, COR_BARRA_EPIC, COR_BARRA_FEATURE, corDaArea, corDeAreaTabela, corDeEstadoDevOps, corDeStatus, corDoDev, estadoIndicaConcluido, infoPrioridade } from "@/lib/kmm-theme";
 import { chaveDia, diasEntreChaves, formatarChaveDia } from "@/lib/datas";
 import BacklogEsteirasClientes, { type OrdemBacklog } from "@/components/BacklogEsteirasClientes";
 import PriorizacaoGut from "@/components/PriorizacaoGut";
+import RefinamentoTech from "@/components/RefinamentoTech";
 import AbasVisao from "@/components/AbasVisao";
 import MultiSelectFiltro from "@/components/MultiSelectFiltro";
-import type { ItemBacklog } from "@/lib/backlog";
+import type { ItemBacklog, ItemRefinamento } from "@/lib/backlog";
 import PainelCapacidade from "@/components/PainelCapacidade";
 import PageHeader from "@/components/PageHeader";
 
@@ -221,13 +222,17 @@ export default function RoadmapPage() {
   const [painelEsforcoAberto, setPainelEsforcoAberto] = useState(false);
   const [painelCapacidadeAberto, setPainelCapacidadeAberto] = useState(false);
 
-  // Backlog > Esteiras Clientes (pedido por Heder em 2026-10-14). `ordemBacklog` null = ordem por ID.
+  // Backlog > Backlog Carteira, antes "Esteiras Clientes" (pedido por Heder em 2026-10-14). `ordemBacklog` null = ordem por ID.
   const [backlogItens, setBacklogItens] = useState<ItemBacklog[]>([]);
   const [carregandoBacklog, setCarregandoBacklog] = useState(true);
   const [erroBacklog, setErroBacklog] = useState<string | null>(null);
   const [ordemBacklog, setOrdemBacklog] = useState<OrdemBacklog | null>(null);
-  // Sub-visões do Backlog: Esteiras Clientes | Priorização GUT (débitos técnicos da área SWAT, 2026-10-19).
-  const [visaoBacklog, setVisaoBacklog] = useState<"esteiras" | "gut">("esteiras");
+  // Sub-visões do Backlog: Backlog Carteira | Priorização SWAT | Refinamento Tech (débitos técnicos da área SWAT, 2026-10-19).
+  const [visaoBacklog, setVisaoBacklog] = useState<"esteiras" | "gut" | "refinamento">("esteiras");
+  // Backlog > Refinamento Tech (pedido por Heder em 2026-11-02): carregado só quando a sub-aba é aberta.
+  const [refinamentoItens, setRefinamentoItens] = useState<ItemRefinamento[]>([]);
+  const [carregandoRefinamento, setCarregandoRefinamento] = useState(false);
+  const [erroRefinamento, setErroRefinamento] = useState<string | null>(null);
 
   const [demandasComite, setDemandasComite] = useState<DemandaComite[]>([]);
   const [carregandoComites, setCarregandoComites] = useState(true);
@@ -326,6 +331,25 @@ export default function RoadmapPage() {
 
   // Trocar de produto muda as Tasks: a seleção de clientes anterior não vale mais.
   useEffect(() => setClientesSprints([]), [produto]);
+
+  useEffect(() => {
+    if (visao !== "backlog" || visaoBacklog !== "refinamento") return;
+    let cancelado = false;
+    setCarregandoRefinamento(true);
+    setErroRefinamento(null);
+    fetch(`/api/roadmap/refinamento?produto=${produto}`, { cache: "no-store" })
+      .then((res) => res.json())
+      .then((j) => {
+        if (cancelado) return;
+        if (j.erro) setErroRefinamento(j.detalhe ? `${j.erro} (${j.detalhe})` : j.erro);
+        setRefinamentoItens(j.itens ?? []);
+      })
+      .catch(() => !cancelado && setErroRefinamento("Não foi possível carregar o Refinamento Tech do Azure DevOps."))
+      .finally(() => !cancelado && setCarregandoRefinamento(false));
+    return () => {
+      cancelado = true;
+    };
+  }, [produto, visao, visaoBacklog]);
 
   useEffect(() => {
     setCarregandoBacklog(true);
@@ -525,7 +549,7 @@ export default function RoadmapPage() {
       <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 18 }}>
         {visao === "backlog" && (
           <>
-            {/* Visões do Backlog: Esteiras Clientes | Priorização GUT. */}
+            {/* Visões do Backlog: Backlog Carteira | Priorização SWAT | Refinamento Tech. */}
             <div className="kmm-seg">
               <div
                 className={`kmm-seg-item${visaoBacklog === "esteiras" ? " active" : ""}`}
@@ -535,7 +559,7 @@ export default function RoadmapPage() {
                 onClick={() => setVisaoBacklog("esteiras")}
                 onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setVisaoBacklog("esteiras")}
               >
-                <Users size={13} /> Esteiras Clientes
+                <Users size={13} /> Backlog Carteira
               </div>
               <div
                 className={`kmm-seg-item${visaoBacklog === "gut" ? " active" : ""}`}
@@ -546,6 +570,16 @@ export default function RoadmapPage() {
                 onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setVisaoBacklog("gut")}
               >
                 <Gauge size={13} /> Priorização SWAT
+              </div>
+              <div
+                className={`kmm-seg-item${visaoBacklog === "refinamento" ? " active" : ""}`}
+                role="button"
+                tabIndex={0}
+                style={{ display: "flex", alignItems: "center", gap: 6 }}
+                onClick={() => setVisaoBacklog("refinamento")}
+                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setVisaoBacklog("refinamento")}
+              >
+                <Wrench size={13} /> Refinamento Tech
               </div>
             </div>
             {visaoBacklog === "esteiras" && (
@@ -743,6 +777,23 @@ export default function RoadmapPage() {
       <div>
         {visao === "backlog" && visaoBacklog === "gut" ? (
           <PriorizacaoGut />
+        ) : visao === "backlog" && visaoBacklog === "refinamento" ? (
+          <>
+            {carregandoRefinamento && <p style={{ color: C.muted }}>Carregando Refinamento Tech do Azure DevOps…</p>}
+            {erroRefinamento && (
+              <div className="kmm-card" style={{ color: C.red, fontSize: 13 }}>
+                {erroRefinamento}
+              </div>
+            )}
+            {!carregandoRefinamento && !erroRefinamento && refinamentoItens.length === 0 && (
+              <p style={{ color: C.muted }}>
+                Nenhum PBI em Backlog, etapa Análise, com a tag &ldquo;Pronto para refinamento tech&rdquo; para o produto selecionado.
+              </p>
+            )}
+            {!carregandoRefinamento && !erroRefinamento && refinamentoItens.length > 0 && (
+              <RefinamentoTech itens={refinamentoItens} hoje={agora ?? new Date()} />
+            )}
+          </>
         ) : visao === "backlog" ? (
           <>
             {carregandoBacklog && <p style={{ color: C.muted }}>Carregando backlog do Azure DevOps…</p>}
@@ -753,7 +804,7 @@ export default function RoadmapPage() {
             )}
             {!carregandoBacklog && !erroBacklog && backlogItens.length === 0 && (
               <p style={{ color: C.muted }}>
-                Nenhum PBI em Backlog (State e Etapa) nas squads de Esteiras Clientes para o produto selecionado. Essas squads existem apenas no KMM5.
+                Nenhum PBI em Backlog (State e Etapa) nas squads de Backlog Carteira para o produto selecionado. Essas squads existem apenas no KMM5.
               </p>
             )}
             {!carregandoBacklog && !erroBacklog && backlogItens.length > 0 && (
@@ -902,7 +953,7 @@ function VisaoFiltro({ visao, setVisao }: { visao: Visao; setVisao: (v: Visao) =
       valor={visao}
       onChange={setVisao}
       opcoes={[
-        { valor: "backlog", label: "Backlog", icone: <ListTodo size={15} /> },
+        { valor: "backlog", label: "Upstream", icone: <ListTodo size={15} /> },
         { valor: "comites", label: "Comitê", icone: <Users size={15} /> },
         { valor: "sprints", label: "Sprints", icone: <CalendarRange size={15} /> },
         { valor: "roadmap", label: "Road Map", icone: <MapIcon size={15} /> },
@@ -2475,7 +2526,7 @@ function PainelAlocacaoLinha({
   linha: { chave: string; nome: string; qa: boolean };
   sprints: string[];
   celulas: Map<string, TaskAlocada[]>;
-  pais: Record<number, { titulo: string; tipo: string; estado: string }>;
+  pais: Record<number, { titulo: string; tipo: string; estado: string; etapa?: string }>;
   carregandoPais: boolean;
   borda: string;
   comprimido: boolean;
@@ -2570,6 +2621,13 @@ function PainelAlocacaoLinha({
                       style={{ display: "inline-block", marginTop: 3, marginBottom: comprimido ? 0 : 3, padding: "1px 7px", borderRadius: 999, background: "rgba(255,255,255,.92)", color: C.text, fontSize: 10.5, fontWeight: 700 }}
                     >
                       {pai.estado}
+                    </span>
+                  )}
+                  {pai?.etapa && (
+                    <span
+                      style={{ display: "inline-block", marginTop: 3, marginBottom: comprimido ? 0 : 3, marginLeft: 4, padding: "1px 7px", borderRadius: 999, background: "rgba(255,255,255,.92)", color: C.text, fontSize: 10.5, fontWeight: 700 }}
+                    >
+                      {pai.etapa}
                     </span>
                   )}
                   {!comprimido && g.itens.map((t) => (

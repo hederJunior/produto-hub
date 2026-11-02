@@ -39,3 +39,25 @@ export function nomeDaSquad(areaPath: string): string {
 export function nomeCurtoDaSquad(areaPath: string): string {
   return nomeDaSquad(areaPath).replace(/^TMS\s*-\s*/, "");
 }
+
+/**
+ * Backlog > "Refinamento Tech" (pedido por Heder em 2026-11-02): PBIs com State = "Backlog", Etapa =
+ * "Análise" e a tag abaixo, de qualquer squad (agrupados por Area Path na tela).
+ */
+export const TAG_REFINAMENTO_TECH = "Pronto para refinamento tech";
+
+/** Aging (dias desde a Data de Comitê) acima disto ganha o indicador vermelho. */
+export const DIAS_ALERTA_REFINAMENTO = 15;
+
+export type ItemRefinamento = {
+  id: number;
+  titulo: string;
+  areaPath: string;
+  cliente: string;
+  po: string;
+  classificacao: string;
+  /** System.CreatedDate (ISO). */
+  createdDate: string;
+  /** Data de Comitê (ISO) ou null. */
+  dataComite: string | null;
+};

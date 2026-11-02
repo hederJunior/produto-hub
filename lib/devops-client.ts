@@ -18,7 +18,7 @@ import {
   type TaskDoPbi,
 } from "./alocacao-pbi";
 import { estadoIndicaConcluido } from "./kmm-theme";
-import { ESTEIRAS_CLIENTES_SQUADS, type ItemBacklog } from "./backlog";
+import { ESTEIRAS_CLIENTES_SQUADS, TAG_REFINAMENTO_TECH, type ItemBacklog, type ItemRefinamento } from "./backlog";
 import { DEVOPS_PROJETOS, type Produto } from "./devops-projetos";
 import type { ItemGut } from "./priorizacao-gut";
 import { ESTADOS_GESTAO_CLIENTES, htmlParaTexto, norm, type PbiGestaoCliente, type UltimoComentario } from "./gestao-clientes";
@@ -941,6 +941,58 @@ export async function getBacklogEsteirasClientes(projetos: string[]): Promise<It
       prioridade: typeof prioridade === "number" ? prioridade : null,
     };
   });
+}
+
+/**
+ * PBIs de Backlog > "Refinamento Tech": State = "Backlog", Etapa = "Análise" e tag
+ * TAG_REFINAMENTO_TECH, de todas as áreas dos projetos informados (a tela agrupa por Area Path).
+ */
+export async function getRefinamentoTech(projetos: string[]): Promise<ItemRefinamento[]> {
+  const { org, pat } = getConfig();
+
+  const porProjeto = await Promise.all(
+    projetos.map(async (project) => {
+      const wiql = `
+        SELECT [System.Id]
+        FROM WorkItems
+        WHERE [System.TeamProject] = '${aspasWiql(project)}'
+          AND [System.WorkItemType] = 'Product Backlog Item'
+          AND [System.State] = 'Backlog'
+          AND [Custom.Etapa] = 'Análise'
+          AND [System.Tags] CONTAINS '${aspasWiql(TAG_REFINAMENTO_TECH)}'
+        ORDER BY [System.Id]
+      `;
+      const wiqlRes = await fetch(`https://dev.azure.com/${org}/${encodeURIComponent(project)}/_apis/wit/wiql?api-version=${API_VERSION}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(pat) },
+        body: JSON.stringify({ query: wiql }),
+      });
+      if (!wiqlRes.ok) throw new Error(`Falha na consulta WIQL do Refinamento Tech (${project}) (${wiqlRes.status}): ${await wiqlRes.text()}`);
+      const ids = ((await wiqlRes.json()) as { workItems: { id: number }[] }).workItems.map((w) => w.id);
+      if (!ids.length) return [];
+
+      return buscarLoteCampos(org, pat, ids, [
+        "System.Title",
+        "System.AreaPath",
+        "System.CreatedDate",
+        "Custom.Cliente",
+        "Custom.PO",
+        CAMPO_CLASSIFICACAO,
+        CAMPO_DATA_COMITE,
+      ]);
+    })
+  );
+
+  return porProjeto.flat().map((w) => ({
+    id: w.id,
+    titulo: String(w.fields["System.Title"] ?? `Item ${w.id}`),
+    areaPath: String(w.fields["System.AreaPath"] ?? ""),
+    cliente: textoDeCampo(w.fields["Custom.Cliente"]),
+    po: textoDeCampo(w.fields["Custom.PO"]),
+    classificacao: textoDeCampo(w.fields[CAMPO_CLASSIFICACAO]),
+    createdDate: String(w.fields["System.CreatedDate"] ?? ""),
+    dataComite: (w.fields[CAMPO_DATA_COMITE] as string) ?? null,
+  }));
 }
 
 // ===== Alocar PBI (Planejamento de capacidade, pedido por Heder em 2026-10-14) — ÚNICA parte deste

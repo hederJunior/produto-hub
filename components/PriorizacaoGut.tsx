@@ -35,7 +35,7 @@ const SEM_PONTUACAO = "Sem pontuação";
 const NOTAS = Array.from({ length: NOTA_MAX - NOTA_MIN + 1 }, (_, i) => NOTA_MIN + i);
 
 // Cores do cabeçalho por origem da coluna (legenda da planilha: cinza = Azure, amarelo = squad, azul = calculada).
-const COR_AZURE = { head: C.dark, cel: "#F6F5F3" };
+const COR_AZURE = { head: C.dark, cel: "#F3F4F6" };
 const COR_SQUAD = { head: "#B7791F", cel: "#FFFBEA" };
 const COR_CALC = { head: C.blue, cel: "#EAF2FB" };
 
@@ -248,14 +248,14 @@ export default function PriorizacaoGut() {
 
           <div className="kmm-card" style={{ padding: 0, overflow: "hidden" }}>
             <div style={{ overflow: "auto", maxHeight: "68vh" }}>
-              <table style={{ borderCollapse: "collapse", width: COLUNAS.reduce((s, c) => s + c.largura, 0), tableLayout: "fixed" }}>
+              <table style={{ borderCollapse: "separate", borderSpacing: 0, width: COLUNAS.reduce((s, c) => s + c.largura, 0), tableLayout: "fixed" }}>
                 <colgroup>
                   {COLUNAS.map((c) => <col key={c.titulo} style={{ width: c.largura }} />)}
                 </colgroup>
                 <thead>
                   <tr>
                     {COLUNAS.map((c) => (
-                      <th key={c.titulo} style={{ position: "sticky", top: 0, zIndex: 2, background: c.origem.head, color: "#fff", padding: "10px 10px", fontSize: 12, fontWeight: 700, textAlign: "left" }}>
+                      <th key={c.titulo} style={{ position: "sticky", top: 0, zIndex: 2, background: c.origem.head, color: "#fff", padding: "10px 10px", fontSize: 12, fontWeight: 700, textAlign: "left", border: "2px solid #fff", borderRadius: 4 }}>
                         {c.titulo}
                       </th>
                     ))}
@@ -270,7 +270,7 @@ export default function PriorizacaoGut() {
                       const pontos = pontuacaoGut(a);
                       const faixa = faixaDaPontuacao(pontos);
                       const est = estadoSalvar[i.id];
-                      const td = (bg: string) => ({ padding: "7px 10px", fontSize: 13, background: bg, borderBottom: `1px solid ${C.border}`, verticalAlign: "top" as const });
+                      const td = (bg: string) => ({ padding: "7px 10px", fontSize: 13, background: bg, border: "2px solid #fff", borderRadius: 4, verticalAlign: "top" as const });
                       const nota = (campo: "gravidade" | "urgencia" | "tendencia") => (
                         <td key={campo} style={td(COR_SQUAD.cel)}>
                           {podeEditar ? (
@@ -290,7 +290,7 @@ export default function PriorizacaoGut() {
                       );
                       return (
                         <tr key={i.id}>
-                          <td style={td(COR_AZURE.cel)}>
+                          <td style={{ ...td(COR_AZURE.cel), borderLeft: `6px solid ${C.blue}` }}>
                             <a href={`https://dev.azure.com/${ORG_DEVOPS}/KMM5/_workitems/edit/${i.id}`} target="_blank" rel="noopener noreferrer" style={{ color: C.blue, fontWeight: 600, textDecoration: "none" }}>
                               {i.id}
                             </a>

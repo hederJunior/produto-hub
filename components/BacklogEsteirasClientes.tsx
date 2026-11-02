@@ -5,6 +5,7 @@ import { Bar, BarChart, Cell, LabelList, ResponsiveContainer, Tooltip, XAxis, YA
 import { ChevronDown } from "lucide-react";
 import { C, corDeAreaTabela, infoPrioridade } from "@/lib/kmm-theme";
 import { chaveDia, diasEntreChaves, formatarChaveDia } from "@/lib/datas";
+import { listaCabecalho, listaCelula, listaLinha, listaTituloGrupo } from "@/lib/kmm-lista";
 import { DIAS_ALERTA_BACKLOG, ESTEIRAS_CLIENTES_SQUADS, nomeCurtoDaSquad, nomeDaSquad, type ItemBacklog } from "@/lib/backlog";
 
 const ORG_DEVOPS = "kmmbynstech";
@@ -53,8 +54,6 @@ export default function BacklogEsteirasClientes({ itens, ordem, hoje }: { itens:
 
   const dadosGrafico = grupos.map((g) => ({ nome: nomeCurtoDaSquad(g.squad), quantidade: g.itens.length, cor: g.cor.bg }));
 
-  const celula: React.CSSProperties = { padding: "10px 10px", fontSize: 12.5, display: "flex", alignItems: "center", minWidth: 0, color: C.text };
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <div className="kmm-card" style={{ padding: "16px 18px 8px" }}>
@@ -82,100 +81,83 @@ export default function BacklogEsteirasClientes({ itens, ordem, hoje }: { itens:
       </div>
 
       <div style={{ overflowX: "auto" }}>
-        <div style={{ minWidth: 1180 }}>
-          <div style={{ display: "grid", gridTemplateColumns: COLUNAS, padding: "10px 0", marginBottom: 6, fontSize: 11.5, fontWeight: 600, color: "#7A7680", background: "#F5F4F8", borderRadius: 10 }}>
-            {["ID", "Título", "Cliente", "PO", "Created Date", "Abertura Produto", "Classificação", "Feature", "Priority", ""].map((h, i) => (
-              <div key={`${h}-${i}`} style={{ padding: "0 10px" }}>
-                {h}
-              </div>
-            ))}
-          </div>
-
+        <div style={{ minWidth: 1180, display: "flex", flexDirection: "column", gap: 28 }}>
           {grupos.map((g) => {
             const aberto = !recolhidos[g.squad];
             return (
-              <section key={g.squad} style={{ marginBottom: 6 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 0 8px", borderTop: `1px solid ${C.border}` }}>
+              <section key={g.squad}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 0 10px" }}>
                   <button
                     type="button"
                     onClick={() => setRecolhidos((r) => ({ ...r, [g.squad]: aberto }))}
                     aria-expanded={aberto}
                     title={aberto ? "Comprimir" : "Expandir"}
-                    style={{ background: "none", border: "none", cursor: "pointer", color: C.muted, display: "flex", padding: 2 }}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: g.cor.bg, display: "flex", padding: 2 }}
                   >
-                    <ChevronDown size={16} style={{ transform: aberto ? "none" : "rotate(-90deg)", transition: "transform .15s" }} />
+                    <ChevronDown size={18} style={{ transform: aberto ? "none" : "rotate(-90deg)", transition: "transform .15s" }} />
                   </button>
-                  <span
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 7,
-                      background: "#F5F4F8",
-                      color: C.text,
-                      fontFamily: "Sora,sans-serif",
-                      fontWeight: 600,
-                      fontSize: 12.5,
-                      padding: "4px 12px",
-                      borderRadius: 999,
-                    }}
-                  >
-                    <i style={{ width: 8, height: 8, borderRadius: "50%", background: g.cor.bg }} />
-                    {nomeCurtoDaSquad(g.squad)}
-                  </span>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: C.muted, fontVariantNumeric: "tabular-nums" }}>{g.itens.length}</span>
+                  <span style={listaTituloGrupo(g.cor.bg)}>{nomeCurtoDaSquad(g.squad)}</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: C.muted, fontVariantNumeric: "tabular-nums" }}>{g.itens.length}</span>
                 </div>
 
-                {aberto && g.itens.length === 0 && <div style={{ padding: "4px 10px 10px 34px", fontSize: 12.5, color: C.muted }}>Nenhum item em Backlog.</div>}
+                {aberto && g.itens.length === 0 && <div style={{ padding: "0 10px 4px 34px", fontSize: 12.5, color: C.muted }}>Nenhum item em Backlog.</div>}
 
-                {aberto &&
-                  g.itens.map((i) => {
-                    const dias = i.createdDate ? Math.max(0, diasEntreChaves(chaveDia(i.createdDate), hojeChave)) : null;
-                    const atrasado = dias != null && dias > DIAS_ALERTA_BACKLOG;
-                    const prioridade = infoPrioridade(i.prioridade);
-                    return (
-                      <div key={i.id} style={{ display: "grid", gridTemplateColumns: COLUNAS, borderTop: `1px solid ${C.border}`, alignItems: "center" }}>
-                        <div style={{ ...celula, fontVariantNumeric: "tabular-nums" }}>
-                          <a
-                            href={`https://dev.azure.com/${ORG_DEVOPS}/${encodeURIComponent(i.areaPath.split("\\")[0])}/_workitems/edit/${i.id}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            title="Abrir o PBI no Azure DevOps"
-                            style={{ color: C.blue, textDecoration: "none", fontWeight: 500 }}
-                          >
-                            {i.id}
-                          </a>
+                {aberto && g.itens.length > 0 && (
+                  <>
+                    <div style={{ ...listaLinha(COLUNAS), marginBottom: 6, paddingLeft: 6 }}>
+                      {["ID", "Título", "Cliente", "PO", "Created Date", "Abertura Produto", "Classificação", "Feature", "Priority", ""].map((h, i) => (
+                        <div key={`${h}-${i}`} style={{ ...listaCabecalho, textAlign: i < 2 ? "left" : "center" }}>
+                          {h}
                         </div>
-                        <div style={{ ...celula, fontWeight: 600 }} title={i.titulo}>
-                          <span style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{i.titulo}</span>
+                      ))}
+                    </div>
+                    {g.itens.map((i) => {
+                      const dias = i.createdDate ? Math.max(0, diasEntreChaves(chaveDia(i.createdDate), hojeChave)) : null;
+                      const atrasado = dias != null && dias > DIAS_ALERTA_BACKLOG;
+                      const prioridade = infoPrioridade(i.prioridade);
+                      const c = (centro = true, primeira = false): React.CSSProperties => ({ ...listaCelula({ cor: g.cor.bg, primeira, centro }), color: C.text });
+                      return (
+                        <div key={i.id} style={listaLinha(COLUNAS)}>
+                          <div style={{ ...c(false, true), fontVariantNumeric: "tabular-nums" }}>
+                            <a
+                              href={`https://dev.azure.com/${ORG_DEVOPS}/${encodeURIComponent(i.areaPath.split("\\")[0])}/_workitems/edit/${i.id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title="Abrir o PBI no Azure DevOps"
+                              style={{ color: C.blue, textDecoration: "none", fontWeight: 500 }}
+                            >
+                              {i.id}
+                            </a>
+                          </div>
+                          <div style={{ ...c(false), fontWeight: 600 }} title={i.titulo}>
+                            <span style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{i.titulo}</span>
+                          </div>
+                          <div style={c()}>{i.cliente || "—"}</div>
+                          <div style={{ ...c(), color: C.muted }}>{i.po || "—"}</div>
+                          <div style={{ ...c(), fontVariantNumeric: "tabular-nums" }} title={dias != null ? `${dias} dias em aberto` : undefined}>
+                            {i.createdDate ? formatarChaveDia(chaveDia(i.createdDate)) : "—"}
+                          </div>
+                          <div style={{ ...c(), fontVariantNumeric: "tabular-nums" }}>
+                            {i.dataAberturaProduto ? formatarChaveDia(i.dataAberturaProduto.slice(0, 10)) : "—"}
+                          </div>
+                          <div style={c()}>{i.classificacao || "—"}</div>
+                          <div style={c()}>{i.feature || "—"}</div>
+                          <div style={{ ...c(), padding: 0, background: prioridade.bg, color: prioridade.fg, fontWeight: 600, whiteSpace: "nowrap" }}>{prioridade.label}</div>
+                          <div style={{ ...c(), padding: "10px 4px" }}>
+                            {atrasado && (
+                              <span
+                                role="img"
+                                aria-label={`Em aberto há ${dias} dias`}
+                                title={`Em aberto há ${dias} dias (mais de ${DIAS_ALERTA_BACKLOG})`}
+                                style={{ width: 12, height: 12, borderRadius: "50%", background: C.red, boxShadow: "0 0 0 3px #FBE7E4", display: "inline-block" }}
+                              />
+                            )}
+                          </div>
                         </div>
-                        <div style={celula}>{i.cliente || "—"}</div>
-                        <div style={{ ...celula, color: C.muted }}>{i.po || "—"}</div>
-                        <div style={{ ...celula, fontVariantNumeric: "tabular-nums" }} title={dias != null ? `${dias} dias em aberto` : undefined}>
-                          {i.createdDate ? formatarChaveDia(chaveDia(i.createdDate)) : "—"}
-                        </div>
-                        <div style={{ ...celula, fontVariantNumeric: "tabular-nums" }}>
-                          {i.dataAberturaProduto ? formatarChaveDia(i.dataAberturaProduto.slice(0, 10)) : "—"}
-                        </div>
-                        <div style={celula}>{i.classificacao || "—"}</div>
-                        <div style={celula}>{i.feature || "—"}</div>
-                        <div style={celula}>
-                          <span className="kmm-chip" style={{ background: prioridade.bg, color: prioridade.fg, borderColor: "transparent", fontSize: 11.5, whiteSpace: "nowrap" }}>
-                            {prioridade.label}
-                          </span>
-                        </div>
-                        <div style={{ ...celula, justifyContent: "center", padding: "10px 4px" }}>
-                          {atrasado && (
-                            <span
-                              role="img"
-                              aria-label={`Em aberto há ${dias} dias`}
-                              title={`Em aberto há ${dias} dias (mais de ${DIAS_ALERTA_BACKLOG})`}
-                              style={{ width: 12, height: 12, borderRadius: "50%", background: C.red, boxShadow: "0 0 0 3px #FBE7E4", display: "inline-block" }}
-                            />
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </>
+                )}
               </section>
             );
           })}

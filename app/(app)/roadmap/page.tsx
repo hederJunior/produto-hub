@@ -3,12 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { BarChart3, Calendar, CheckCheck, CalendarRange, ChevronDown, ChevronRight, ChevronUp, Clock, Download, Eraser, Flag, Gauge, ListTodo, Map as MapIcon, Maximize2, Rocket, Wrench, UserCheck, Users, X } from "lucide-react";
+import { BarChart3, Calendar, CalendarCheck, CheckCheck, CalendarRange, ChevronDown, ChevronRight, ChevronUp, Clock, Download, Eraser, Flag, Gauge, ListTodo, Map as MapIcon, Maximize2, Rocket, Wrench, UserCheck, Users, X } from "lucide-react";
 import { useProduto } from "@/components/ProdutoContext";
 import { C, COR_BARRA_EPIC, COR_BARRA_FEATURE, corDaArea, corDeAreaTabela, corDeEstadoDevOps, corDeStatus, corDoDev, estadoIndicaConcluido, infoPrioridade } from "@/lib/kmm-theme";
 import { chaveDia, diasEntreChaves, formatarChaveDia } from "@/lib/datas";
 import BacklogEsteirasClientes, { type OrdemBacklog } from "@/components/BacklogEsteirasClientes";
 import PriorizacaoGut from "@/components/PriorizacaoGut";
+import { listaCabecalho, listaCelula, listaLinha, listaTituloGrupo } from "@/lib/kmm-lista";
 import RefinamentoTech from "@/components/RefinamentoTech";
 import AbasVisao from "@/components/AbasVisao";
 import MultiSelectFiltro from "@/components/MultiSelectFiltro";
@@ -183,7 +184,7 @@ function FiltroTrimestre({ selecionados, onChange }: { selecionados: string[]; o
   );
 }
 
-type Visao = "backlog" | "comites" | "sprints" | "roadmap";
+type Visao = "backlog" | "sprints" | "roadmap";
 type ModoSprints = "alocacao" | "demandas" | "lista";
 
 const SEM_CLIENTE = "Sem cliente";
@@ -228,7 +229,7 @@ export default function RoadmapPage() {
   const [erroBacklog, setErroBacklog] = useState<string | null>(null);
   const [ordemBacklog, setOrdemBacklog] = useState<OrdemBacklog | null>(null);
   // Sub-visões do Backlog: Backlog Carteira | Priorização SWAT | Refinamento Tech (débitos técnicos da área SWAT, 2026-10-19).
-  const [visaoBacklog, setVisaoBacklog] = useState<"esteiras" | "gut" | "refinamento">("esteiras");
+  const [visaoBacklog, setVisaoBacklog] = useState<"esteiras" | "gut" | "comites" | "refinamento">("esteiras");
   // Backlog > Refinamento Tech (pedido por Heder em 2026-11-02): carregado só quando a sub-aba é aberta.
   const [refinamentoItens, setRefinamentoItens] = useState<ItemRefinamento[]>([]);
   const [carregandoRefinamento, setCarregandoRefinamento] = useState(false);
@@ -549,7 +550,7 @@ export default function RoadmapPage() {
       <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 18 }}>
         {visao === "backlog" && (
           <>
-            {/* Visões do Backlog: Backlog Carteira | Priorização SWAT | Refinamento Tech. */}
+            {/* Visões do Backlog: Backlog Carteira | Priorização SWAT | Comitê | Refinamento Tech. */}
             <div className="kmm-seg">
               <div
                 className={`kmm-seg-item${visaoBacklog === "esteiras" ? " active" : ""}`}
@@ -572,6 +573,16 @@ export default function RoadmapPage() {
                 <Gauge size={13} /> Priorização SWAT
               </div>
               <div
+                className={`kmm-seg-item${visaoBacklog === "comites" ? " active" : ""}`}
+                role="button"
+                tabIndex={0}
+                style={{ display: "flex", alignItems: "center", gap: 6 }}
+                onClick={() => setVisaoBacklog("comites")}
+                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setVisaoBacklog("comites")}
+              >
+                <CalendarCheck size={13} /> Comitê
+              </div>
+              <div
                 className={`kmm-seg-item${visaoBacklog === "refinamento" ? " active" : ""}`}
                 role="button"
                 tabIndex={0}
@@ -582,6 +593,53 @@ export default function RoadmapPage() {
                 <Wrench size={13} /> Refinamento Tech
               </div>
             </div>
+            {visaoBacklog === "comites" && (
+          <>
+            {/* Data de Comitê: antes um card colapsável próprio acima da lista (estilo "CREATED DATE"
+                do painel de indicadores); agora inline no cabeçalho, junto dos demais filtros
+                (reposicionamento pedido por Heder em 2026-10-10). */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>Data de Comitê</span>
+              <input
+                type="date"
+                className="kmm-input"
+                style={{ width: "auto" }}
+                value={dataInicioComites}
+                onChange={(e) => setDataInicioComites(e.target.value)}
+              />
+              <input
+                type="date"
+                className="kmm-input"
+                style={{ width: "auto" }}
+                value={dataFimComites}
+                onChange={(e) => setDataFimComites(e.target.value)}
+              />
+              {(dataInicioComites || dataFimComites) && (
+                <button
+                  className="kmm-btn"
+                  style={{ padding: 6 }}
+                  title="Limpar período"
+                  onClick={() => { setDataInicioComites(""); setDataFimComites(""); }}
+                >
+                  <Eraser size={13} />
+                </button>
+              )}
+            </div>
+            <MultiSelectFiltro
+              rotuloTodos="Todas as áreas"
+              opcoes={areasDisponiveisComites}
+              selecionados={areasSelecionadasComites}
+              onChange={setAreasSelecionadasComites}
+              formatar={(a) => a.split("\\").pop() || a}
+            />
+            <MultiSelectFiltro
+              rotuloTodos="Todos os clientes"
+              opcoes={clientesDisponiveis}
+              selecionados={clientesSelecionadosComites}
+              onChange={setClientesSelecionadosComites}
+            />
+          </>
+            )}
             {visaoBacklog === "esteiras" && (
             <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, marginLeft: "auto" }}>
               {(
@@ -724,58 +782,31 @@ export default function RoadmapPage() {
             </div>
           </>
         )}
-
-        {visao === "comites" && (
-          <>
-            {/* Data de Comitê: antes um card colapsável próprio acima da lista (estilo "CREATED DATE"
-                do painel de indicadores); agora inline no cabeçalho, junto dos demais filtros
-                (reposicionamento pedido por Heder em 2026-10-10). */}
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>Data de Comitê</span>
-              <input
-                type="date"
-                className="kmm-input"
-                style={{ width: "auto" }}
-                value={dataInicioComites}
-                onChange={(e) => setDataInicioComites(e.target.value)}
-              />
-              <input
-                type="date"
-                className="kmm-input"
-                style={{ width: "auto" }}
-                value={dataFimComites}
-                onChange={(e) => setDataFimComites(e.target.value)}
-              />
-              {(dataInicioComites || dataFimComites) && (
-                <button
-                  className="kmm-btn"
-                  style={{ padding: 6 }}
-                  title="Limpar período"
-                  onClick={() => { setDataInicioComites(""); setDataFimComites(""); }}
-                >
-                  <Eraser size={13} />
-                </button>
-              )}
-            </div>
-            <MultiSelectFiltro
-              rotuloTodos="Todas as áreas"
-              opcoes={areasDisponiveisComites}
-              selecionados={areasSelecionadasComites}
-              onChange={setAreasSelecionadasComites}
-              formatar={(a) => a.split("\\").pop() || a}
-            />
-            <MultiSelectFiltro
-              rotuloTodos="Todos os clientes"
-              opcoes={clientesDisponiveis}
-              selecionados={clientesSelecionadosComites}
-              onChange={setClientesSelecionadosComites}
-            />
-          </>
-        )}
       </div>
 
       <div>
-        {visao === "backlog" && visaoBacklog === "gut" ? (
+        {visao === "backlog" && visaoBacklog === "comites" ? (
+          <>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontFamily: "Sora,sans-serif", fontWeight: 800, fontSize: 20, color: C.text }}>
+                Comitês {produtoLabelFooter}
+              </div>
+              <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+                PBIs em Backlog, na etapa Comitê, agrupados pela Data de Comitê.
+              </div>
+            </div>
+            {carregandoComites && <p style={{ color: C.muted }}>Carregando demandas de comitê do Azure DevOps…</p>}
+            {erroComites && (
+              <div className="kmm-card" style={{ color: C.red, fontSize: 13 }}>
+                {erroComites}
+              </div>
+            )}
+            {!carregandoComites && !erroComites && demandasExibidas.length === 0 && (
+              <p style={{ color: C.muted }}>Nenhum PBI em Backlog na etapa Comitê, com Data de Comitê preenchida, para os filtros selecionados.</p>
+            )}
+            {!carregandoComites && !erroComites && demandasExibidas.length > 0 && <DemandasComiteLista demandas={demandasExibidas} hoje={agora ?? new Date()} />}
+          </>
+        ) : visao === "backlog" && visaoBacklog === "gut" ? (
           <PriorizacaoGut />
         ) : visao === "backlog" && visaoBacklog === "refinamento" ? (
           <>
@@ -903,28 +934,7 @@ export default function RoadmapPage() {
               <SprintsAlocadas tarefas={tarefasExibidas} agruparPor={agruparSprintsPor} />
             )}
           </>
-        ) : (
-          <>
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ fontFamily: "Sora,sans-serif", fontWeight: 800, fontSize: 20, color: C.text }}>
-                Comitês {produtoLabelFooter}
-              </div>
-              <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
-                PBIs em Backlog, na etapa Comitê, agrupados pela Data de Comitê.
-              </div>
-            </div>
-            {carregandoComites && <p style={{ color: C.muted }}>Carregando demandas de comitê do Azure DevOps…</p>}
-            {erroComites && (
-              <div className="kmm-card" style={{ color: C.red, fontSize: 13 }}>
-                {erroComites}
-              </div>
-            )}
-            {!carregandoComites && !erroComites && demandasExibidas.length === 0 && (
-              <p style={{ color: C.muted }}>Nenhum PBI em Backlog na etapa Comitê, com Data de Comitê preenchida, para os filtros selecionados.</p>
-            )}
-            {!carregandoComites && !erroComites && demandasExibidas.length > 0 && <DemandasComiteLista demandas={demandasExibidas} hoje={agora ?? new Date()} />}
-          </>
-        )}
+        ) : null}
       </div>
       </div>
 
@@ -942,7 +952,7 @@ export default function RoadmapPage() {
 }
 
 /**
- * Seletor de SEÇÃO da página (Backlog | Comitê | Sprints | Road Map): mesmo objeto (abas em pílula,
+ * Seletor de SEÇÃO da página (Upstream | Downstream | Road Map): mesmo objeto (abas em pílula,
  * com ícone) usado nas demais telas que trocam de visão — ver components/AbasVisao.tsx. Substitui as
  * abas de pasta (2026-10-14) na normalização visual de 2026-10-18.
  */
@@ -954,8 +964,7 @@ function VisaoFiltro({ visao, setVisao }: { visao: Visao; setVisao: (v: Visao) =
       onChange={setVisao}
       opcoes={[
         { valor: "backlog", label: "Upstream", icone: <ListTodo size={15} /> },
-        { valor: "comites", label: "Comitê", icone: <Users size={15} /> },
-        { valor: "sprints", label: "Sprints", icone: <CalendarRange size={15} /> },
+        { valor: "sprints", label: "Downstream", icone: <CalendarRange size={15} /> },
         { valor: "roadmap", label: "Road Map", icone: <MapIcon size={15} /> },
       ]}
     />
@@ -1771,8 +1780,8 @@ function SprintsAlocadas({
   );
 }
 
-// ponto de status | Título | Cliente | PO | Área | Agging
-const COLUNAS_COMITE = "22px minmax(260px, 1fr) 150px 150px 200px 80px";
+// Título | Cliente | PO | Área | Agging
+const COLUNAS_COMITE = "minmax(260px, 2.6fr) 150px 200px 240px 90px";
 
 const CHAVE_ATRASADOS = "atrasados";
 
@@ -1809,81 +1818,71 @@ function DemandasComiteLista({ demandas, hoje }: { demandas: DemandaComite[]; ho
   }, [demandas, hojeChave]);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
       {secoes.map((secao) => {
         const aberta = !recolhidas[secao.chave];
-        // Tons pastéis (visual suave): vermelho = atrasado, verde = no prazo.
-        const pill = secao.atrasado ? { bg: "#FDF1F0", fg: "#B4392E", dot: "#EF4444" } : { bg: "#EEF8F1", fg: "#1F7A44", dot: "#22A55B" };
+        // Vermelho = atrasado, verde = no prazo (cor do título e da barra lateral das linhas).
+        const cor = secao.atrasado ? "#EF4444" : "#22A55B";
         return (
-          <section key={secao.chave} className="kmm-card" style={{ padding: 0, overflow: "hidden" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px" }}>
-              <button
-                type="button"
-                onClick={() => setRecolhidas((r) => ({ ...r, [secao.chave]: aberta }))}
-                aria-expanded={aberta}
-                title={aberta ? "Comprimir" : "Expandir"}
-                style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 8, border: `1px solid ${C.border}`, background: "#fff", color: C.muted, cursor: "pointer", padding: 0, flexShrink: 0 }}
-              >
-                <ChevronRight size={16} style={{ transform: aberta ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
-              </button>
-              <span
-                style={{ display: "inline-flex", alignItems: "center", gap: 7, fontFamily: "Sora,sans-serif", fontWeight: 600, fontSize: 13.5, padding: "4px 13px", borderRadius: 999, background: pill.bg, color: pill.fg, fontVariantNumeric: "tabular-nums" }}
-              >
-                <i style={{ width: 7, height: 7, borderRadius: "50%", background: pill.dot }} />
-                {secao.rotulo}
-              </span>
-              <span style={{ fontSize: 12, color: C.muted }}>
-                {secao.itens.length} {secao.itens.length === 1 ? "PBI" : "PBIs"}
-              </span>
-            </div>
+          <section key={secao.chave} style={{ overflowX: "auto" }}>
+            <div style={{ minWidth: 960 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 0 10px" }}>
+                <button
+                  type="button"
+                  onClick={() => setRecolhidas((r) => ({ ...r, [secao.chave]: aberta }))}
+                  aria-expanded={aberta}
+                  title={aberta ? "Comprimir" : "Expandir"}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: cor, display: "flex", padding: 2 }}
+                >
+                  <ChevronDown size={18} style={{ transform: aberta ? "none" : "rotate(-90deg)", transition: "transform .15s" }} />
+                </button>
+                <span style={listaTituloGrupo(cor)}>{secao.rotulo}</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: C.muted, fontVariantNumeric: "tabular-nums" }}>
+                  {secao.itens.length} {secao.itens.length === 1 ? "PBI" : "PBIs"}
+                </span>
+              </div>
 
-            {aberta && (
-              <div className="kmm-rolagem" style={{ overflow: "auto", maxHeight: "min(460px, calc(100vh - 280px))", borderTop: `1px solid ${C.border}` }}>
-                <table className="kmm-tab" style={{ minWidth: 960, tableLayout: "fixed" }}>
-                  <thead>
-                    <tr>
-                      <th style={{ width: 30 }} />
-                      <th>Título</th>
-                      <th style={{ width: 150 }}>Cliente</th>
-                      <th style={{ width: 200 }}>PO</th>
-                      <th style={{ width: 240 }}>Área</th>
-                      <th style={{ width: 80, textAlign: "right" }}>Agging</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {secao.itens.map((d) => {
-                      const area = corDeAreaTabela(d.areaPath);
-                      const agging = d.createdDate ? Math.max(0, diasEntreChaves(chaveDia(d.createdDate), hojeChave)) : null;
-                      return (
-                        <tr key={d.id}>
-                          <td style={{ textAlign: "center" }}>
-                            <i title={secao.atrasado ? "Atrasado" : "No prazo"} style={{ display: "inline-block", width: 9, height: 9, borderRadius: "50%", background: pill.dot, marginTop: 4 }} />
-                          </td>
-                          <td style={{ minWidth: 260, fontWeight: 500 }}>
+              {aberta && (
+                <>
+                  <div style={{ ...listaLinha(COLUNAS_COMITE), marginBottom: 6, paddingLeft: 6 }}>
+                    {["Título", "Cliente", "PO", "Área", "Agging"].map((h, i) => (
+                      <div key={h} style={{ ...listaCabecalho, textAlign: i === 0 ? "left" : "center" }}>
+                        {h}
+                      </div>
+                    ))}
+                  </div>
+                  {secao.itens.map((d) => {
+                    const area = corDeAreaTabela(d.areaPath);
+                    const agging = d.createdDate ? Math.max(0, diasEntreChaves(chaveDia(d.createdDate), hojeChave)) : null;
+                    const c = (centro = true, primeira = false): React.CSSProperties => ({ ...listaCelula({ cor, primeira, centro }), color: C.text });
+                    return (
+                      <div key={d.id} style={listaLinha(COLUNAS_COMITE)}>
+                        <div style={{ ...c(false, true), fontWeight: 500 }} title={secao.atrasado ? "Atrasado" : "No prazo"}>
+                          <span>
                             <span style={{ color: C.muted }}>#{d.id} · </span>
                             {d.titulo}
-                          </td>
-                          <td style={{ whiteSpace: "nowrap" }}>{d.cliente || "—"}</td>
-                          <td style={{ color: C.muted }}>{d.po || "—"}</td>
-                          <td style={{ whiteSpace: "nowrap" }}>
-                            <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
-                              <i style={{ width: 9, height: 9, borderRadius: 3, background: area.bg, flexShrink: 0 }} />
-                              {d.areaPath.split("\\").pop() || d.areaPath}
-                            </span>
-                          </td>
-                          <td
-                            style={{ textAlign: "right", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}
-                            title={d.createdDate ? `Criado em ${formatarChaveDia(chaveDia(d.createdDate))}` : undefined}
-                          >
-                            {agging ?? "—"}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                          </span>
+                        </div>
+                        <div style={c()}>{d.cliente || "—"}</div>
+                        <div style={{ ...c(), color: C.muted }}>{d.po || "—"}</div>
+                        <div style={c()}>
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+                            <i style={{ width: 9, height: 9, borderRadius: 3, background: area.bg, flexShrink: 0 }} />
+                            {d.areaPath.split("\\").pop() || d.areaPath}
+                          </span>
+                        </div>
+                        <div
+                          style={{ ...c(), fontWeight: 600, fontVariantNumeric: "tabular-nums" }}
+                          title={d.createdDate ? `Criado em ${formatarChaveDia(chaveDia(d.createdDate))}` : undefined}
+                        >
+                          {agging ?? "—"}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </>
+              )}
+            </div>
           </section>
         );
       })}

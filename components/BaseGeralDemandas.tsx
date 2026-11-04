@@ -150,7 +150,7 @@ export function VisaoBacklogOrcamento({
 
         <Quadro titulo="Demandas em backlog" contagem={carregando ? null : backlog.length}>
           <Tabela
-            colunas={["Chamado", "Tarefa", "PBI", "Esteira", "PO", "Data abertura produto", "Etapa", "Data comitê", "Agging aberto"]}
+            colunas={["Chamado", "Tarefa", "PBI", "Squad", "PO", "Data abertura produto", "Etapa", "Data comitê", "Agging aberto"]}
             vazio={carregando ? "Carregando…" : "Nenhuma demanda em backlog para os filtros atuais."}
             linhas={backlog.map((p) => {
               const aging = agingDiasPbi(p, agora);
@@ -258,7 +258,7 @@ export function VisaoPorStatus({
 
       <Quadro titulo={tituloTabela} contagem={carregando ? null : doStatus.length}>
         <Tabela
-          colunas={["Chamado", "PBI", "Título", "Esteira", "Etapa", "PO", "Classificação", "Observação"]}
+          colunas={["Chamado", "PBI", "Título", "Squad", "Etapa", "PO", "Classificação", "Observação"]}
           vazio={carregando ? "Carregando…" : `Nenhuma demanda em ${estado.toLowerCase()} para os filtros atuais.`}
           linhas={doStatus.map((p) => {
             const com = comentarios[p.id];

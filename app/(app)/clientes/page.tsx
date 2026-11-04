@@ -28,7 +28,7 @@ const LOTES_EM_PARALELO = 3;
 const ORG_DEVOPS = "kmmbynstech";
 
 /** Colunas da tabela, na ordem exibida. */
-const COLUNAS = ["Chamado", "Tarefa", "PBI", "Status no board", "Data abertura produto", "Etapa", "PO", "Esteira", "Classificação", "Observação"];
+const COLUNAS = ["Chamado", "Tarefa", "PBI", "Status no board", "Data abertura produto", "Etapa", "PO", "Squad", "Classificação", "Observação"];
 
 /** Cor do chip de cada status do board (paleta do app; um tom por status). */
 const COR_STATUS: Record<string, { bg: string; fg: string }> = {
@@ -188,15 +188,6 @@ export default function ClientesPage() {
           pesquisavel
           placeholderBusca="Digite o nome do cliente…"
         />
-        <MultiSelectFiltro
-          rotuloTodos="Todas as squads"
-          opcoes={opcoesSquad}
-          selecionados={squadsSel}
-          onChange={setSquadsSel}
-          formatar={rotuloSquad}
-          pesquisavel
-          placeholderBusca="Digite o nome da squad…"
-        />
       </PageHeader>
 
       {erro && <div className="kmm-card" style={{ marginBottom: 16, fontSize: 13, color: C.red }}>{erro}</div>}
@@ -210,6 +201,21 @@ export default function ClientesPage() {
       <>
       {/* Linha 1: base geral — painel "Distribuição por status" (esquerda) + tabela completa (direita). */}
       <DivisorSecao titulo="Base geral de demandas" />
+
+      {/* Filtro de Squad (= Area Path do PBI): vale para o quadro "Distribuição por status" e para as
+          tabelas de demandas abaixo (todas partem de `visiveis`). Pedido por Heder em 2026-11-04. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "-4px 0 16px" }}>
+        <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>Squad</span>
+        <MultiSelectFiltro
+          rotuloTodos="Todas as squads"
+          opcoes={opcoesSquad}
+          selecionados={squadsSel}
+          onChange={setSquadsSel}
+          formatar={rotuloSquad}
+          pesquisavel
+          placeholderBusca="Digite o nome da squad…"
+        />
+      </div>
 
       <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
       <div style={{ flex: "0 1 320px", minWidth: 280, position: "sticky", top: 16 }}>

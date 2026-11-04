@@ -102,7 +102,7 @@ export const COLUNAS_KANBAN: {
     status: "Backlog",
     etapa: "Análise",
     tag: TAG_REFINAMENTO_TECH,
-    avanca: "Pós análise de arquitetura, esforço e dependências da proposta de solução",
+    avanca: "Pós análise do time de engenharia sobre arquitetura, esforço e dependências da proposta de solução.",
     cor: "sky",
   },
   {

@@ -32,7 +32,7 @@ function iniciais(nome: string): string {
   return ((partes[0][0] ?? "") + (partes.length > 1 ? partes[partes.length - 1][0] : "")).toUpperCase();
 }
 
-export default function KanbanUpstream() {
+export default function KanbanUpstream({ refreshKey = 0 }: { refreshKey?: number }) {
   const { produto } = useProduto();
   const [itens, setItens] = useState<ItemKanban[]>([]);
   const [areas, setAreas] = useState<AreaKanban[]>([]);
@@ -67,7 +67,7 @@ export default function KanbanUpstream() {
     return () => {
       cancelado = true;
     };
-  }, [semKanban]);
+  }, [semKanban, refreshKey]);
 
   // Opções do filtro na ordem pedida (AREAS_KANBAN), só as que existem no Azure.
   const opcoesArea = useMemo<string[]>(() => AREAS_KANBAN.map((a) => a.rotulo as string).filter((r) => areas.some((x) => x.rotulo === r)), [areas]);
@@ -84,11 +84,20 @@ export default function KanbanUpstream() {
     return itens.filter((i) => caminhos.some((c) => i.areaPath === c || i.areaPath.startsWith(c + "\\")));
   }, [itens, areas, areaSel]);
 
-  // Em cada coluna: mais prioritário primeiro (1 = Crítica; sem prioridade por último), depois o mais antigo.
+  // Ordem das colunas: Backlog Produto pela Created Date e Comitê pela Data de Comitê, ambas da menor
+  // (mais antiga) para a maior (pedido por Heder em 2026-11-04). As demais: mais prioritário primeiro
+  // (1 = Crítica; sem prioridade por último), depois o mais antigo. Sem data vai sempre para o fim.
   const porColuna = useMemo(() => {
-    const ordenar = (a: ItemKanban, b: ItemKanban) =>
+    const porData = (a: string | null | undefined, b: string | null | undefined) => (a || "9999").localeCompare(b || "9999");
+    const ordenadores: Record<string, (a: ItemKanban, b: ItemKanban) => number> = {
+      backlog: (a, b) => porData(a.createdDate, b.createdDate) || a.id - b.id,
+      comite: (a, b) => porData(a.dataComite, b.dataComite) || a.id - b.id,
+    };
+    const padrao = (a: ItemKanban, b: ItemKanban) =>
       (a.prioridade ?? 99) - (b.prioridade ?? 99) || a.createdDate.localeCompare(b.createdDate) || a.id - b.id;
-    return Object.fromEntries(COLUNAS_KANBAN.map((c) => [c.chave, itensDaArea.filter((i) => i.coluna === c.chave).sort(ordenar)]));
+    return Object.fromEntries(
+      COLUNAS_KANBAN.map((c) => [c.chave, itensDaArea.filter((i) => i.coluna === c.chave).sort(ordenadores[c.chave] ?? padrao)])
+    );
   }, [itensDaArea]);
 
   if (semKanban) {
@@ -147,7 +156,7 @@ export default function KanbanUpstream() {
                   )}
                 </dl>
                 <div style={{ borderTop: `1px solid rgba(30,27,24,.08)`, marginTop: 10, paddingTop: 9 }}>
-                  <div style={{ fontSize: 11, color: C.muted, fontWeight: 600, letterSpacing: ".03em", textTransform: "uppercase", marginBottom: 3 }}>Quando a demanda avança</div>
+                  <div style={{ fontSize: 11, color: C.muted, fontWeight: 600, letterSpacing: ".03em", textTransform: "uppercase", marginBottom: 3 }}>Quando que a demanda avança para a próxima etapa:</div>
                   <div style={{ fontSize: 12.5, lineHeight: 1.45 }}>{c.avanca}</div>
                 </div>
               </div>

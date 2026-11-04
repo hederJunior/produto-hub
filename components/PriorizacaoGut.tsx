@@ -72,7 +72,7 @@ function dataDoInstante(iso: string | null): string {
 
 type EstadoSalvar = "salvando" | "ok" | "erro";
 
-export default function PriorizacaoGut() {
+export default function PriorizacaoGut({ refreshKey = 0 }: { refreshKey?: number }) {
   const { produto } = useProduto();
   const [itens, setItens] = useState<ItemGut[]>([]);
   const [avaliacoes, setAvaliacoes] = useState<Record<number, AvaliacaoGut>>({});
@@ -117,7 +117,7 @@ export default function PriorizacaoGut() {
     return () => {
       cancelado = true;
     };
-  }, [semSwat]);
+  }, [semSwat, refreshKey]);
 
   const avaliacaoDe = (id: number): AvaliacaoGut => avaliacoes[id] ?? AVALIACAO_VAZIA;
 

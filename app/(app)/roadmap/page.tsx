@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { BarChart3, Calendar, Columns3, CalendarCheck, CheckCheck, CalendarRange, ChevronDown, ChevronRight, ChevronUp, Clock, Download, Eraser, Flag, Gauge, ListTodo, Map as MapIcon, Maximize2, Rocket, Wrench, UserCheck, Users, X } from "lucide-react";
+import { BarChart3, Calendar, Columns3, CalendarCheck, CheckCheck, CalendarRange, ChevronDown, ChevronRight, ChevronUp, Clock, Download, Eraser, Flag, Gauge, ListTodo, Map as MapIcon, Maximize2, RefreshCw, Rocket, Wrench, UserCheck, Users, X } from "lucide-react";
 import { useProduto } from "@/components/ProdutoContext";
 import { C, COR_BARRA_EPIC, COR_BARRA_FEATURE, corDaArea, corDeAreaTabela, corDeEstadoDevOps, corDeStatus, corDoDev, estadoIndicaConcluido, infoPrioridade } from "@/lib/kmm-theme";
 import { chaveDia, diasEntreChaves, formatarChaveDia } from "@/lib/datas";
@@ -270,6 +270,17 @@ export default function RoadmapPage() {
   const [agora, setAgora] = useState<Date | null>(null);
   useEffect(() => setAgora(new Date()), []);
 
+  // Botão "Atualizar Dados": refaz TODAS as consultas ao Azure DevOps da página sem recarregar (F5).
+  // `refreshKey` entra nas dependências dos carregamentos; `girando` mantém o ícone animado por um
+  // instante mesmo quando só os componentes filhos recarregam.
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [girando, setGirando] = useState(false);
+  function atualizarDados() {
+    setRefreshKey((k) => k + 1);
+    setGirando(true);
+    setTimeout(() => setGirando(false), 1500);
+  }
+
   useEffect(() => {
     setCarregandoRoadmap(true);
     setErroRoadmap(null);
@@ -281,7 +292,7 @@ export default function RoadmapPage() {
       })
       .catch(() => setErroRoadmap("Não foi possível carregar o roadmap do Azure DevOps."))
       .finally(() => setCarregandoRoadmap(false));
-  }, [produto]);
+  }, [produto, refreshKey]);
 
   useEffect(() => {
     setCarregandoSprints(true);
@@ -297,7 +308,7 @@ export default function RoadmapPage() {
       })
       .catch(() => setErroSprints("Não foi possível carregar as sprints do Azure DevOps."))
       .finally(() => setCarregandoSprints(false));
-  }, [produto]);
+  }, [produto, refreshKey]);
 
   useEffect(() => {
     setCarregandoComites(true);
@@ -311,7 +322,7 @@ export default function RoadmapPage() {
       })
       .catch(() => setErroComites("Não foi possível carregar as demandas de comitê do Azure DevOps."))
       .finally(() => setCarregandoComites(false));
-  }, [produto]);
+  }, [produto, refreshKey]);
 
   // Títulos/clientes dos PBIs pai das Tasks/Bugs — só quando a seção Sprints é aberta.
   useEffect(() => {
@@ -358,7 +369,7 @@ export default function RoadmapPage() {
     return () => {
       cancelado = true;
     };
-  }, [produto, visao, visaoBacklog]);
+  }, [produto, visao, visaoBacklog, refreshKey]);
 
   useEffect(() => {
     setCarregandoBacklog(true);
@@ -371,7 +382,7 @@ export default function RoadmapPage() {
       })
       .catch(() => setErroBacklog("Não foi possível carregar o backlog do Azure DevOps."))
       .finally(() => setCarregandoBacklog(false));
-  }, [produto]);
+  }, [produto, refreshKey]);
 
   const statusEpicDisponiveis = useMemo(
     () => Array.from(new Set(epicos.map((e) => e.state).filter(Boolean))).sort((a, b) => a.localeCompare(b, "pt-BR")),
@@ -546,7 +557,20 @@ export default function RoadmapPage() {
         }
       />
 
-      <VisaoFiltro visao={visao} setVisao={setVisao} />
+      <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+        <VisaoFiltro visao={visao} setVisao={setVisao} />
+        <style>{"@keyframes kmm-giro{to{transform:rotate(360deg)}}"}</style>
+        <button
+          type="button"
+          className="kmm-btn"
+          style={{ marginLeft: "auto", padding: 8, display: "inline-flex" }}
+          title="Atualizar Dados"
+          aria-label="Atualizar Dados"
+          onClick={atualizarDados}
+        >
+          <RefreshCw size={15} style={girando ? { animation: "kmm-giro .8s linear infinite" } : undefined} />
+        </button>
+      </div>
 
       {/* Painel único da seção (abas de pasta coladas nele, pedido por Heder em 2026-10-14): a barra
           de filtros/ações fica SEMPRE logo abaixo das abas, dentro do painel, igual em toda seção —
@@ -802,7 +826,7 @@ export default function RoadmapPage() {
 
       <div>
         {visao === "backlog" && kanbanUpstream ? (
-          <KanbanUpstream />
+          <KanbanUpstream refreshKey={refreshKey} />
         ) : visao === "backlog" && visaoBacklog === "comites" ? (
           <>
             <div style={{ marginBottom: 16 }}>
@@ -825,7 +849,7 @@ export default function RoadmapPage() {
             {!carregandoComites && !erroComites && demandasExibidas.length > 0 && <DemandasComiteLista demandas={demandasExibidas} hoje={agora ?? new Date()} />}
           </>
         ) : visao === "backlog" && visaoBacklog === "gut" ? (
-          <PriorizacaoGut />
+          <PriorizacaoGut refreshKey={refreshKey} />
         ) : visao === "backlog" && visaoBacklog === "refinamento" ? (
           <>
             {carregandoRefinamento && <p style={{ color: C.muted }}>Carregando Refinamento Tech do Azure DevOps…</p>}
@@ -943,6 +967,7 @@ export default function RoadmapPage() {
                 clientesFiltro={clientesSprints}
                 slotFiltros={slotFiltros}
                 slotAcoes={slotAcoes}
+                refreshKey={refreshKey}
               />
             )}
             {modoSprints === "lista" && !carregandoSprints && !erroSprints && tarefasExibidas.length === 0 && (
@@ -1989,6 +2014,7 @@ function PainelAlocacaoPorSprint({
   clientesFiltro,
   slotFiltros,
   slotAcoes,
+  refreshKey,
 }: {
   /** "alocacao" = uma linha por recurso (Dev/QA); "demandas" = uma linha por PBI, com suas Tasks. */
   modo: "alocacao" | "demandas";
@@ -2002,6 +2028,7 @@ function PainelAlocacaoPorSprint({
   clientesFiltro: string[];
   slotFiltros: HTMLElement | null;
   slotAcoes: HTMLElement | null;
+  refreshKey: number;
 }) {
   // Tasks/Bugs com State "Cancelado" não entram na Alocação por sprint nem em Demandas (pedido por Heder em 2026-10-22).
   const tarefas = useMemo(() => tarefasBrutas.filter((t) => !/^cancel/i.test(t.state.trim())), [tarefasBrutas]);
@@ -2047,7 +2074,7 @@ function PainelAlocacaoPorSprint({
     return () => {
       cancelado = true;
     };
-  }, [produto]);
+  }, [produto, refreshKey]);
 
   // Sinalização do card (a mesma que o selo mostra): em "Alocação por sprint" o card é o PBI pai (estado do PBI);
   // em "Demandas" vale o estado da própria Task/Bug e, se ele não for sinalizado, o do PBI (ver PainelDemandaLinha).

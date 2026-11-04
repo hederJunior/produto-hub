@@ -21,6 +21,7 @@ import { estadoIndicaConcluido } from "./kmm-theme";
 import { ESTEIRAS_CLIENTES_SQUADS, TAG_REFINAMENTO_TECH, type ItemBacklog, type ItemRefinamento } from "./backlog";
 import { DEVOPS_PROJETOS, type Produto } from "./devops-projetos";
 import type { ItemGut } from "./priorizacao-gut";
+import { AREAS_KANBAN, colunaDoPbi, normKanban, type AreaKanban, type ItemKanban } from "./kanban-upstream";
 import { ESTADOS_GESTAO_CLIENTES, htmlParaTexto, norm, type PbiGestaoCliente, type UltimoComentario } from "./gestao-clientes";
 
 // Toda chamada ao Azure DevOps neste módulo é SEM cache. O Next.js guarda no Data Cache o resultado
@@ -1523,4 +1524,108 @@ export async function getPbisSwat(project: string): Promise<{ itens: ItemGut[]; 
     })
     .sort((a, b) => a.id - b.id);
   return { itens, areas };
+}
+
+
+// ===== Kanban do Upstream da carteira (pedido por Heder em 2026-11-03). Só leitura. =====
+
+/** Nós de Area Path das áreas do Kanban (4 squads pelo nome exato do último segmento + SWAT pela palavra "SWAT"), em qualquer profundidade. */
+function acharAreasKanban(no: { name: string; children?: any[] }, prefixo: string, saida: AreaKanban[]) {
+  for (const filho of no.children ?? []) {
+    const caminho = `${prefixo}\\${filho.name}`;
+    const alvo = AREAS_KANBAN.find((a) => (a.nome === "SWAT" ? /\bswat\b/i.test(filho.name) : normKanban(a.nome) === normKanban(filho.name)));
+    if (alvo) saida.push({ valor: caminho, rotulo: alvo.rotulo });
+    else acharAreasKanban(filho, caminho, saida);
+  }
+}
+
+/**
+ * PBIs do Kanban do Upstream: State Backlog ou Orçamento nas áreas de AREAS_KANBAN do projeto, já
+ * classificados por coluna (colunaDoPbi — Etapa/Tag filtradas no código, sem valor de Etapa na WIQL,
+ * porque a Etapa do Orçamento não tem grafia confirmada). As áreas são descobertas na árvore de áreas
+ * do Azure (Area Path inexistente na WIQL falha com TF51011). Uma WIQL por State (allSettled): se
+ * "Orçamento" não for um State válido no projeto, só essa coluna some e a tela recebe um aviso.
+ */
+export async function getKanbanUpstream(project: string): Promise<{ itens: ItemKanban[]; areas: AreaKanban[]; avisos: string[] }> {
+  const { org, pat } = getConfig();
+  const avisos: string[] = [];
+
+  const arvore = await fetch(
+    `https://dev.azure.com/${org}/${encodeURIComponent(project)}/_apis/wit/classificationnodes/areas?$depth=4&api-version=${API_VERSION}`,
+    { headers: authHeader(pat) }
+  );
+  if (!arvore.ok) throw new Error(`Falha ao ler as áreas de ${project} (${arvore.status}): ${await arvore.text()}`);
+  const areas: AreaKanban[] = [];
+  acharAreasKanban((await arvore.json()) as { name: string; children?: any[] }, project, areas);
+  const faltando = AREAS_KANBAN.filter((a) => !areas.some((x) => x.rotulo === a.rotulo)).map((a) => a.rotulo);
+  if (faltando.length) avisos.push(`Área(s) não encontrada(s) no ${project}: ${faltando.join(", ")}.`);
+  if (!areas.length) return { itens: [], areas, avisos };
+
+  const estados = ["Backlog", "Orçamento"];
+  const resultados = await Promise.allSettled(
+    estados.map(async (estado) => {
+      const wiql = `
+        SELECT [System.Id]
+        FROM WorkItems
+        WHERE [System.TeamProject] = '${aspasWiql(project)}'
+          AND [System.WorkItemType] = 'Product Backlog Item'
+          AND [System.State] = '${aspasWiql(estado)}'
+          AND (${areas.map((a) => `[System.AreaPath] UNDER '${aspasWiql(a.valor)}'`).join(" OR ")})
+        ORDER BY [System.Id]
+      `;
+      const res = await fetch(`https://dev.azure.com/${org}/${encodeURIComponent(project)}/_apis/wit/wiql?api-version=${API_VERSION}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(pat) },
+        body: JSON.stringify({ query: wiql }),
+      });
+      if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+      return ((await res.json()) as { workItems: { id: number }[] }).workItems.map((w) => w.id);
+    })
+  );
+  const ids = new Set<number>();
+  resultados.forEach((r, i) => {
+    if (r.status === "fulfilled") r.value.forEach((id) => ids.add(id));
+    else {
+      console.error(`[kanban-upstream] WIQL do State "${estados[i]}" falhou em ${project}:`, r.reason);
+      avisos.push(`State "${estados[i]}" não pôde ser consultado em ${project}.`);
+    }
+  });
+  if (!ids.size) return { itens: [], areas, avisos };
+
+  const works = await buscarLoteCampos(org, pat, Array.from(ids), [
+    "System.Title",
+    "System.AreaPath",
+    "System.State",
+    "System.Tags",
+    "System.CreatedDate",
+    "Custom.Etapa",
+    "Custom.Cliente",
+    "Custom.PO",
+    "Microsoft.VSTS.Common.Priority",
+    CAMPO_DATA_COMITE,
+  ]);
+
+  const itens: ItemKanban[] = [];
+  for (const w of works) {
+    const f = w.fields;
+    const coluna = colunaDoPbi({
+      state: String(f["System.State"] ?? ""),
+      etapa: textoDeCampo(f["Custom.Etapa"]),
+      tags: String(f["System.Tags"] ?? ""),
+    });
+    if (!coluna) continue;
+    const prioridade = f["Microsoft.VSTS.Common.Priority"];
+    itens.push({
+      id: w.id,
+      titulo: String(f["System.Title"] ?? `Item ${w.id}`),
+      areaPath: String(f["System.AreaPath"] ?? ""),
+      coluna,
+      cliente: textoDeCampo(f["Custom.Cliente"]),
+      po: textoDeCampo(f["Custom.PO"]),
+      createdDate: String(f["System.CreatedDate"] ?? ""),
+      dataComite: (f[CAMPO_DATA_COMITE] as string) ?? null,
+      prioridade: typeof prioridade === "number" ? prioridade : null,
+    });
+  }
+  return { itens, areas, avisos };
 }

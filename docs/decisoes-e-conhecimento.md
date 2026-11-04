@@ -2225,3 +2225,26 @@ SQL no Supabase). Sem ela a tela abre, mostra os itens e avisa que não salva (l
 
 **Não testado contra o Azure/Supabase** (sem rede no sandbox): conferir se a área SWAT é encontrada, se as colunas vêm
 preenchidas (Board Column, Classificação, Data Comitê) e se salvar/recarregar mantém as notas.
+
+## 2026-11-03 — Roadmap e Entregas > Upstream > Kanban (etapas iniciais do fluxo de demandas da carteira)
+
+**O que é:** botão "Kanban" (mesmo estilo de "Ordenar por prioridade"; `kmm-btn` + laranja quando ativo) no topo da seção
+Upstream, visível nas 4 sub-abas (Backlog Carteira, Priorização SWAT, Comitê, Refinamento Tech). Ativado, substitui o
+conteúdo da sub-aba pelo quadro (`components/KanbanUpstream.tsx`); clicar em uma sub-aba sai do Kanban.
+
+**Dados:** `getKanbanUpstream` (`lib/devops-client.ts`) → `GET /api/roadmap/kanban-upstream`. Só PBIs, só KMM5 (com KMM4
+selecionado a tela avisa). Áreas (filtro de seleção única, uma por vez): Dedicada Maroni, Dedicada Transben, Projetos de
+Implantação, Serviços da Carteira, SWAT — descobertas na árvore de áreas do KMM5 (nome normalizado; SWAT por palavra).
+Área inexistente vira aviso, não erro (TF51011). Uma WIQL por State (Backlog, Orçamento); classificação em código
+(`colunaDoPbi`, `lib/kanban-upstream.ts`).
+
+**Colunas:** Backlog Produto (Backlog+Etapa Backlog) · Comitê (Backlog+Etapa Comitê) · Em Análise Tech (Backlog+Etapa
+Análise+tag "Pronto para refinamento tech") · Orçamento (State Orçamento+Etapa Relacionamento/Comercial). Painel
+informativo recolhível "Regras do fluxo" com "Quando a demanda avança" por coluna.
+
+**Card:** #ID (link Azure), prioridade, título, cliente, Data Comitê (só na coluna Comitê), PO e idade em dias
+(vermelho > 30). Ordem: prioridade → data de criação → ID.
+
+**Suposições / não testado contra o Azure (sem rede no sandbox):** Etapa de Orçamento comparada de forma tolerante
+("Relacionamento/Comercial" ou "Relacionamento Comercial"); State "Orçamento" precisa existir no KMM5; idade = dias desde
+Created Date.

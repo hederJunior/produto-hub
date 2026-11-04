@@ -3,12 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { BarChart3, Calendar, CalendarCheck, CheckCheck, CalendarRange, ChevronDown, ChevronRight, ChevronUp, Clock, Download, Eraser, Flag, Gauge, ListTodo, Map as MapIcon, Maximize2, Rocket, Wrench, UserCheck, Users, X } from "lucide-react";
+import { BarChart3, Calendar, Columns3, CalendarCheck, CheckCheck, CalendarRange, ChevronDown, ChevronRight, ChevronUp, Clock, Download, Eraser, Flag, Gauge, ListTodo, Map as MapIcon, Maximize2, Rocket, Wrench, UserCheck, Users, X } from "lucide-react";
 import { useProduto } from "@/components/ProdutoContext";
 import { C, COR_BARRA_EPIC, COR_BARRA_FEATURE, corDaArea, corDeAreaTabela, corDeEstadoDevOps, corDeStatus, corDoDev, estadoIndicaConcluido, infoPrioridade } from "@/lib/kmm-theme";
 import { chaveDia, diasEntreChaves, formatarChaveDia } from "@/lib/datas";
 import BacklogEsteirasClientes, { type OrdemBacklog } from "@/components/BacklogEsteirasClientes";
 import PriorizacaoGut from "@/components/PriorizacaoGut";
+import KanbanUpstream from "@/components/KanbanUpstream";
 import { listaCabecalho, listaCelula, listaLinha, listaTituloGrupo } from "@/lib/kmm-lista";
 import RefinamentoTech from "@/components/RefinamentoTech";
 import AbasVisao from "@/components/AbasVisao";
@@ -230,6 +231,13 @@ export default function RoadmapPage() {
   const [ordemBacklog, setOrdemBacklog] = useState<OrdemBacklog | null>(null);
   // Sub-visões do Backlog: Backlog Carteira | Priorização SWAT | Refinamento Tech (débitos técnicos da área SWAT, 2026-10-19).
   const [visaoBacklog, setVisaoBacklog] = useState<"esteiras" | "gut" | "comites" | "refinamento">("esteiras");
+  // Kanban do Upstream (pedido por Heder em 2026-11-03): modo de visualização acionado por botão no topo da seção
+  // Upstream, visível em todas as sub-abas. Clicar em uma sub-aba sai do Kanban.
+  const [kanbanUpstream, setKanbanUpstream] = useState(false);
+  const abrirSubVisao = (v: "esteiras" | "gut" | "comites" | "refinamento") => {
+    setVisaoBacklog(v);
+    setKanbanUpstream(false);
+  };
   // Backlog > Refinamento Tech (pedido por Heder em 2026-11-02): carregado só quando a sub-aba é aberta.
   const [refinamentoItens, setRefinamentoItens] = useState<ItemRefinamento[]>([]);
   const [carregandoRefinamento, setCarregandoRefinamento] = useState(false);
@@ -553,47 +561,47 @@ export default function RoadmapPage() {
             {/* Visões do Backlog: Backlog Carteira | Priorização SWAT | Comitê | Refinamento Tech. */}
             <div className="kmm-seg">
               <div
-                className={`kmm-seg-item${visaoBacklog === "esteiras" ? " active" : ""}`}
+                className={`kmm-seg-item${!kanbanUpstream && visaoBacklog === "esteiras" ? " active" : ""}`}
                 role="button"
                 tabIndex={0}
                 style={{ display: "flex", alignItems: "center", gap: 6 }}
-                onClick={() => setVisaoBacklog("esteiras")}
-                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setVisaoBacklog("esteiras")}
+                onClick={() => abrirSubVisao("esteiras")}
+                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && abrirSubVisao("esteiras")}
               >
                 <Users size={13} /> Backlog Carteira
               </div>
               <div
-                className={`kmm-seg-item${visaoBacklog === "gut" ? " active" : ""}`}
+                className={`kmm-seg-item${!kanbanUpstream && visaoBacklog === "gut" ? " active" : ""}`}
                 role="button"
                 tabIndex={0}
                 style={{ display: "flex", alignItems: "center", gap: 6 }}
-                onClick={() => setVisaoBacklog("gut")}
-                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setVisaoBacklog("gut")}
+                onClick={() => abrirSubVisao("gut")}
+                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && abrirSubVisao("gut")}
               >
                 <Gauge size={13} /> Priorização SWAT
               </div>
               <div
-                className={`kmm-seg-item${visaoBacklog === "comites" ? " active" : ""}`}
+                className={`kmm-seg-item${!kanbanUpstream && visaoBacklog === "comites" ? " active" : ""}`}
                 role="button"
                 tabIndex={0}
                 style={{ display: "flex", alignItems: "center", gap: 6 }}
-                onClick={() => setVisaoBacklog("comites")}
-                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setVisaoBacklog("comites")}
+                onClick={() => abrirSubVisao("comites")}
+                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && abrirSubVisao("comites")}
               >
                 <CalendarCheck size={13} /> Comitê
               </div>
               <div
-                className={`kmm-seg-item${visaoBacklog === "refinamento" ? " active" : ""}`}
+                className={`kmm-seg-item${!kanbanUpstream && visaoBacklog === "refinamento" ? " active" : ""}`}
                 role="button"
                 tabIndex={0}
                 style={{ display: "flex", alignItems: "center", gap: 6 }}
-                onClick={() => setVisaoBacklog("refinamento")}
-                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setVisaoBacklog("refinamento")}
+                onClick={() => abrirSubVisao("refinamento")}
+                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && abrirSubVisao("refinamento")}
               >
                 <Wrench size={13} /> Refinamento Tech
               </div>
             </div>
-            {visaoBacklog === "comites" && (
+            {!kanbanUpstream && visaoBacklog === "comites" && (
           <>
             {/* Data de Comitê: antes um card colapsável próprio acima da lista (estilo "CREATED DATE"
                 do painel de indicadores); agora inline no cabeçalho, junto dos demais filtros
@@ -640,9 +648,8 @@ export default function RoadmapPage() {
             />
           </>
             )}
-            {visaoBacklog === "esteiras" && (
             <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, marginLeft: "auto" }}>
-              {(
+              {!kanbanUpstream && visaoBacklog === "esteiras" && (
                 [
                   { valor: "prioridade", label: "Ordenar por prioridade" },
                   { valor: "data", label: "Ordenar por data" },
@@ -658,8 +665,17 @@ export default function RoadmapPage() {
                   {o.label}
                 </button>
               ))}
+              <button
+                className="kmm-btn"
+                aria-pressed={kanbanUpstream}
+                title="Distribuição das demandas do Upstream em Kanban"
+                style={kanbanUpstream ? { borderColor: C.orange, color: C.orange, background: "#FFF1EA" } : undefined}
+                onClick={() => setKanbanUpstream((v) => !v)}
+              >
+                <Columns3 size={13} style={{ marginRight: 6, verticalAlign: "-2px" }} />
+                Kanban
+              </button>
             </div>
-            )}
           </>
         )}
 
@@ -785,7 +801,9 @@ export default function RoadmapPage() {
       </div>
 
       <div>
-        {visao === "backlog" && visaoBacklog === "comites" ? (
+        {visao === "backlog" && kanbanUpstream ? (
+          <KanbanUpstream />
+        ) : visao === "backlog" && visaoBacklog === "comites" ? (
           <>
             <div style={{ marginBottom: 16 }}>
               <div style={{ fontFamily: "Sora,sans-serif", fontWeight: 800, fontSize: 20, color: C.text }}>

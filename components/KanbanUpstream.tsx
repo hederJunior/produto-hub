@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Building2, CalendarDays, Clock, Info } from "lucide-react";
 import { useProduto } from "@/components/ProdutoContext";
+import MultiSelectFiltro from "@/components/MultiSelectFiltro";
 import { C, PASTEL, infoPrioridade } from "@/lib/kmm-theme";
 import { chaveDia, diasEntreChaves, formatarChaveDia } from "@/lib/datas";
 import { DIAS_ALERTA_BACKLOG } from "@/lib/backlog";
@@ -16,6 +17,7 @@ import { AREAS_KANBAN, COLUNAS_KANBAN, type AreaKanban, type ItemKanban } from "
  */
 
 const ORG_DEVOPS = "kmmbynstech";
+const SEM_RESPONSAVEL = "Sem responsável";
 
 // Hover/foco dos cards (inline style não cobre :hover).
 const ESTILO_LOCAL = `
@@ -40,6 +42,8 @@ export default function KanbanUpstream({ refreshKey = 0 }: { refreshKey?: number
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [areaSel, setAreaSel] = useState<string>("");
+  // Filtro "Responsável" (System.AssignedTo do PBI); vazio = todos. SEM_RESPONSAVEL agrupa os não atribuídos.
+  const [responsaveisSel, setResponsaveisSel] = useState<string[]>([]);
   const [infoAberto, setInfoAberto] = useState(false);
 
   // As áreas do Kanban só existem no KMM5 — com KMM4 selecionado não há o que carregar.
@@ -84,6 +88,21 @@ export default function KanbanUpstream({ refreshKey = 0 }: { refreshKey?: number
     return itens.filter((i) => caminhos.some((c) => i.areaPath === c || i.areaPath.startsWith(c + "\\")));
   }, [itens, areas, areaSel]);
 
+  // Responsáveis oferecidos = os da área escolhida (não adianta listar quem não tem card nela).
+  const opcoesResponsavel = useMemo(() => {
+    const nomes = new Set(itensDaArea.map((i) => i.responsavel).filter(Boolean));
+    const lista = Array.from(nomes).sort((a, b) => a.localeCompare(b, "pt-BR"));
+    return itensDaArea.some((i) => !i.responsavel) ? [...lista, SEM_RESPONSAVEL] : lista;
+  }, [itensDaArea]);
+  useEffect(() => {
+    setResponsaveisSel((sel) => (sel.every((r) => opcoesResponsavel.includes(r)) ? sel : sel.filter((r) => opcoesResponsavel.includes(r))));
+  }, [opcoesResponsavel]);
+
+  const itensVisiveis = useMemo(
+    () => (responsaveisSel.length ? itensDaArea.filter((i) => responsaveisSel.includes(i.responsavel || SEM_RESPONSAVEL)) : itensDaArea),
+    [itensDaArea, responsaveisSel]
+  );
+
   // Ordem das colunas: Backlog Produto pela Created Date e Comitê pela Data de Comitê, ambas da menor
   // (mais antiga) para a maior (pedido por Heder em 2026-11-04). As demais: mais prioritário primeiro
   // (1 = Crítica; sem prioridade por último), depois o mais antigo. Sem data vai sempre para o fim.
@@ -96,9 +115,9 @@ export default function KanbanUpstream({ refreshKey = 0 }: { refreshKey?: number
     const padrao = (a: ItemKanban, b: ItemKanban) =>
       (a.prioridade ?? 99) - (b.prioridade ?? 99) || a.createdDate.localeCompare(b.createdDate) || a.id - b.id;
     return Object.fromEntries(
-      COLUNAS_KANBAN.map((c) => [c.chave, itensDaArea.filter((i) => i.coluna === c.chave).sort(ordenadores[c.chave] ?? padrao)])
+      COLUNAS_KANBAN.map((c) => [c.chave, itensVisiveis.filter((i) => i.coluna === c.chave).sort(ordenadores[c.chave] ?? padrao)])
     );
-  }, [itensDaArea]);
+  }, [itensVisiveis]);
 
   if (semKanban) {
     return <p style={{ color: C.muted }}>As áreas do Kanban existem apenas no KMM5. Selecione KMM5 ou Ambos no topo da página.</p>;
@@ -116,9 +135,20 @@ export default function KanbanUpstream({ refreshKey = 0 }: { refreshKey?: number
             {opcoesArea.map((r) => <option key={r} value={r}>{r}</option>)}
           </select>
         </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>Responsável</span>
+          <MultiSelectFiltro
+            rotuloTodos="Todos os responsáveis"
+            opcoes={opcoesResponsavel}
+            selecionados={responsaveisSel}
+            onChange={setResponsaveisSel}
+            pesquisavel
+            placeholderBusca="Digite o nome do responsável…"
+          />
+        </div>
         {!carregando && !erro && opcoesArea.length > 0 && (
           <span style={{ fontSize: 12, color: C.muted }}>
-            {itensDaArea.length} {itensDaArea.length === 1 ? "demanda" : "demandas"} em {areaSel}
+            {itensVisiveis.length} {itensVisiveis.length === 1 ? "demanda" : "demandas"} em {areaSel}
           </span>
         )}
         <button

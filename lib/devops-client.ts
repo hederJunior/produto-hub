@@ -1683,6 +1683,7 @@ export async function getKanbanUpstream(project: string): Promise<{ itens: ItemK
     "Custom.Etapa",
     "Custom.Cliente",
     "Custom.PO",
+    "System.AssignedTo",
     "Microsoft.VSTS.Common.Priority",
     CAMPO_DATA_COMITE,
   ]);
@@ -1704,6 +1705,7 @@ export async function getKanbanUpstream(project: string): Promise<{ itens: ItemK
       coluna,
       cliente: textoDeCampo(f["Custom.Cliente"]),
       po: textoDeCampo(f["Custom.PO"]),
+      responsavel: textoDeCampo(f["System.AssignedTo"]),
       createdDate: String(f["System.CreatedDate"] ?? ""),
       dataComite: (f[CAMPO_DATA_COMITE] as string) ?? null,
       prioridade: typeof prioridade === "number" ? prioridade : null,

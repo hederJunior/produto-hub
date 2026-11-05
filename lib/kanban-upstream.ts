@@ -15,6 +15,8 @@ export type ItemKanban = {
   coluna: ColunaKanban;
   cliente: string;
   po: string;
+  /** System.AssignedTo (responsável do PBI) — "" quando não atribuído. */
+  responsavel: string;
   /** System.CreatedDate (ISO). */
   createdDate: string;
   /** Data de Comitê (ISO, data pura) ou null. */

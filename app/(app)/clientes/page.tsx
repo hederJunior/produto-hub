@@ -6,6 +6,7 @@ import { C } from "@/lib/kmm-theme";
 import PageHeader from "@/components/PageHeader";
 import MultiSelectFiltro from "@/components/MultiSelectFiltro";
 import DistribuicaoPorStatus from "@/components/DistribuicaoPorStatus";
+import EntregasCliente from "@/components/EntregasCliente";
 import AbasVisao from "@/components/AbasVisao";
 import { ALTURA_QUADRO, DivisorSecao, VisaoBacklogOrcamento, VisaoPorStatus } from "@/components/BaseGeralDemandas";
 import { Users } from "lucide-react";
@@ -319,6 +320,10 @@ export default function ClientesPage() {
           />
         )}
       </div>
+
+      {/* Seção final: lançamentos de versão, finalizadas recentemente e próximas entregas do cliente. */}
+      <DivisorSecao titulo="Demandas entregues" />
+      <EntregasCliente cliente={clienteSel === SEM_CLIENTE ? "" : clienteSel} produto={produto} itensCliente={itens.filter((p) => clienteDe(p) === clienteSel)} />
       </>
       )}
     </div>

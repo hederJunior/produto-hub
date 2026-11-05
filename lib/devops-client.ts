@@ -19,6 +19,7 @@ import {
 } from "./alocacao-pbi";
 import { estadoIndicaConcluido } from "./kmm-theme";
 import { ESTEIRAS_CLIENTES_SQUADS, TAG_REFINAMENTO_TECH, type ItemBacklog, type ItemRefinamento } from "./backlog";
+import { CLIENTE_INTERNO, montarEntregas, versaoDoCampo, type EntregasCliente, type PbiEntrega } from "./entregas-cliente";
 import { DEVOPS_PROJETOS, type Produto } from "./devops-projetos";
 import type { ItemGut } from "./priorizacao-gut";
 import { AREAS_KANBAN, colunaDoPbi, normKanban, type AreaKanban, type ItemKanban } from "./kanban-upstream";
@@ -994,6 +995,84 @@ export async function getRefinamentoTech(projetos: string[]): Promise<ItemRefina
     createdDate: String(w.fields["System.CreatedDate"] ?? ""),
     dataComite: (w.fields[CAMPO_DATA_COMITE] as string) ?? null,
   }));
+}
+
+// ===== Gestão de clientes > Demandas entregues (pedido por Heder em 2026-11-04). Só leitura. =====
+
+const CAMPO_VERSAO = "Custom.1d06fe45-f72f-4e74-9a58-33db9caf7d42";
+
+/**
+ * PBIs que alimentam a seção "Demandas entregues" do cliente: (1) os que têm o campo Versão
+ * preenchido, do cliente e do KMM (INTERNO); (2) os do cliente com Closed Date. As regras de
+ * ordenação/corte (10 últimos lançamentos, 5 últimas finalizadas) ficam em montarEntregas. Filtros
+ * de State (Finalizado/Cancelado) são feitos em JS: um nome de State inexistente num dos projetos
+ * faria a WIQL inteira falhar.
+ */
+export async function getEntregasCliente(produtos: Produto[], cliente: string): Promise<EntregasCliente> {
+  const { org, pat } = getConfig();
+  const clausulaCliente = (nomes: string[]) =>
+    nomes.length === 1 && nomes[0] === ""
+      ? "[Custom.Cliente] = ''"
+      : `[Custom.Cliente] IN (${nomes.map((n) => `'${aspasWiql(n)}'`).join(", ")})`;
+  const comInterno = Array.from(new Set([cliente, CLIENTE_INTERNO]));
+
+  const porProjeto = await Promise.all(
+    produtos.map(async (produto) => {
+      const { project } = DEVOPS_PROJETOS[produto];
+      const consulta = async (condicao: string) => {
+        const wiql = `
+          SELECT [System.Id]
+          FROM WorkItems
+          WHERE [System.TeamProject] = '${aspasWiql(project)}'
+            AND [System.WorkItemType] = 'Product Backlog Item'
+            AND ${condicao}
+          ORDER BY [System.Id]
+        `;
+        const res = await fetch(`https://dev.azure.com/${org}/${encodeURIComponent(project)}/_apis/wit/wiql?api-version=${API_VERSION}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" , ...authHeader(pat) },
+          body: JSON.stringify({ query: wiql }),
+        });
+        if (!res.ok) throw new Error(`Falha na consulta WIQL das entregas (${project}) (${res.status}): ${await res.text()}`);
+        return ((await res.json()) as { workItems: { id: number }[] }).workItems.map((w) => w.id);
+      };
+      const [comVersao, fechados] = await Promise.all([
+        consulta(`${clausulaCliente(comInterno)} AND [${CAMPO_VERSAO}] <> ''`),
+        consulta(`${clausulaCliente([cliente])} AND [Microsoft.VSTS.Common.ClosedDate] <> ''`),
+      ]);
+      return { project, ids: Array.from(new Set([...comVersao, ...fechados])) };
+    })
+  );
+
+  const pbis: PbiEntrega[] = [];
+  for (const { project, ids } of porProjeto) {
+    if (!ids.length) continue;
+    const works = await buscarLoteCampos(org, pat, ids, [
+      "System.Title",
+      "System.State",
+      "System.TeamProject",
+      "Custom.Cliente",
+      CAMPO_VERSAO,
+      "Microsoft.VSTS.Common.ClosedDate",
+    ]);
+    for (const w of works) {
+      const f = w.fields;
+      const bruta = textoDeCampo(f[CAMPO_VERSAO]) || (f[CAMPO_VERSAO] != null ? String(f[CAMPO_VERSAO]).trim() : "");
+      const clientePbi = textoDeCampo(f["Custom.Cliente"]);
+      pbis.push({
+        id: w.id,
+        projeto: String(f["System.TeamProject"] ?? project),
+        titulo: String(f["System.Title"] ?? `Item ${w.id}`),
+        cliente: clientePbi,
+        state: String(f["System.State"] ?? ""),
+        versao: versaoDoCampo(bruta) ?? "",
+        versaoBruta: bruta,
+        closedDate: (f["Microsoft.VSTS.Common.ClosedDate"] as string) ?? null,
+        interno: clientePbi === CLIENTE_INTERNO && cliente !== CLIENTE_INTERNO,
+      });
+    }
+  }
+  return montarEntregas(pbis, cliente);
 }
 
 // ===== Alocar PBI (Planejamento de capacidade, pedido por Heder em 2026-10-14) — ÚNICA parte deste

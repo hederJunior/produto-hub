@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Check, Rocket } from "lucide-react";
 import { C, PASTEL } from "@/lib/kmm-theme";
 import { chaveDia, formatarChaveDia } from "@/lib/datas";
-import { estaFinalizado, LIMITE_PREVISAO, type EntregasCliente as Entregas, type PbiEntrega } from "@/lib/entregas-cliente";
+import { estaFinalizado, LIMITE_PREVISAO, tituloComIdExterno, type EntregasCliente as Entregas, type PbiEntrega } from "@/lib/entregas-cliente";
 import { norm, type PbiGestaoCliente } from "@/lib/gestao-clientes";
 
 /**
@@ -102,59 +102,61 @@ export default function EntregasCliente({ cliente, produto, itensCliente }: { cl
           )}
         </section>
 
-        {/* Últimas demandas finalizadas: lateral direita */}
-        <section style={{ flex: "2 1 340px", minWidth: 0 }} aria-label="Últimas demandas finalizadas">
-          <h3 style={TITULO_BLOCO}>Finalizadas recentemente</h3>
-          {!dados ? (
-            <Esqueleto linhas={5} />
-          ) : dados.finalizadas.length === 0 ? (
-            <Vazio texto="Nenhuma demanda finalizada ainda para este cliente." />
-          ) : (
-            <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
-              {dados.finalizadas.map((p, i) => (
-                <li key={p.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 0", borderTop: i ? `1px solid ${C.border}` : "none" }}>
-                  <span aria-hidden="true" style={{ width: 20, height: 20, borderRadius: "50%", background: PASTEL.green.bg, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                    <Check size={12} color={PASTEL.green.dot} strokeWidth={3} />
-                  </span>
-                  <a href={linkPbi(p)} target="_blank" rel="noopener noreferrer" title={p.titulo} style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 600, color: C.text, textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {p.titulo}
-                  </a>
-                  <span style={{ fontSize: 12, color: C.muted, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{p.closedDate ? dataCurta(p.closedDate) : ""}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </div>
+        {/* Lateral direita: últimos itens finalizados e, logo abaixo, a previsão das próximas entregas */}
+        <div style={{ flex: "2 1 340px", minWidth: 0 }}>
+          <section aria-label="Últimas demandas finalizadas">
+            <h3 style={TITULO_BLOCO}>Últimos itens finalizados</h3>
+            {!dados ? (
+              <Esqueleto linhas={5} />
+            ) : dados.finalizadas.length === 0 ? (
+              <Vazio texto="Nenhuma demanda finalizada ainda para este cliente." />
+            ) : (
+              <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                {dados.finalizadas.map((p, i) => (
+                  <li key={p.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 0", borderTop: i ? `1px solid ${C.border}` : "none" }}>
+                    <span aria-hidden="true" style={{ width: 20, height: 20, borderRadius: "50%", background: PASTEL.green.bg, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <Check size={12} color={PASTEL.green.dot} strokeWidth={3} />
+                    </span>
+                    <a href={linkPbi(p)} target="_blank" rel="noopener noreferrer" title={tituloComIdExterno(p.idExterno, p.titulo)} style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 600, color: C.text, textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {tituloComIdExterno(p.idExterno, p.titulo)}
+                    </a>
+                    <span style={{ fontSize: 12, color: C.muted, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{p.closedDate ? dataCurta(p.closedDate) : ""}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
 
-      {/* Previsão das próximas entregas (exemplo) */}
-      <section style={{ marginTop: 42 }} aria-label="Próximas entregas">
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
-          <h3 style={{ ...TITULO_BLOCO, margin: 0 }}>Próximas entregas</h3>
-          <Pilula bg={PASTEL.purple.bg} fg={PASTEL.purple.dot} title="A regra de consulta da previsão ainda será definida">Exemplo</Pilula>
+          {/* Previsão das próximas entregas (exemplo) */}
+          <section style={{ marginTop: 44 }} aria-label="Próximas entregas">
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+              <h3 style={{ ...TITULO_BLOCO, margin: 0 }}>Próximas entregas</h3>
+              <Pilula bg={PASTEL.purple.bg} fg={PASTEL.purple.dot} title="A regra de consulta da previsão ainda será definida">Exemplo</Pilula>
+            </div>
+            {previsao.length === 0 ? (
+              <Vazio texto="Sem demandas em andamento para este cliente." />
+            ) : (
+              <ol style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                {previsao.map((p, i) => {
+                  const cor = pastelDoEstado(p.state);
+                  return (
+                    <li key={p.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "10px 0" }}>
+                      <span aria-hidden="true" style={{ width: 22, height: 22, borderRadius: "50%", border: `1.5px solid ${C.blue}`, color: C.blue, fontSize: 11.5, fontWeight: 600, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                        {i + 1}
+                      </span>
+                      <a href={linkPbi({ projeto: p.projeto, id: p.id })} target="_blank" rel="noopener noreferrer" title={tituloComIdExterno(p.idExterno, p.titulo)} style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: C.text, textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {tituloComIdExterno(p.idExterno, p.titulo)}
+                      </a>
+                      <Pilula bg={cor.bg} fg={cor.dot}>{p.state}</Pilula>
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
+            <p style={{ margin: "8px 0 0", fontSize: 12, color: C.faint }}>Exemplo ilustrativo com demandas em andamento do cliente. A previsão real de entrega será definida em breve.</p>
+          </section>
         </div>
-        {previsao.length === 0 ? (
-          <Vazio texto="Sem demandas em andamento para este cliente." />
-        ) : (
-          <ol style={{ listStyle: "none", margin: 0, padding: 0 }}>
-            {previsao.map((p, i) => {
-              const cor = pastelDoEstado(p.state);
-              return (
-                <li key={p.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "10px 0" }}>
-                  <span aria-hidden="true" style={{ width: 22, height: 22, borderRadius: "50%", border: `1.5px solid ${C.blue}`, color: C.blue, fontSize: 11.5, fontWeight: 600, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                    {i + 1}
-                  </span>
-                  <a href={linkPbi({ projeto: p.projeto, id: p.id })} target="_blank" rel="noopener noreferrer" title={p.titulo} style={{ minWidth: 0, fontSize: 13.5, color: C.text, textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {p.titulo}
-                  </a>
-                  <Pilula bg={cor.bg} fg={cor.dot}>{p.state}</Pilula>
-                </li>
-              );
-            })}
-          </ol>
-        )}
-        <p style={{ margin: "8px 0 0", fontSize: 12, color: C.faint }}>Exemplo ilustrativo com demandas em andamento do cliente. A previsão real de entrega será definida em breve.</p>
-      </section>
+      </div>
     </div>
   );
 }
@@ -165,8 +167,8 @@ function LinhaLancamento({ p }: { p: PbiEntrega }) {
       <span aria-hidden="true" style={{ width: 22, height: 22, borderRadius: "50%", border: `1.5px solid ${PASTEL.green.dot}`, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
         <Rocket size={11} color={PASTEL.green.dot} />
       </span>
-      <a href={linkPbi(p)} target="_blank" rel="noopener noreferrer" title={p.titulo} style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: C.text, textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        {p.titulo}
+      <a href={linkPbi(p)} target="_blank" rel="noopener noreferrer" title={tituloComIdExterno(p.idExterno, p.titulo)} style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: C.text, textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {tituloComIdExterno(p.idExterno, p.titulo)}
       </a>
       {p.interno && <Pilula bg={C.soft} fg={C.muted} title="PBI do cliente KMM (INTERNO)">Interno</Pilula>}
       {!estaFinalizado(p.state) && <Pilula bg={PASTEL.amber.bg} fg={PASTEL.amber.dot} title={`Status atual: ${p.state}`}>{p.state}</Pilula>}

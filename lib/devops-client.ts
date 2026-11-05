@@ -1015,6 +1015,7 @@ export async function getEntregasCliente(produtos: Produto[], cliente: string): 
       ? "[Custom.Cliente] = ''"
       : `[Custom.Cliente] IN (${nomes.map((n) => `'${aspasWiql(n)}'`).join(", ")})`;
   const comInterno = Array.from(new Set([cliente, CLIENTE_INTERNO]));
+  const campoIdExterno = await resolverCampoIdExterno(org, pat);
 
   const porProjeto = await Promise.all(
     produtos.map(async (produto) => {
@@ -1054,6 +1055,7 @@ export async function getEntregasCliente(produtos: Produto[], cliente: string): 
       "Custom.Cliente",
       CAMPO_VERSAO,
       "Microsoft.VSTS.Common.ClosedDate",
+      ...(campoIdExterno ? [campoIdExterno] : []),
     ]);
     for (const w of works) {
       const f = w.fields;
@@ -1061,6 +1063,7 @@ export async function getEntregasCliente(produtos: Produto[], cliente: string): 
       const clientePbi = textoDeCampo(f["Custom.Cliente"]);
       pbis.push({
         id: w.id,
+        idExterno: campoIdExterno ? textoDeCampo(f[campoIdExterno]) || (f[campoIdExterno] != null ? String(f[campoIdExterno]).trim() : "") : "",
         projeto: String(f["System.TeamProject"] ?? project),
         titulo: String(f["System.Title"] ?? `Item ${w.id}`),
         cliente: clientePbi,

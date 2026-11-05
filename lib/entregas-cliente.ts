@@ -13,6 +13,8 @@ export const LIMITE_PREVISAO = 5;
 
 export type PbiEntrega = {
   id: number;
+  /** Campo "ID Externo" (nº do chamado) — "" se vazio. */
+  idExterno: string;
   /** TeamProject (KMM4/KMM5) — monta o link do PBI no Azure. */
   projeto: string;
   titulo: string;
@@ -45,6 +47,12 @@ export function versaoDoCampo(bruto: string | null | undefined): string | null {
   const t = String(bruto ?? "").trim();
   if (!t || /^develop/i.test(t)) return null;
   return t.match(/\d+(?:\.\d+)+/)?.[0] ?? null;
+}
+
+/** "ID Externo - Título da demanda"; sem ID Externo, só o título. */
+export function tituloComIdExterno(idExterno: string | null | undefined, titulo: string): string {
+  const id = String(idExterno ?? "").trim();
+  return id ? `${id} - ${titulo}` : titulo;
 }
 
 /** Compara duas versões numéricas ("8.17" < "8.18" < "8.18.1"); positivo quando a > b. */

@@ -1396,8 +1396,8 @@ async function resolverCampoIdExterno(org: string, pat: string): Promise<string 
 
 /**
  * PBIs (e só PBIs) dos produtos informados com State em ESTADOS_GESTAO_CLIENTES, nas áreas do
- * produto (mesmo escopo da captura dos indicadores: Area Paths de DEVOPS_PROJETOS + raiz do
- * projeto — assim o Agging bate com o da tela principal). Uma WIQL por status e por projeto, via
+ * produto (Area Paths de DEVOPS_PROJETOS + raiz do projeto + área SWAT, que fica fora de
+ * DEVOPS_PROJETOS; os indicadores da tela principal não contam a SWAT). Uma WIQL por status e por projeto, via
  * allSettled: se um nome de status não existir num dos projetos (a WIQL rejeita valor de State
  * inválido), só aquele status some e a tela recebe um aviso, em vez de falhar inteira.
  */
@@ -1411,7 +1411,18 @@ export async function getPbisGestaoClientes(
 
   const porProjeto = await Promise.all(
     produtos.map(async (produto) => {
-      const { project, areaPaths } = DEVOPS_PROJETOS[produto];
+      const { project, areaPaths: areasDoProduto } = DEVOPS_PROJETOS[produto];
+      // A área SWAT (ex.: "KMM5\TMS - SWAT") não está em DEVOPS_PROJETOS (isso mexeria em capacidade,
+      // snapshots etc.), mas a Gestão de clientes precisa dela: sem isso os PBIs da SWAT nunca apareciam
+      // (pedido por Heder em 2026-11-05). Descoberta na árvore de áreas; se a leitura falhar, segue sem ela.
+      let areasSwat: string[] = [];
+      try {
+        areasSwat = await descobrirAreasSwat(org, pat, project);
+      } catch (e) {
+        console.error(`[gestao-clientes] áreas SWAT de ${project} não puderam ser lidas:`, e);
+        avisos.push(`Não foi possível ler a área SWAT de ${project}; os PBIs da SWAT podem estar fora desta lista.`);
+      }
+      const areaPaths = Array.from(new Set([...areasDoProduto, ...areasSwat]));
       const resultados = await Promise.allSettled(
         ESTADOS_GESTAO_CLIENTES.map(async (estado) => {
           const wiql = `
@@ -1542,9 +1553,7 @@ function acharAreasSwat(no: { name: string; children?: any[] }, prefixo: string,
  * do Azure, porque não está em DEVOPS_PROJETOS; consultar Area Path inexistente falha com TF51011).
  * Mesmas colunas da planilha de priorização GUT. `areas` volta vazio se não existir área SWAT.
  */
-export async function getPbisSwat(project: string): Promise<{ itens: ItemGut[]; areas: string[] }> {
-  const { org, pat } = getConfig();
-
+async function descobrirAreasSwat(org: string, pat: string, project: string): Promise<string[]> {
   const arvore = await fetch(
     `https://dev.azure.com/${org}/${encodeURIComponent(project)}/_apis/wit/classificationnodes/areas?$depth=4&api-version=${API_VERSION}`,
     { headers: authHeader(pat) }
@@ -1552,6 +1561,13 @@ export async function getPbisSwat(project: string): Promise<{ itens: ItemGut[]; 
   if (!arvore.ok) throw new Error(`Falha ao ler as áreas de ${project} (${arvore.status}): ${await arvore.text()}`);
   const areas: string[] = [];
   acharAreasSwat((await arvore.json()) as { name: string; children?: any[] }, project, areas);
+  return areas;
+}
+
+export async function getPbisSwat(project: string): Promise<{ itens: ItemGut[]; areas: string[] }> {
+  const { org, pat } = getConfig();
+
+  const areas = await descobrirAreasSwat(org, pat, project);
   if (!areas.length) return { itens: [], areas };
 
   const wiql = `

@@ -10,6 +10,7 @@ import { chaveDia, diasEntreChaves, formatarChaveDia } from "@/lib/datas";
 import BacklogEsteirasClientes, { type OrdemBacklog } from "@/components/BacklogEsteirasClientes";
 import PriorizacaoGut from "@/components/PriorizacaoGut";
 import KanbanUpstream from "@/components/KanbanUpstream";
+import KanbanDownstream from "@/components/KanbanDownstream";
 import { listaCabecalho, listaCelula, listaLinha, listaTituloGrupo } from "@/lib/kmm-lista";
 import RefinamentoTech from "@/components/RefinamentoTech";
 import AbasVisao from "@/components/AbasVisao";
@@ -234,6 +235,9 @@ export default function RoadmapPage() {
   // Kanban do Upstream (pedido por Heder em 2026-11-03): modo de visualização acionado por botão no topo da seção
   // Upstream, visível em todas as sub-abas. Clicar em uma sub-aba sai do Kanban.
   const [kanbanUpstream, setKanbanUpstream] = useState(false);
+  // Kanban do Downstream (pedido por Heder em 2026-11-05): mesmo modelo — botão "Kanban" na seção Downstream;
+  // escolher um dos modos (Alocação por sprint / Demandas / Lista por sprint) sai do Kanban.
+  const [kanbanDownstream, setKanbanDownstream] = useState(false);
   const abrirSubVisao = (v: "esteiras" | "gut" | "comites" | "refinamento") => {
     setVisaoBacklog(v);
     setKanbanUpstream(false);
@@ -754,22 +758,27 @@ export default function RoadmapPage() {
               ).map((o) => (
                 <div
                   key={o.valor}
-                  className={`kmm-seg-item${modoSprints === o.valor ? " active" : ""}`}
+                  className={`kmm-seg-item${!kanbanDownstream && modoSprints === o.valor ? " active" : ""}`}
                   style={{ display: "flex", alignItems: "center", gap: 6 }}
-                  onClick={() => setModoSprints(o.valor)}
+                  onClick={() => {
+                    setModoSprints(o.valor);
+                    setKanbanDownstream(false);
+                  }}
                 >
                   {o.icone} {o.label}
                 </div>
               ))}
             </div>
-            <MultiSelectFiltro
-              rotuloTodos="Todos os clientes"
-              opcoes={clientesDisponiveisSprints}
-              selecionados={clientesSprints}
-              onChange={setClientesSprints}
-            />
-            {modoSprints !== "lista" && <div ref={setSlotFiltros} style={{ display: "contents" }} />}
-            {modoSprints === "lista" && (
+            {!kanbanDownstream && (
+              <MultiSelectFiltro
+                rotuloTodos="Todos os clientes"
+                opcoes={clientesDisponiveisSprints}
+                selecionados={clientesSprints}
+                onChange={setClientesSprints}
+              />
+            )}
+            {!kanbanDownstream && modoSprints !== "lista" && <div ref={setSlotFiltros} style={{ display: "contents" }} />}
+            {!kanbanDownstream && modoSprints === "lista" && (
               <>
                 <MultiSelectFiltro
                   rotuloTodos="Todas as sprints"
@@ -801,8 +810,8 @@ export default function RoadmapPage() {
               </>
             )}
             <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, marginLeft: "auto" }}>
-              {modoSprints !== "lista" && <div ref={setSlotAcoes} style={{ display: "contents" }} />}
-              {modoSprints === "lista" && (
+              {!kanbanDownstream && modoSprints !== "lista" && <div ref={setSlotAcoes} style={{ display: "contents" }} />}
+              {!kanbanDownstream && modoSprints === "lista" && (
                 <button className="kmm-btn" onClick={exportarExcelSprints} disabled={!tarefasExibidas.length}>
                   <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <Download size={13} /> Exportar Excel
@@ -818,6 +827,16 @@ export default function RoadmapPage() {
                 <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <Users size={13} /> Planejar capacidade
                 </span>
+              </button>
+              <button
+                className="kmm-btn"
+                aria-pressed={kanbanDownstream}
+                title="Distribuição das demandas do Downstream em Kanban"
+                style={kanbanDownstream ? { borderColor: C.orange, color: C.orange, background: "#FFF1EA" } : undefined}
+                onClick={() => setKanbanDownstream((v) => !v)}
+              >
+                <Columns3 size={13} style={{ marginRight: 6, verticalAlign: "-2px" }} />
+                Kanban
               </button>
             </div>
           </>
@@ -940,6 +959,8 @@ export default function RoadmapPage() {
               </>
             )}
           </>
+        ) : visao === "sprints" && kanbanDownstream ? (
+          <KanbanDownstream refreshKey={refreshKey} />
         ) : visao === "sprints" ? (
           <>
             <div style={{ marginBottom: 16 }}>

@@ -23,6 +23,7 @@ import { CLIENTE_INTERNO, montarEntregas, versaoDoCampo, type EntregasCliente, t
 import { DEVOPS_PROJETOS, type Produto } from "./devops-projetos";
 import type { ItemGut } from "./priorizacao-gut";
 import { AREAS_KANBAN, colunaDoPbi, normKanban, type AreaKanban, type ItemKanban } from "./kanban-upstream";
+import { divisaoDoPbi, STATES_DOWNSTREAM, type ItemKanbanDownstream } from "./kanban-downstream";
 import { ESTADOS_GESTAO_CLIENTES, htmlParaTexto, norm, type PbiGestaoCliente, type UltimoComentario } from "./gestao-clientes";
 
 // Toda chamada ao Azure DevOps neste módulo é SEM cache. O Next.js guarda no Data Cache o resultado
@@ -1728,4 +1729,106 @@ export async function getKanbanUpstream(project: string): Promise<{ itens: ItemK
     });
   }
   return { itens, areas, avisos };
+}
+
+
+// ===== Kanban do Downstream (pedido por Heder em 2026-11-05). Só leitura. =====
+
+/**
+ * PBIs do Kanban do Downstream: State Execução ou Aguardando Deploy nas áreas dos produtos informados
+ * (Area Paths de DEVOPS_PROJETOS + a área SWAT do KMM5, achada na árvore de áreas), já classificados
+ * por quadro/divisão (divisaoDoPbi — Etapa e Tag filtradas no código, para tolerar a grafia
+ * "Validação Interna"/"Validação interna"). Uma WIQL por State e por projeto (allSettled): se um State
+ * falhar, só ele some e a tela recebe um aviso. PBIs fora de qualquer regra não entram.
+ */
+export async function getKanbanDownstream(produtos: Produto[]): Promise<{ itens: ItemKanbanDownstream[]; avisos: string[] }> {
+  const { org, pat } = getConfig();
+  const avisos: string[] = [];
+
+  const porProjeto = await Promise.all(
+    produtos.map(async (produto) => {
+      const { project, areaPaths } = DEVOPS_PROJETOS[produto];
+      let areasSwat: string[] = [];
+      try {
+        areasSwat = await descobrirAreasSwat(org, pat, project);
+      } catch (e) {
+        console.error(`[kanban-downstream] áreas SWAT de ${project} não puderam ser lidas:`, e);
+        avisos.push(`Não foi possível ler a área SWAT de ${project}; os PBIs da SWAT podem estar fora do Kanban.`);
+      }
+      const areas = Array.from(new Set([...areaPaths, ...areasSwat]));
+      const resultados = await Promise.allSettled(
+        STATES_DOWNSTREAM.map(async (estado) => {
+          const wiql = `
+            SELECT [System.Id]
+            FROM WorkItems
+            WHERE [System.TeamProject] = '${aspasWiql(project)}'
+              AND [System.WorkItemType] = 'Product Backlog Item'
+              AND [System.State] = '${aspasWiql(estado)}'
+              AND ${clausulaAreaPaths(areas)}
+            ORDER BY [System.Id]
+          `;
+          const res = await fetch(`https://dev.azure.com/${org}/${encodeURIComponent(project)}/_apis/wit/wiql?api-version=${API_VERSION}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...authHeader(pat) },
+            body: JSON.stringify({ query: wiql }),
+          });
+          if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+          return ((await res.json()) as { workItems: { id: number }[] }).workItems.map((w) => w.id);
+        })
+      );
+      const ids = new Set<number>();
+      resultados.forEach((r, i) => {
+        if (r.status === "fulfilled") r.value.forEach((id) => ids.add(id));
+        else {
+          console.error(`[kanban-downstream] WIQL do State "${STATES_DOWNSTREAM[i]}" falhou em ${project}:`, r.reason);
+          avisos.push(`State "${STATES_DOWNSTREAM[i]}" não pôde ser consultado em ${project}.`);
+        }
+      });
+      return { project, ids: Array.from(ids) };
+    })
+  );
+
+  const campos = [
+    "System.Title",
+    "System.AreaPath",
+    "System.TeamProject",
+    "System.State",
+    "System.Tags",
+    "System.CreatedDate",
+    "Custom.Etapa",
+    "Custom.Cliente",
+    "Custom.PO",
+    "System.AssignedTo",
+    "Microsoft.VSTS.Common.Priority",
+  ];
+
+  const itens: ItemKanbanDownstream[] = [];
+  for (const { project, ids } of porProjeto) {
+    if (!ids.length) continue;
+    const works = await buscarLoteCampos(org, pat, ids, campos);
+    for (const w of works) {
+      const f = w.fields;
+      const lugar = divisaoDoPbi({
+        state: String(f["System.State"] ?? ""),
+        etapa: textoDeCampo(f["Custom.Etapa"]),
+        tags: String(f["System.Tags"] ?? ""),
+      });
+      if (!lugar) continue;
+      const prioridade = f["Microsoft.VSTS.Common.Priority"];
+      itens.push({
+        id: w.id,
+        titulo: String(f["System.Title"] ?? `Item ${w.id}`),
+        areaPath: String(f["System.AreaPath"] ?? ""),
+        projeto: String(f["System.TeamProject"] ?? project),
+        quadro: lugar.quadro,
+        divisao: lugar.divisao,
+        cliente: textoDeCampo(f["Custom.Cliente"]),
+        po: textoDeCampo(f["Custom.PO"]),
+        responsavel: textoDeCampo(f["System.AssignedTo"]),
+        createdDate: String(f["System.CreatedDate"] ?? ""),
+        prioridade: typeof prioridade === "number" ? prioridade : null,
+      });
+    }
+  }
+  return { itens, avisos };
 }

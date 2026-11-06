@@ -14,6 +14,9 @@ export const ESTEIRAS_CLIENTES_SQUADS = [
 /** Item abre há mais de N dias (Created Date → hoje) ganha o indicador vermelho no fim da linha. */
 export const DIAS_ALERTA_BACKLOG = 30;
 
+/** Backlog Carteira: agging (hoje − Data Abertura Produto) acima disso acende o indicador vermelho (pedido por Heder em 2026-11-06). */
+export const DIAS_ALERTA_AGING_BACKLOG = 15;
+
 export type ItemBacklog = {
   id: number;
   titulo: string;

@@ -3,17 +3,17 @@
 import { useMemo, useState } from "react";
 import { Bar, BarChart, Cell, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { ChevronDown } from "lucide-react";
-import { C, corDeAreaTabela, infoPrioridade } from "@/lib/kmm-theme";
+import { C, corDeAreaTabela } from "@/lib/kmm-theme";
 import { chaveDia, diasEntreChaves, formatarChaveDia } from "@/lib/datas";
 import { listaCabecalho, listaCelula, listaLinha, listaTituloGrupo } from "@/lib/kmm-lista";
-import { DIAS_ALERTA_BACKLOG, ESTEIRAS_CLIENTES_SQUADS, nomeCurtoDaSquad, nomeDaSquad, type ItemBacklog } from "@/lib/backlog";
+import { DIAS_ALERTA_AGING_BACKLOG, ESTEIRAS_CLIENTES_SQUADS, nomeCurtoDaSquad, nomeDaSquad, type ItemBacklog } from "@/lib/backlog";
 
 const ORG_DEVOPS = "kmmbynstech";
 
 export type OrdemBacklog = "prioridade" | "data";
 
-// id | Título | Cliente | PO | Created Date | Data Abertura Produto | Classificação | Feature | Priority | alerta
-const COLUNAS = "64px minmax(240px, 2.4fr) minmax(110px, 1fr) minmax(110px, 1fr) 104px 124px minmax(110px, 1fr) minmax(120px, 1fr) 140px 28px";
+// id | Título | Cliente | PO | Created Date | Data Abertura Produto | Agging | Classificação | alerta
+const COLUNAS = "64px minmax(240px, 2.4fr) minmax(110px, 1fr) minmax(110px, 1fr) 104px 124px 96px minmax(110px, 1fr) 28px";
 
 /**
  * Ordenação aplicada a TODOS os agrupamentos (pedido por Heder em 2026-10-14), "em ordem
@@ -35,8 +35,8 @@ function ordenar(itens: ItemBacklog[], ordem: OrdemBacklog | null): ItemBacklog[
 
 /**
  * Backlog > "Esteiras Clientes": gráfico de volume por squad + lista de PBIs agrupada por Area Path
- * (cor registrada da Área, a mesma das outras telas). Item aberto há mais de 30 dias (Created Date)
- * ganha um indicador vermelho no fim da linha.
+ * (cor registrada da Área, a mesma das outras telas). Agging = hoje − Data Abertura Produto (dias);
+ * acima de DIAS_ALERTA_AGING_BACKLOG dias o item ganha um indicador vermelho no fim da linha.
  */
 export default function BacklogEsteirasClientes({ itens, ordem, hoje }: { itens: ItemBacklog[]; ordem: OrdemBacklog | null; hoje: Date }) {
   const [recolhidos, setRecolhidos] = useState<Record<string, boolean>>({});
@@ -105,16 +105,16 @@ export default function BacklogEsteirasClientes({ itens, ordem, hoje }: { itens:
                 {aberto && g.itens.length > 0 && (
                   <>
                     <div style={{ ...listaLinha(COLUNAS), marginBottom: 6, paddingLeft: 6 }}>
-                      {["ID", "Título", "Cliente", "PO", "Created Date", "Abertura Produto", "Classificação", "Feature", "Priority", ""].map((h, i) => (
+                      {["ID", "Título", "Cliente", "PO", "Created Date", "Abertura Produto", "Agging", "Classificação", ""].map((h, i) => (
                         <div key={`${h}-${i}`} style={{ ...listaCabecalho, textAlign: i < 2 ? "left" : "center" }}>
                           {h}
                         </div>
                       ))}
                     </div>
                     {g.itens.map((i) => {
-                      const dias = i.createdDate ? Math.max(0, diasEntreChaves(chaveDia(i.createdDate), hojeChave)) : null;
-                      const atrasado = dias != null && dias > DIAS_ALERTA_BACKLOG;
-                      const prioridade = infoPrioridade(i.prioridade);
+                      // Agging = hoje − Data Abertura Produto (data pura: usa só o dia, sem fuso). Sem a data, não há agging nem alerta.
+                      const dias = i.dataAberturaProduto ? Math.max(0, diasEntreChaves(i.dataAberturaProduto.slice(0, 10), hojeChave)) : null;
+                      const atrasado = dias != null && dias > DIAS_ALERTA_AGING_BACKLOG;
                       const c = (centro = true, primeira = false): React.CSSProperties => ({ ...listaCelula({ cor: g.cor.bg, primeira, centro }), color: C.text });
                       return (
                         <div key={i.id} style={listaLinha(COLUNAS)}>
@@ -134,21 +134,25 @@ export default function BacklogEsteirasClientes({ itens, ordem, hoje }: { itens:
                           </div>
                           <div style={c()}>{i.cliente || "—"}</div>
                           <div style={{ ...c(), color: C.muted }}>{i.po || "—"}</div>
-                          <div style={{ ...c(), fontVariantNumeric: "tabular-nums" }} title={dias != null ? `${dias} dias em aberto` : undefined}>
+                          <div style={{ ...c(), fontVariantNumeric: "tabular-nums" }}>
                             {i.createdDate ? formatarChaveDia(chaveDia(i.createdDate)) : "—"}
                           </div>
                           <div style={{ ...c(), fontVariantNumeric: "tabular-nums" }}>
                             {i.dataAberturaProduto ? formatarChaveDia(i.dataAberturaProduto.slice(0, 10)) : "—"}
                           </div>
+                          <div
+                            style={{ ...c(), fontVariantNumeric: "tabular-nums", fontWeight: atrasado ? 700 : 400, color: atrasado ? C.red : C.text, whiteSpace: "nowrap" }}
+                            title={dias != null ? `${dias} dias desde a Abertura Produto${atrasado ? ` (mais de ${DIAS_ALERTA_AGING_BACKLOG})` : ""}` : "Sem Data Abertura Produto"}
+                          >
+                            {dias != null ? `${dias} ${dias === 1 ? "dia" : "dias"}` : "—"}
+                          </div>
                           <div style={c()}>{i.classificacao || "—"}</div>
-                          <div style={c()}>{i.feature || "—"}</div>
-                          <div style={{ ...c(), padding: 0, background: prioridade.bg, color: prioridade.fg, fontWeight: 600, whiteSpace: "nowrap" }}>{prioridade.label}</div>
                           <div style={{ ...c(), padding: "10px 4px" }}>
                             {atrasado && (
                               <span
                                 role="img"
-                                aria-label={`Em aberto há ${dias} dias`}
-                                title={`Em aberto há ${dias} dias (mais de ${DIAS_ALERTA_BACKLOG})`}
+                                aria-label={`Agging de ${dias} dias`}
+                                title={`Agging de ${dias} dias (mais de ${DIAS_ALERTA_AGING_BACKLOG})`}
                                 style={{ width: 12, height: 12, borderRadius: "50%", background: C.red, boxShadow: "0 0 0 3px #FBE7E4", display: "inline-block" }}
                               />
                             )}

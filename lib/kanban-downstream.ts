@@ -23,8 +23,10 @@ export type DivisaoDownstream = {
   titulo: string;
   /** State do Azure. */
   status: string;
-  /** Etapa como aparece no Azure (mostrada em "Regras do fluxo"). */
+  /** Etapa como aparece no Azure (mostrada em "Regras do fluxo"); "Qualquer etapa" quando `qualquerEtapa`. */
   etapa: string;
+  /** Aceita PBI de qualquer Etapa (inclusive vazia) — só State (e Tag, se houver) decidem. */
+  qualquerEtapa?: boolean;
   /** Outras grafias de Etapa aceitas além de `etapa` (comparação sem acento/caixa). */
   etapasAceitas?: string[];
   /** Tag exigida; a divisão com tag tem preferência sobre a irmã sem tag (ver divisaoDoPbi). */
@@ -83,10 +85,8 @@ export const QUADROS_DOWNSTREAM: DefinicaoQuadro[] = [
     chave: "deploy",
     titulo: "Aguardando Deploy",
     cor: "green",
-    divisoes: [
-      { chave: "deploy.tech", titulo: "Tech", status: "Aguardando Deploy", etapa: "Execução" },
-      { chave: "deploy.produto", titulo: "Produto", status: "Aguardando Deploy", etapa: "Backlog" },
-    ],
+    // Sem subdivisões (2026-11-06): todo PBI em Aguardando Deploy, de qualquer Etapa.
+    divisoes: [{ chave: "deploy", titulo: "", status: "Aguardando Deploy", etapa: "Qualquer etapa", qualquerEtapa: true }],
   },
 ];
 
@@ -124,7 +124,7 @@ export function divisaoDoPbi(p: { state: string; etapa: string; tags: string }):
   const candidatas = DIVISOES_DOWNSTREAM.filter(
     (d) =>
       normKanban(d.status) === state &&
-      [d.etapa, ...(d.etapasAceitas ?? [])].some((e) => normKanban(e) === etapa) &&
+      (d.qualquerEtapa || [d.etapa, ...(d.etapasAceitas ?? [])].some((e) => normKanban(e) === etapa)) &&
       (!d.tag || temTag(p.tags, d.tag))
   );
   const escolhida = candidatas.find((d) => d.tag) ?? candidatas[0];

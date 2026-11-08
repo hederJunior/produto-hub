@@ -24,6 +24,7 @@ import { DEVOPS_PROJETOS, type Produto } from "./devops-projetos";
 import type { ItemGut } from "./priorizacao-gut";
 import { AREAS_KANBAN, colunaDoPbi, normKanban, type AreaKanban, type ItemKanban } from "./kanban-upstream";
 import { divisaoDoPbi, STATES_DOWNSTREAM, type ItemKanbanDownstream } from "./kanban-downstream";
+import type { ItemAgDeploy } from "./ag-deploy";
 import { ESTADOS_GESTAO_CLIENTES, htmlParaTexto, norm, type PbiGestaoCliente, type UltimoComentario } from "./gestao-clientes";
 
 // Toda chamada ao Azure DevOps neste módulo é SEM cache. O Next.js guarda no Data Cache o resultado
@@ -996,6 +997,63 @@ export async function getRefinamentoTech(projetos: string[]): Promise<ItemRefina
     createdDate: String(w.fields["System.CreatedDate"] ?? ""),
     dataComite: (w.fields[CAMPO_DATA_COMITE] as string) ?? null,
   }));
+}
+
+/**
+ * PBIs de Downstream > "Ag. Deploy": State = "Aguardando Deploy" (qualquer Etapa e qualquer área dos
+ * projetos informados — a tela agrupa por Area Path). A Resolved Date é a data base do aging; o último
+ * comentário vem à parte (getUltimosComentarios), em lotes, para a lista aparecer logo.
+ */
+export async function getAgDeploy(projetos: string[]): Promise<ItemAgDeploy[]> {
+  const { org, pat } = getConfig();
+
+  const porProjeto = await Promise.all(
+    projetos.map(async (project) => {
+      const wiql = `
+        SELECT [System.Id]
+        FROM WorkItems
+        WHERE [System.TeamProject] = '${aspasWiql(project)}'
+          AND [System.WorkItemType] = 'Product Backlog Item'
+          AND [System.State] = 'Aguardando Deploy'
+        ORDER BY [System.Id]
+      `;
+      const wiqlRes = await fetch(`https://dev.azure.com/${org}/${encodeURIComponent(project)}/_apis/wit/wiql?api-version=${API_VERSION}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(pat) },
+        body: JSON.stringify({ query: wiql }),
+      });
+      if (!wiqlRes.ok) throw new Error(`Falha na consulta WIQL de Ag. Deploy (${project}) (${wiqlRes.status}): ${await wiqlRes.text()}`);
+      const ids = ((await wiqlRes.json()) as { workItems: { id: number }[] }).workItems.map((w) => w.id);
+      if (!ids.length) return [];
+
+      const works = await buscarLoteCampos(org, pat, ids, [
+        "System.Title",
+        "System.AreaPath",
+        "System.TeamProject",
+        "System.CommentCount",
+        "Custom.Cliente",
+        "Custom.PO",
+        CAMPO_CLASSIFICACAO,
+        "Microsoft.VSTS.Common.ResolvedDate",
+      ]);
+      return works.map((w): ItemAgDeploy => {
+        const f = w.fields;
+        const qtd = f["System.CommentCount"];
+        return {
+          id: w.id,
+          titulo: String(f["System.Title"] ?? `Item ${w.id}`),
+          areaPath: String(f["System.AreaPath"] ?? ""),
+          projeto: String(f["System.TeamProject"] ?? project),
+          cliente: textoDeCampo(f["Custom.Cliente"]),
+          po: textoDeCampo(f["Custom.PO"]),
+          classificacao: textoDeCampo(f[CAMPO_CLASSIFICACAO]),
+          resolvedDate: (f["Microsoft.VSTS.Common.ResolvedDate"] as string) ?? null,
+          qtdComentarios: typeof qtd === "number" ? qtd : 0,
+        };
+      });
+    })
+  );
+  return porProjeto.flat();
 }
 
 // ===== Gestão de clientes > Demandas entregues (pedido por Heder em 2026-11-04). Só leitura. =====

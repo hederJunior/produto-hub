@@ -11,11 +11,13 @@ import BacklogEsteirasClientes, { type OrdemBacklog } from "@/components/Backlog
 import PriorizacaoGut from "@/components/PriorizacaoGut";
 import KanbanUpstream from "@/components/KanbanUpstream";
 import KanbanDownstream from "@/components/KanbanDownstream";
+import AgDeploy from "@/components/AgDeploy";
 import { listaCabecalho, listaCelula, listaLinha, listaTituloGrupo } from "@/lib/kmm-lista";
 import RefinamentoTech from "@/components/RefinamentoTech";
 import AbasVisao from "@/components/AbasVisao";
 import MultiSelectFiltro from "@/components/MultiSelectFiltro";
 import type { ItemBacklog, ItemRefinamento } from "@/lib/backlog";
+import type { ItemAgDeploy } from "@/lib/ag-deploy";
 import PainelCapacidade from "@/components/PainelCapacidade";
 import PageHeader from "@/components/PageHeader";
 
@@ -238,6 +240,13 @@ export default function RoadmapPage() {
   // Kanban do Downstream (pedido por Heder em 2026-11-05): mesmo modelo — botão "Kanban" na seção Downstream;
   // escolher um dos modos (Alocação por sprint / Demandas / Lista por sprint) sai do Kanban.
   const [kanbanDownstream, setKanbanDownstream] = useState(false);
+  // Downstream > Ag. Deploy (pedido por Heder em 2026-11-08): 4ª opção do seletor de modos, carregada só quando aberta.
+  const [agDeploy, setAgDeploy] = useState(false);
+  const [agDeployItens, setAgDeployItens] = useState<ItemAgDeploy[]>([]);
+  const [carregandoAgDeploy, setCarregandoAgDeploy] = useState(false);
+  const [erroAgDeploy, setErroAgDeploy] = useState<string | null>(null);
+  // Kanban e Ag. Deploy substituem o conteúdo dos modos de sprint: filtros/ações desses modos saem de cena.
+  const telaEspecialDownstream = kanbanDownstream || agDeploy;
   const abrirSubVisao = (v: "esteiras" | "gut" | "comites" | "refinamento") => {
     setVisaoBacklog(v);
     setKanbanUpstream(false);
@@ -374,6 +383,25 @@ export default function RoadmapPage() {
       cancelado = true;
     };
   }, [produto, visao, visaoBacklog, refreshKey]);
+
+  useEffect(() => {
+    if (visao !== "sprints" || !agDeploy) return;
+    let cancelado = false;
+    setCarregandoAgDeploy(true);
+    setErroAgDeploy(null);
+    fetch(`/api/roadmap/ag-deploy?produto=${produto}`, { cache: "no-store" })
+      .then((res) => res.json())
+      .then((j) => {
+        if (cancelado) return;
+        if (j.erro) setErroAgDeploy(j.detalhe ? `${j.erro} (${j.detalhe})` : j.erro);
+        setAgDeployItens(j.itens ?? []);
+      })
+      .catch(() => !cancelado && setErroAgDeploy("Não foi possível carregar Ag. Deploy do Azure DevOps."))
+      .finally(() => !cancelado && setCarregandoAgDeploy(false));
+    return () => {
+      cancelado = true;
+    };
+  }, [produto, visao, agDeploy, refreshKey]);
 
   useEffect(() => {
     setCarregandoBacklog(true);
@@ -758,18 +786,37 @@ export default function RoadmapPage() {
               ).map((o) => (
                 <div
                   key={o.valor}
-                  className={`kmm-seg-item${!kanbanDownstream && modoSprints === o.valor ? " active" : ""}`}
+                  className={`kmm-seg-item${!telaEspecialDownstream && modoSprints === o.valor ? " active" : ""}`}
                   style={{ display: "flex", alignItems: "center", gap: 6 }}
                   onClick={() => {
                     setModoSprints(o.valor);
                     setKanbanDownstream(false);
+                    setAgDeploy(false);
                   }}
                 >
                   {o.icone} {o.label}
                 </div>
               ))}
+              <div
+                className={`kmm-seg-item${agDeploy ? " active" : ""}`}
+                role="button"
+                tabIndex={0}
+                style={{ display: "flex", alignItems: "center", gap: 6 }}
+                onClick={() => {
+                  setAgDeploy(true);
+                  setKanbanDownstream(false);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    setAgDeploy(true);
+                    setKanbanDownstream(false);
+                  }
+                }}
+              >
+                <Rocket size={13} /> Ag. Deploy
+              </div>
             </div>
-            {!kanbanDownstream && (
+            {!telaEspecialDownstream && (
               <MultiSelectFiltro
                 rotuloTodos="Todos os clientes"
                 opcoes={clientesDisponiveisSprints}
@@ -777,8 +824,8 @@ export default function RoadmapPage() {
                 onChange={setClientesSprints}
               />
             )}
-            {!kanbanDownstream && modoSprints !== "lista" && <div ref={setSlotFiltros} style={{ display: "contents" }} />}
-            {!kanbanDownstream && modoSprints === "lista" && (
+            {!telaEspecialDownstream && modoSprints !== "lista" && <div ref={setSlotFiltros} style={{ display: "contents" }} />}
+            {!telaEspecialDownstream && modoSprints === "lista" && (
               <>
                 <MultiSelectFiltro
                   rotuloTodos="Todas as sprints"
@@ -810,8 +857,8 @@ export default function RoadmapPage() {
               </>
             )}
             <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, marginLeft: "auto" }}>
-              {!kanbanDownstream && modoSprints !== "lista" && <div ref={setSlotAcoes} style={{ display: "contents" }} />}
-              {!kanbanDownstream && modoSprints === "lista" && (
+              {!telaEspecialDownstream && modoSprints !== "lista" && <div ref={setSlotAcoes} style={{ display: "contents" }} />}
+              {!telaEspecialDownstream && modoSprints === "lista" && (
                 <button className="kmm-btn" onClick={exportarExcelSprints} disabled={!tarefasExibidas.length}>
                   <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <Download size={13} /> Exportar Excel
@@ -833,7 +880,10 @@ export default function RoadmapPage() {
                 aria-pressed={kanbanDownstream}
                 title="Distribuição das demandas do Downstream em Kanban"
                 style={kanbanDownstream ? { borderColor: C.orange, color: C.orange, background: "#FFF1EA" } : undefined}
-                onClick={() => setKanbanDownstream((v) => !v)}
+                onClick={() => {
+                  setKanbanDownstream((v) => !v);
+                  setAgDeploy(false);
+                }}
               >
                 <Columns3 size={13} style={{ marginRight: 6, verticalAlign: "-2px" }} />
                 Kanban
@@ -958,6 +1008,27 @@ export default function RoadmapPage() {
                 </div>
               </>
             )}
+          </>
+        ) : visao === "sprints" && agDeploy ? (
+          <>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontFamily: "Sora,sans-serif", fontWeight: 800, fontSize: 20, color: C.text }}>
+                Ag. Deploy {produtoLabelFooter}
+              </div>
+              <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+                PBIs em Aguardando Deploy. O aging conta os dias desde a Resolved Date.
+              </div>
+            </div>
+            {carregandoAgDeploy && <p style={{ color: C.muted }}>Carregando Ag. Deploy do Azure DevOps…</p>}
+            {erroAgDeploy && (
+              <div className="kmm-card" style={{ color: C.red, fontSize: 13 }}>
+                {erroAgDeploy}
+              </div>
+            )}
+            {!carregandoAgDeploy && !erroAgDeploy && agDeployItens.length === 0 && (
+              <p style={{ color: C.muted }}>Nenhum PBI em Aguardando Deploy para o produto selecionado.</p>
+            )}
+            {!carregandoAgDeploy && !erroAgDeploy && agDeployItens.length > 0 && <AgDeploy itens={agDeployItens} hoje={agora ?? new Date()} />}
           </>
         ) : visao === "sprints" && kanbanDownstream ? (
           <KanbanDownstream refreshKey={refreshKey} />

@@ -222,7 +222,7 @@ export default function KanbanUpstream({ refreshKey = 0 }: { refreshKey?: number
                     {cards.length === 0 ? (
                       <div style={{ border: `1.5px dashed ${C.border}`, borderRadius: 12, padding: "22px 12px", textAlign: "center", fontSize: 12.5, color: C.faint }}>Sem demandas</div>
                     ) : (
-                      cards.map((i) => <CardKanban key={i.id} item={i} cor={cor} hojeChave={hojeChave} mostrarComite={col.chave === "comite"} />)
+                      cards.map((i) => <CardKanban key={i.id} item={i} cor={cor} hojeChave={hojeChave} mostrarComite={col.chave === "comite"} agingPorComite={col.chave === "analise"} />)
                     )}
                   </div>
                 </section>
@@ -235,9 +235,17 @@ export default function KanbanUpstream({ refreshKey = 0 }: { refreshKey?: number
   );
 }
 
-function CardKanban({ item, cor, hojeChave, mostrarComite }: { item: ItemKanban; cor: { bg: string; dot: string }; hojeChave: string; mostrarComite: boolean }) {
+function CardKanban({ item, cor, hojeChave, mostrarComite, agingPorComite }: { item: ItemKanban; cor: { bg: string; dot: string }; hojeChave: string; mostrarComite: boolean; agingPorComite: boolean }) {
   const prio = item.prioridade != null ? infoPrioridade(item.prioridade) : null;
-  const dias = item.createdDate ? diasEntreChaves(chaveDia(item.createdDate), hojeChave) : null;
+  // Aging do card: em "Em Análise Tech" = hoje − Data de Comitê (pedido por Heder em 2026-11-10; sem a data, não há
+  // aging); nas demais colunas segue sendo os dias desde a Created Date.
+  const dias = agingPorComite
+    ? item.dataComite
+      ? Math.max(0, diasEntreChaves(item.dataComite.slice(0, 10), hojeChave))
+      : null
+    : item.createdDate
+      ? diasEntreChaves(chaveDia(item.createdDate), hojeChave)
+      : null;
   const alerta = dias != null && dias > DIAS_ALERTA_BACKLOG;
 
   return (
@@ -292,7 +300,7 @@ function CardKanban({ item, cor, hojeChave, mostrarComite }: { item: ItemKanban;
           <span style={{ fontSize: 12, color: C.faint }}>Sem PO</span>
         )}
         {dias != null && (
-          <span title={`Aberto há ${dias} dia(s)`} style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11.5, fontWeight: alerta ? 600 : 500, color: alerta ? C.red : C.muted, flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
+          <span title={agingPorComite ? `Aging: ${dias} dia(s) desde a Data de Comitê` : `Aberto há ${dias} dia(s)`} style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11.5, fontWeight: alerta ? 600 : 500, color: alerta ? C.red : C.muted, flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
             <Clock size={11} />
             {dias}d
           </span>

@@ -103,7 +103,7 @@ export default function KanbanUpstream({ refreshKey = 0 }: { refreshKey?: number
     [itensDaArea, responsaveisSel]
   );
 
-  // Ordem das colunas: Backlog Produto pela Created Date e Comitê pela Data de Comitê, ambas da menor
+  // Ordem das colunas: Em Análise Tech pelo aging (maior primeiro, ver abaixo). Backlog Produto pela Created Date e Comitê pela Data de Comitê, ambas da menor
   // (mais antiga) para a maior (pedido por Heder em 2026-11-04). As demais: mais prioritário primeiro
   // (1 = Crítica; sem prioridade por último), depois o mais antigo. Sem data vai sempre para o fim.
   const porColuna = useMemo(() => {
@@ -111,6 +111,9 @@ export default function KanbanUpstream({ refreshKey = 0 }: { refreshKey?: number
     const ordenadores: Record<string, (a: ItemKanban, b: ItemKanban) => number> = {
       backlog: (a, b) => porData(a.createdDate, b.createdDate) || a.id - b.id,
       comite: (a, b) => porData(a.dataComite, b.dataComite) || a.id - b.id,
+      // Em Análise Tech: pelo aging (hoje − Data de Comitê) do maior para o menor = Data de Comitê mais antiga primeiro
+      // (pedido por Heder em 2026-11-10). Sem Data de Comitê (sem aging) vai para o fim.
+      analise: (a, b) => porData(a.dataComite?.slice(0, 10), b.dataComite?.slice(0, 10)) || a.id - b.id,
     };
     const padrao = (a: ItemKanban, b: ItemKanban) =>
       (a.prioridade ?? 99) - (b.prioridade ?? 99) || a.createdDate.localeCompare(b.createdDate) || a.id - b.id;

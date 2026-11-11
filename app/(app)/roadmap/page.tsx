@@ -12,12 +12,14 @@ import PriorizacaoGut from "@/components/PriorizacaoGut";
 import KanbanUpstream from "@/components/KanbanUpstream";
 import KanbanDownstream from "@/components/KanbanDownstream";
 import AgDeploy from "@/components/AgDeploy";
+import PrevisaoEntregas from "@/components/PrevisaoEntregas";
 import { listaCabecalho, listaCelula, listaLinha, listaTituloGrupo } from "@/lib/kmm-lista";
 import RefinamentoTech from "@/components/RefinamentoTech";
 import AbasVisao from "@/components/AbasVisao";
 import MultiSelectFiltro from "@/components/MultiSelectFiltro";
 import type { ItemBacklog, ItemRefinamento } from "@/lib/backlog";
 import type { ItemAgDeploy } from "@/lib/ag-deploy";
+import type { ItemPrevisao, SprintPrevisao } from "@/lib/previsao-entregas";
 import PainelCapacidade from "@/components/PainelCapacidade";
 import PageHeader from "@/components/PageHeader";
 
@@ -245,8 +247,15 @@ export default function RoadmapPage() {
   const [agDeployItens, setAgDeployItens] = useState<ItemAgDeploy[]>([]);
   const [carregandoAgDeploy, setCarregandoAgDeploy] = useState(false);
   const [erroAgDeploy, setErroAgDeploy] = useState<string | null>(null);
-  // Kanban e Ag. Deploy substituem o conteúdo dos modos de sprint: filtros/ações desses modos saem de cena.
-  const telaEspecialDownstream = kanbanDownstream || agDeploy;
+  // Downstream > Previsão de Entregas (pedido por Heder em 2026-11-11): PBIs em aberto por sprint (Iteration do PBI).
+  const [previsao, setPrevisao] = useState(false);
+  const [previsaoItens, setPrevisaoItens] = useState<ItemPrevisao[]>([]);
+  const [previsaoSprints, setPrevisaoSprints] = useState<SprintPrevisao[]>([]);
+  const [previsaoAvisos, setPrevisaoAvisos] = useState<string[]>([]);
+  const [carregandoPrevisao, setCarregandoPrevisao] = useState(false);
+  const [erroPrevisao, setErroPrevisao] = useState<string | null>(null);
+  // Kanban, Ag. Deploy e Previsão substituem o conteúdo dos modos de sprint: filtros/ações desses modos saem de cena.
+  const telaEspecialDownstream = kanbanDownstream || agDeploy || previsao;
   const abrirSubVisao = (v: "esteiras" | "gut" | "comites" | "refinamento") => {
     setVisaoBacklog(v);
     setKanbanUpstream(false);
@@ -402,6 +411,27 @@ export default function RoadmapPage() {
       cancelado = true;
     };
   }, [produto, visao, agDeploy, refreshKey]);
+
+  useEffect(() => {
+    if (visao !== "sprints" || !previsao) return;
+    let cancelado = false;
+    setCarregandoPrevisao(true);
+    setErroPrevisao(null);
+    fetch(`/api/roadmap/previsao-entregas?produto=${produto}`, { cache: "no-store" })
+      .then((res) => res.json())
+      .then((j) => {
+        if (cancelado) return;
+        if (j.erro) setErroPrevisao(j.detalhe ? `${j.erro} (${j.detalhe})` : j.erro);
+        setPrevisaoItens(j.itens ?? []);
+        setPrevisaoSprints(j.sprints ?? []);
+        setPrevisaoAvisos(j.avisos ?? []);
+      })
+      .catch(() => !cancelado && setErroPrevisao("Não foi possível carregar a Previsão de Entregas do Azure DevOps."))
+      .finally(() => !cancelado && setCarregandoPrevisao(false));
+    return () => {
+      cancelado = true;
+    };
+  }, [produto, visao, previsao, refreshKey]);
 
   useEffect(() => {
     setCarregandoBacklog(true);
@@ -792,6 +822,7 @@ export default function RoadmapPage() {
                     setModoSprints(o.valor);
                     setKanbanDownstream(false);
                     setAgDeploy(false);
+                    setPrevisao(false);
                   }}
                 >
                   {o.icone} {o.label}
@@ -805,15 +836,37 @@ export default function RoadmapPage() {
                 onClick={() => {
                   setAgDeploy(true);
                   setKanbanDownstream(false);
+                  setPrevisao(false);
                 }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
                     setAgDeploy(true);
                     setKanbanDownstream(false);
+                    setPrevisao(false);
                   }
                 }}
               >
                 <Rocket size={13} /> Ag. Deploy
+              </div>
+              <div
+                className={`kmm-seg-item${previsao ? " active" : ""}`}
+                role="button"
+                tabIndex={0}
+                style={{ display: "flex", alignItems: "center", gap: 6 }}
+                onClick={() => {
+                  setPrevisao(true);
+                  setKanbanDownstream(false);
+                  setAgDeploy(false);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    setPrevisao(true);
+                    setKanbanDownstream(false);
+                    setAgDeploy(false);
+                  }
+                }}
+              >
+                <CalendarCheck size={13} /> Previsão de Entregas
               </div>
             </div>
             {!telaEspecialDownstream && (
@@ -883,6 +936,7 @@ export default function RoadmapPage() {
                 onClick={() => {
                   setKanbanDownstream((v) => !v);
                   setAgDeploy(false);
+                  setPrevisao(false);
                 }}
               >
                 <Columns3 size={13} style={{ marginRight: 6, verticalAlign: "-2px" }} />
@@ -1007,6 +1061,33 @@ export default function RoadmapPage() {
                   </div>
                 </div>
               </>
+            )}
+          </>
+        ) : visao === "sprints" && previsao ? (
+          <>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontFamily: "Sora,sans-serif", fontWeight: 800, fontSize: 20, color: C.text }}>
+                Previsão de Entregas {produtoLabelFooter}
+              </div>
+              <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+                PBIs em aberto agrupados pela sprint (Iteration do PBI).
+              </div>
+            </div>
+            {carregandoPrevisao && <p style={{ color: C.muted }}>Carregando Previsão de Entregas do Azure DevOps…</p>}
+            {erroPrevisao && (
+              <div className="kmm-card" style={{ color: C.red, fontSize: 13 }}>
+                {erroPrevisao}
+              </div>
+            )}
+            {!carregandoPrevisao &&
+              previsaoAvisos.map((a) => (
+                <div key={a} className="kmm-card" style={{ marginBottom: 12, fontSize: 13, color: "#8a5a00", background: "#fff6e0" }}>{a}</div>
+              ))}
+            {!carregandoPrevisao && !erroPrevisao && previsaoItens.length === 0 && (
+              <p style={{ color: C.muted }}>Nenhum PBI em aberto com sprint definida para o produto selecionado.</p>
+            )}
+            {!carregandoPrevisao && !erroPrevisao && previsaoItens.length > 0 && (
+              <PrevisaoEntregas itens={previsaoItens} sprints={previsaoSprints} hoje={agora ?? new Date()} mostrarProjeto={produto === "AMBOS"} />
             )}
           </>
         ) : visao === "sprints" && agDeploy ? (

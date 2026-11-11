@@ -25,6 +25,7 @@ import type { ItemGut } from "./priorizacao-gut";
 import { AREAS_KANBAN, colunaDoPbi, normKanban, type AreaKanban, type ItemKanban } from "./kanban-upstream";
 import { divisaoDoPbi, STATES_DOWNSTREAM, type ItemKanbanDownstream } from "./kanban-downstream";
 import type { ItemAgDeploy } from "./ag-deploy";
+import { estaEncerrado, sprintDoIteration, type ItemPrevisao, type SprintPrevisao } from "./previsao-entregas";
 import { ESTADOS_GESTAO_CLIENTES, htmlParaTexto, norm, type PbiGestaoCliente, type UltimoComentario } from "./gestao-clientes";
 
 // Toda chamada ao Azure DevOps neste módulo é SEM cache. O Next.js guarda no Data Cache o resultado
@@ -1054,6 +1055,116 @@ export async function getAgDeploy(projetos: string[]): Promise<ItemAgDeploy[]> {
     })
   );
   return porProjeto.flat();
+}
+
+/**
+ * Datas das iterations de um projeto indexadas pelo CAMINHO COMPLETO ("KMM4\\2026\\Sprint 1"): o nome
+ * sozinho não serve, porque se repete entre anos (2026\\Sprint 1 e 2027\\Sprint 1 têm datas diferentes).
+ */
+async function getDatasIterationsPorCaminho(org: string, pat: string, project: string): Promise<Map<string, { inicio: string | null; fim: string | null }>> {
+  const res = await fetch(`https://dev.azure.com/${org}/${encodeURIComponent(project)}/_apis/wit/classificationnodes/iterations?$depth=6&api-version=${API_VERSION}`, { headers: authHeader(pat) });
+  if (!res.ok) throw new Error(`Falha ao ler as iterations de ${project} (${res.status}): ${await res.text()}`);
+  const mapa = new Map<string, { inicio: string | null; fim: string | null }>();
+  const visitar = (no: NoIteracao, caminho: string) => {
+    if (no.attributes?.startDate || no.attributes?.finishDate) {
+      mapa.set(caminho, { inicio: no.attributes.startDate ?? null, fim: no.attributes.finishDate ?? null });
+    }
+    no.children?.forEach((filho) => visitar(filho, `${caminho}\\${filho.name}`));
+  };
+  const raiz = (await res.json()) as NoIteracao;
+  visitar(raiz, raiz.name || project);
+  return mapa;
+}
+
+/**
+ * PBIs de Downstream > "Previsão de Entregas": só Product Backlog Item, fora de Finalizado/Cancelado,
+ * cuja Iteration (System.IterationPath do próprio PBI) é uma sprint (3º nível). As datas de cada sprint
+ * vêm da árvore de iterations do projeto (getDatasIterationsPorCaminho); se ela falhar, a tela segue sem datas e
+ * recebe um aviso. O filtro de State é refeito em JS porque o Azure traz variações de caixa.
+ */
+export async function getPrevisaoEntregas(projetos: string[]): Promise<{ itens: ItemPrevisao[]; sprints: SprintPrevisao[]; avisos: string[] }> {
+  const { org, pat } = getConfig();
+  const avisos: string[] = [];
+
+  const porProjeto = await Promise.all(
+    projetos.map(async (project) => {
+      const wiql = `
+        SELECT [System.Id]
+        FROM WorkItems
+        WHERE [System.TeamProject] = '${aspasWiql(project)}'
+          AND [System.WorkItemType] = 'Product Backlog Item'
+          AND [System.State] NOT IN ('Finalizado', 'Cancelado')
+          AND [System.IterationPath] <> '${aspasWiql(project)}'
+        ORDER BY [System.Id]
+      `;
+      const wiqlRes = await fetch(`https://dev.azure.com/${org}/${encodeURIComponent(project)}/_apis/wit/wiql?api-version=${API_VERSION}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(pat) },
+        body: JSON.stringify({ query: wiql }),
+      });
+      if (!wiqlRes.ok) throw new Error(`Falha na consulta WIQL da Previsão de Entregas (${project}) (${wiqlRes.status}): ${await wiqlRes.text()}`);
+      const ids = ((await wiqlRes.json()) as { workItems: { id: number }[] }).workItems.map((w) => w.id);
+
+      const works = ids.length
+        ? await buscarLoteCampos(org, pat, ids, [
+            "System.Title",
+            "System.AreaPath",
+            "System.TeamProject",
+            "System.IterationPath",
+            "System.State",
+            "Custom.Etapa",
+            "Custom.Cliente",
+            "Custom.PO",
+            CAMPO_CLASSIFICACAO,
+          ])
+        : [];
+
+      let datas = new Map<string, { inicio: string | null; fim: string | null }>();
+      try {
+        datas = await getDatasIterationsPorCaminho(org, pat, project);
+      } catch (e) {
+        console.error(`[previsao-entregas] datas das sprints de ${project} não puderam ser lidas:`, e);
+        avisos.push(`Não foi possível ler as datas das sprints de ${project}; a lista segue sem datas.`);
+      }
+      return { project, works, datas };
+    })
+  );
+
+  const itens: ItemPrevisao[] = [];
+  const sprints = new Map<string, SprintPrevisao>();
+  for (const { project, works, datas } of porProjeto) {
+    for (const w of works) {
+      const f = w.fields;
+      const state = String(f["System.State"] ?? "");
+      const iterationPath = String(f["System.IterationPath"] ?? "");
+      const nome = sprintDoIteration(iterationPath);
+      if (!nome || estaEncerrado(state)) continue;
+      const projeto = String(f["System.TeamProject"] ?? project);
+      itens.push({
+        id: w.id,
+        titulo: String(f["System.Title"] ?? `Item ${w.id}`),
+        areaPath: String(f["System.AreaPath"] ?? ""),
+        projeto,
+        iterationPath,
+        state,
+        etapa: textoDeCampo(f["Custom.Etapa"]),
+        cliente: textoDeCampo(f["Custom.Cliente"]),
+        po: textoDeCampo(f["Custom.PO"]),
+        classificacao: textoDeCampo(f[CAMPO_CLASSIFICACAO]),
+      });
+      if (!sprints.has(iterationPath)) {
+        const d = datas.get(iterationPath);
+        sprints.set(iterationPath, {
+          chave: iterationPath,
+          projeto,
+          nome,
+          inicio: d?.inicio ? d.inicio.slice(0, 10) : null,
+          fim: d?.fim ? d.fim.slice(0, 10) : null,
+        });
+      }
+    }
+  }
+  return { itens, sprints: Array.from(sprints.values()), avisos };
 }
 
 // ===== Gestão de clientes > Demandas entregues (pedido por Heder em 2026-11-04). Só leitura. =====

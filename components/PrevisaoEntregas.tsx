@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, Cell, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { ChevronDown } from "lucide-react";
+import MultiSelectFiltro from "@/components/MultiSelectFiltro";
 import { C, PASTEL, corDeEstadoDevOps } from "@/lib/kmm-theme";
 import { chaveDia, formatarChaveDia } from "@/lib/datas";
 import { nomeCurtoDaSquad } from "@/lib/backlog";
@@ -21,21 +22,66 @@ const LARGURA_BARRA = 62;
  * Downstream > "Previsão de Entregas": gráfico de volume por sprint + lista de PBIs em aberto agrupada
  * pela sprint (Iteration do PBI), no modelo da lista de "Backlog Carteira". Por padrão mostra a sprint
  * em andamento e as futuras; as já encerradas (com PBIs que não foram concluídos) entram pelo botão
- * "Mostrar sprints encerradas".
+ * "Mostrar sprints encerradas". Filtros de Sprint e de Area Path (multi-seleção, vazio = todos) valem
+ * para o gráfico e para a lista; escolher uma sprint encerrada a exibe mesmo com o botão desligado.
  */
 export default function PrevisaoEntregas({ itens, sprints, hoje, mostrarProjeto }: { itens: ItemPrevisao[]; sprints: SprintPrevisao[]; hoje: Date; mostrarProjeto: boolean }) {
   const [recolhidos, setRecolhidos] = useState<Record<string, boolean>>({});
   const [comEncerradas, setComEncerradas] = useState(false);
+  // Filtros: vazio = todas as sprints / todas as áreas. Sprint = Iteration Path completo; Área = Area Path completo.
+  const [sprintsSel, setSprintsSel] = useState<string[]>([]);
+  const [areasSel, setAreasSel] = useState<string[]>([]);
   const hojeChave = chaveDia(hoje);
 
   const todasAsSprints = useMemo(() => [...sprints].sort(compararSprints), [sprints]);
   const qtdEncerradas = todasAsSprints.filter((s) => sprintEncerrada(s, hojeChave)).length;
 
+  const opcoesSprint = useMemo(() => todasAsSprints.map((s) => s.chave), [todasAsSprints]);
+  const rotuloSprintPorChave = useMemo(
+    () => new Map(todasAsSprints.map((s) => [s.chave, mostrarProjeto ? `${s.nome} (${s.projeto})` : s.nome])),
+    [todasAsSprints, mostrarProjeto]
+  );
+
+  // Áreas oferecidas = as dos PBIs carregados. Nome curto; se o mesmo nome existe em KMM4 e KMM5 (ex.: "Melhorias"), o projeto entra entre parênteses.
+  const opcoesArea = useMemo(
+    () => Array.from(new Set(itens.map((i) => i.areaPath).filter(Boolean))).sort((a, b) => nomeCurtoDaSquad(a).localeCompare(nomeCurtoDaSquad(b), "pt-BR") || a.localeCompare(b)),
+    [itens]
+  );
+  const rotuloArea = useMemo(() => {
+    const vistos = new Set<string>();
+    const repetidos = new Set<string>();
+    for (const a of opcoesArea) {
+      const curto = nomeCurtoDaSquad(a);
+      if (vistos.has(curto)) repetidos.add(curto);
+      vistos.add(curto);
+    }
+    return (areaPath: string) => {
+      const curto = nomeCurtoDaSquad(areaPath);
+      return repetidos.has(curto) ? `${curto} (${areaPath.split("\\")[0]})` : curto;
+    };
+  }, [opcoesArea]);
+
+  // Troca de produto/recarga: seleção que não existe mais é descartada.
+  useEffect(() => {
+    setSprintsSel((sel) => (sel.every((k) => opcoesSprint.includes(k)) ? sel : sel.filter((k) => opcoesSprint.includes(k))));
+  }, [opcoesSprint]);
+  useEffect(() => {
+    setAreasSel((sel) => (sel.every((a) => opcoesArea.includes(a)) ? sel : sel.filter((a) => opcoesArea.includes(a))));
+  }, [opcoesArea]);
+
+  const filtrando = sprintsSel.length > 0 || areasSel.length > 0;
+
   const grupos = useMemo(() => {
     const porSprint = new Map<string, ItemPrevisao[]>();
-    for (const i of itens) porSprint.set(i.iterationPath, [...(porSprint.get(i.iterationPath) ?? []), i]);
+    for (const i of itens) {
+      if (areasSel.length && !areasSel.includes(i.areaPath)) continue;
+      porSprint.set(i.iterationPath, [...(porSprint.get(i.iterationPath) ?? []), i]);
+    }
     return todasAsSprints
-      .filter((s) => comEncerradas || !sprintEncerrada(s, hojeChave))
+      // Sprint escolhida no filtro aparece mesmo se encerrada; sem escolha, vale o botão "sprints encerradas".
+      .filter((s) => (sprintsSel.length ? sprintsSel.includes(s.chave) : comEncerradas || !sprintEncerrada(s, hojeChave)))
+      // Com filtro de área, sprint sem PBI dessa área não vira grupo vazio.
+      .filter((s) => !areasSel.length || (porSprint.get(s.chave)?.length ?? 0) > 0)
       .map((s) => {
         const atual = sprintAtual(s, hojeChave);
         const encerrada = sprintEncerrada(s, hojeChave);
@@ -43,7 +89,7 @@ export default function PrevisaoEntregas({ itens, sprints, hoje, mostrarProjeto 
         const doGrupo = (porSprint.get(s.chave) ?? []).sort((a, b) => a.id - b.id);
         return { sprint: s, atual, encerrada, cor, itens: doGrupo };
       });
-  }, [itens, todasAsSprints, comEncerradas, hojeChave]);
+  }, [itens, todasAsSprints, comEncerradas, hojeChave, sprintsSel, areasSel]);
 
   const totalVisivel = grupos.reduce((n, g) => n + g.itens.length, 0);
   const rotulo = (s: SprintPrevisao) => (mostrarProjeto ? `${s.projeto} · ${numeroDaSprint(s.nome)}` : numeroDaSprint(s.nome));
@@ -51,15 +97,47 @@ export default function PrevisaoEntregas({ itens, sprints, hoje, mostrarProjeto 
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: -6 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>Sprint</span>
+          <MultiSelectFiltro
+            rotuloTodos="Todas as sprints"
+            opcoes={opcoesSprint}
+            selecionados={sprintsSel}
+            onChange={setSprintsSel}
+            formatar={(k) => rotuloSprintPorChave.get(k) ?? k}
+            pesquisavel
+            placeholderBusca="Digite a sprint…"
+          />
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>Area Path</span>
+          <MultiSelectFiltro
+            rotuloTodos="Todas as áreas"
+            opcoes={opcoesArea}
+            selecionados={areasSel}
+            onChange={setAreasSel}
+            formatar={rotuloArea}
+            pesquisavel
+            placeholderBusca="Digite o nome da área…"
+          />
+        </div>
+        {filtrando && (
+          <button className="kmm-btn" onClick={() => { setSprintsSel([]); setAreasSel([]); }} title="Limpar os filtros de sprint e área">
+            Limpar filtros
+          </button>
+        )}
+      </div>
+
       <div className="kmm-card" style={{ padding: "16px 18px 8px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <div>
             <div style={{ fontFamily: "Sora,sans-serif", fontWeight: 800, fontSize: 16, color: C.text }}>Volume por sprint</div>
             <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
-              {totalVisivel} {totalVisivel === 1 ? "item" : "itens"} em aberto · {grupos.length} {grupos.length === 1 ? "sprint" : "sprints"}
+              {totalVisivel} {totalVisivel === 1 ? "item" : "itens"} em aberto · {grupos.length} {grupos.length === 1 ? "sprint" : "sprints"}{filtrando ? " (filtrado)" : ""}
             </div>
           </div>
-          {qtdEncerradas > 0 && (
+          {qtdEncerradas > 0 && sprintsSel.length === 0 && (
             <button
               className="kmm-btn"
               aria-pressed={comEncerradas}
@@ -96,6 +174,8 @@ export default function PrevisaoEntregas({ itens, sprints, hoje, mostrarProjeto 
           </div>
         </div>
       </div>
+
+      {grupos.length === 0 && <p style={{ color: C.muted, margin: 0 }}>Nenhum PBI em aberto para os filtros selecionados.</p>}
 
       <div style={{ overflowX: "auto" }}>
         <div style={{ minWidth: 1180, display: "flex", flexDirection: "column", gap: 28 }}>

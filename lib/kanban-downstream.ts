@@ -110,6 +110,8 @@ export type ItemKanbanDownstream = {
   createdDate: string;
   /** Microsoft.VSTS.Common.Priority (1–4) ou null. */
   prioridade: number | null;
+  /** Microsoft.VSTS.Scheduling.Effort do PBI, em horas (null se não preenchido). Exibido no board "Ag. priorização". */
+  effort: number | null;
 };
 
 /**

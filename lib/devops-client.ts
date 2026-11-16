@@ -1969,6 +1969,7 @@ export async function getKanbanDownstream(produtos: Produto[]): Promise<{ itens:
     "Custom.PO",
     "System.AssignedTo",
     "Microsoft.VSTS.Common.Priority",
+    "Microsoft.VSTS.Scheduling.Effort",
   ];
 
   const itens: ItemKanbanDownstream[] = [];
@@ -1996,6 +1997,7 @@ export async function getKanbanDownstream(produtos: Produto[]): Promise<{ itens:
         responsavel: textoDeCampo(f["System.AssignedTo"]),
         createdDate: String(f["System.CreatedDate"] ?? ""),
         prioridade: typeof prioridade === "number" ? prioridade : null,
+        effort: typeof f["Microsoft.VSTS.Scheduling.Effort"] === "number" ? (f["Microsoft.VSTS.Scheduling.Effort"] as number) : null,
       });
     }
   }

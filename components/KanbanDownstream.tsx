@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Building2, Info, Layers } from "lucide-react";
+import { Building2, Gauge, Info, Layers } from "lucide-react";
 import { useProduto } from "@/components/ProdutoContext";
 import MultiSelectFiltro from "@/components/MultiSelectFiltro";
 import { C, PASTEL, infoPrioridade } from "@/lib/kmm-theme";
@@ -221,7 +221,7 @@ function Divisao({ divisao, cards, cor, subdividido }: { divisao: DivisaoDownstr
             Sem demandas
           </div>
         ) : (
-          cards.map((i) => <CardDownstream key={i.id} item={i} cor={cor} />)
+          cards.map((i) => <CardDownstream key={i.id} item={i} cor={cor} mostrarEffort={divisao.chave === "priorizacao"} />)
         )}
       </div>
     </div>
@@ -272,7 +272,7 @@ function RegrasDoFluxo() {
   );
 }
 
-function CardDownstream({ item, cor }: { item: ItemKanbanDownstream; cor: { bg: string; dot: string } }) {
+function CardDownstream({ item, cor, mostrarEffort }: { item: ItemKanbanDownstream; cor: { bg: string; dot: string }; mostrarEffort: boolean }) {
   const prio = item.prioridade != null ? infoPrioridade(item.prioridade) : null;
 
   return (
@@ -320,6 +320,16 @@ function CardDownstream({ item, cor }: { item: ItemKanbanDownstream; cor: { bg: 
           </>
         ) : (
           <span style={{ fontSize: 12, color: C.faint }}>Sem PO</span>
+        )}
+        {/* Effort do PBI (horas): só no board "Ag. priorização" (pedido por Heder em 2026-11-16). */}
+        {mostrarEffort && (
+          <span
+            title={item.effort == null ? "Effort não preenchido" : `Effort: ${item.effort} h`}
+            style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11.5, fontWeight: 600, color: item.effort == null ? C.faint : C.text, background: item.effort == null ? "transparent" : cor.bg, borderRadius: 7, padding: "1px 8px", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}
+          >
+            <Gauge size={11} color={cor.dot} />
+            {item.effort == null ? "Effort —" : `Effort ${item.effort.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} h`}
+          </span>
         )}
       </div>
     </article>

@@ -9,7 +9,6 @@ export const CLIENTE_INTERNO = "KMM (INTERNO)";
 
 export const LIMITE_LANCAMENTOS = 10;
 export const LIMITE_FINALIZADAS = 5;
-export const LIMITE_PREVISAO = 5;
 
 export type PbiEntrega = {
   id: number;
@@ -30,12 +29,52 @@ export type PbiEntrega = {
   interno: boolean;
 };
 
+/**
+ * PBI em aberto programado para a sprint atual ou posterior (mesma regra de Downstream > Previsão de
+ * Entregas): do cliente ou do KMM (INTERNO), Iteration = sprint que ainda não terminou.
+ */
+export type PbiPrevisaoCliente = {
+  id: number;
+  idExterno: string;
+  projeto: string;
+  titulo: string;
+  cliente: string;
+  state: string;
+  /** Sprint = 3º nível da Iteration ("Sprint 8.20"). */
+  sprint: string;
+  /** Datas puras "YYYY-MM-DD" da sprint, ou null quando não cadastradas. */
+  sprintInicio: string | null;
+  sprintFim: string | null;
+  /** PBI do cliente KMM (INTERNO) exibido junto das entregas do cliente selecionado. */
+  interno: boolean;
+};
+
 export type EntregasCliente = {
   /** Até LIMITE_LANCAMENTOS PBIs, da versão mais nova para a mais antiga. */
   lancamentos: PbiEntrega[];
   /** Os LIMITE_FINALIZADAS PBIs finalizados mais recentes, em ordem CRESCENTE de Closed Date. */
   finalizadas: PbiEntrega[];
+  /** Próximas entregas: PBIs do cliente + KMM (INTERNO) em sprint atual ou posterior, em ordem cronológica de sprint. */
+  previsao: PbiPrevisaoCliente[];
+  /** Preenchido quando a previsão não pôde ser montada por completo (ex.: datas das sprints indisponíveis). */
+  avisoPrevisao?: string;
 };
+
+/**
+ * Ordem da previsão: sprint mais próxima primeiro (fim da sprint; sem datas por último, pelo número da
+ * sprint), dentro dela os PBIs do próprio cliente antes dos internos, depois pelo ID.
+ */
+export function ordenarPrevisao(itens: PbiPrevisaoCliente[]): PbiPrevisaoCliente[] {
+  return [...itens].sort((a, b) => {
+    if (a.sprintFim && b.sprintFim) {
+      const d = a.sprintFim.localeCompare(b.sprintFim);
+      if (d) return d;
+    } else if (a.sprintFim || b.sprintFim) {
+      return a.sprintFim ? -1 : 1;
+    }
+    return a.sprint.localeCompare(b.sprint, "pt-BR", { numeric: true }) || Number(a.interno) - Number(b.interno) || a.id - b.id;
+  });
+}
 
 /**
  * Versão numérica de um texto livre do campo Versão. O campo vem sujo no Azure ("8.17",
@@ -47,6 +86,15 @@ export function versaoDoCampo(bruto: string | null | undefined): string | null {
   const t = String(bruto ?? "").trim();
   if (!t || /^develop/i.test(t)) return null;
   return t.match(/\d+(?:\.\d+)+/)?.[0] ?? null;
+}
+
+/**
+ * Versão prevista de um PBI = número da sua sprint ("Sprint 8.21" → "8.21"), pois no KMM5 as sprints
+ * têm o número da versão que elas entregam. Sprint sem esse formato ("Sprint 23" do KMM4, "26.10.2026 -
+ * 20.11.2026") não traz versão e devolve null — a tela mostra o nome da sprint no lugar.
+ */
+export function versaoPrevistaDaSprint(sprint: string | null | undefined): string | null {
+  return /^\s*sprint\s+(\d+(?:\.\d+)+)\s*$/i.exec(String(sprint ?? ""))?.[1] ?? null;
 }
 
 /** "ID Externo - Título da demanda"; sem ID Externo, só o título. */
@@ -94,5 +142,5 @@ export function montarEntregas(pbis: PbiEntrega[], cliente: string): EntregasCli
     .slice(0, LIMITE_FINALIZADAS)
     .reverse();
 
-  return { lancamentos, finalizadas };
+  return { lancamentos, finalizadas, previsao: [] };
 }

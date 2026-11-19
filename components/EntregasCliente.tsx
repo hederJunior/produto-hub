@@ -2,16 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { Check, Rocket } from "lucide-react";
-import { C, PASTEL } from "@/lib/kmm-theme";
+import { C, PASTEL, corDeEstadoDevOps } from "@/lib/kmm-theme";
 import { chaveDia, formatarChaveDia } from "@/lib/datas";
-import { estaFinalizado, LIMITE_PREVISAO, tituloComIdExterno, type EntregasCliente as Entregas, type PbiEntrega } from "@/lib/entregas-cliente";
-import { norm, type PbiGestaoCliente } from "@/lib/gestao-clientes";
+import { estaFinalizado, tituloComIdExterno, versaoPrevistaDaSprint, type EntregasCliente as Entregas, type PbiEntrega } from "@/lib/entregas-cliente";
 
 /**
  * Gestão de clientes > "Demandas entregues" (pedido por Heder em 2026-11-04): seção leve, de leitura,
- * com os últimos lançamentos de versão, as últimas demandas finalizadas e a previsão das próximas
- * entregas do cliente escolhido. A previsão ainda é EXEMPLO (a regra de consulta não foi definida):
- * usa PBIs do cliente que já estão perto de sair (Aguardando Deploy, Teste Aceite Usuário, Execução).
+ * com os últimos lançamentos de versão, as últimas demandas finalizadas e as próximas entregas do
+ * cliente escolhido. "Próximas entregas" (regra de 2026-11-19, a mesma de Downstream > Previsão de
+ * Entregas): PBIs em aberto do cliente ou do KMM (INTERNO) programados para a sprint atual ou posterior
+ * (Iteration do PBI), em ordem cronológica de sprint.
  */
 
 const ORG_DEVOPS = "kmmbynstech";
@@ -44,18 +44,7 @@ const Esqueleto = ({ linhas }: { linhas: number }) => (
 
 const Vazio = ({ texto }: { texto: string }) => <p style={{ color: C.faint, fontSize: 13.5, margin: "6px 0" }}>{texto}</p>;
 
-/** Cor do rótulo de status nas "próximas entregas". */
-function pastelDoEstado(state: string) {
-  const s = norm(state);
-  if (s === "aguardando deploy") return PASTEL.green;
-  if (s.startsWith("teste aceite")) return PASTEL.sky;
-  return PASTEL.amber;
-}
-
-/** Quanto mais perto de sair, mais cedo na lista de exemplo. */
-const PESO_PREVISAO: Record<string, number> = { "aguardando deploy": 0, "teste aceite usuario": 1, execucao: 2 };
-
-export default function EntregasCliente({ cliente, produto, itensCliente }: { cliente: string; produto: string; itensCliente: PbiGestaoCliente[] }) {
+export default function EntregasCliente({ cliente, produto }: { cliente: string; produto: string }) {
   const [dados, setDados] = useState<Entregas | null>(null);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -68,7 +57,7 @@ export default function EntregasCliente({ cliente, produto, itensCliente }: { cl
       .then((j) => {
         if (cancelado) return;
         if (j.erro) setErro(j.erro);
-        setDados({ lancamentos: j.lancamentos ?? [], finalizadas: j.finalizadas ?? [] });
+        setDados({ lancamentos: j.lancamentos ?? [], finalizadas: j.finalizadas ?? [], previsao: j.previsao ?? [], avisoPrevisao: j.avisoPrevisao });
       })
       .catch(() => !cancelado && setErro("Não foi possível carregar as demandas entregues."));
     return () => {
@@ -76,10 +65,7 @@ export default function EntregasCliente({ cliente, produto, itensCliente }: { cl
     };
   }, [cliente, produto]);
 
-  const previsao = itensCliente
-    .filter((p) => norm(p.state) in PESO_PREVISAO)
-    .sort((a, b) => PESO_PREVISAO[norm(a.state)] - PESO_PREVISAO[norm(b.state)] || b.id - a.id)
-    .slice(0, LIMITE_PREVISAO);
+  const hojeChave = chaveDia(new Date());
 
   return (
     <div className="kmm-card" style={{ padding: "30px 34px 34px" }}>
@@ -127,33 +113,49 @@ export default function EntregasCliente({ cliente, produto, itensCliente }: { cl
             )}
           </section>
 
-          {/* Previsão das próximas entregas (exemplo) */}
+          {/* Próximas entregas: PBIs do cliente + KMM (INTERNO) em sprint atual ou posterior */}
           <section style={{ marginTop: 44 }} aria-label="Próximas entregas">
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
               <h3 style={{ ...TITULO_BLOCO, margin: 0 }}>Próximas entregas</h3>
-              <Pilula bg={PASTEL.purple.bg} fg={PASTEL.purple.dot} title="A regra de consulta da previsão ainda será definida">Exemplo</Pilula>
+              {dados && dados.previsao.length > 0 && (
+                <span style={{ fontSize: 12, color: C.muted, fontVariantNumeric: "tabular-nums" }}>
+                  {dados.previsao.length} {dados.previsao.length === 1 ? "demanda" : "demandas"}
+                </span>
+              )}
             </div>
-            {previsao.length === 0 ? (
-              <Vazio texto="Sem demandas em andamento para este cliente." />
+            {dados?.avisoPrevisao && <div style={{ fontSize: 12.5, color: "#8a5a00", background: "#fff6e0", borderRadius: 8, padding: "6px 10px", marginBottom: 10 }}>{dados.avisoPrevisao}</div>}
+            {!dados ? (
+              <Esqueleto linhas={4} />
+            ) : dados.previsao.length === 0 ? (
+              <Vazio texto="Nenhuma demanda programada para a sprint atual ou posteriores." />
             ) : (
-              <ol style={{ listStyle: "none", margin: 0, padding: 0 }}>
-                {previsao.map((p, i) => {
-                  const cor = pastelDoEstado(p.state);
+              <ol style={{ listStyle: "none", margin: 0, padding: 0, maxHeight: 400, overflowY: "auto" }}>
+                {dados.previsao.map((p, i) => {
+                  const estado = corDeEstadoDevOps(p.state);
+                  const atual = !!p.sprintInicio && !!p.sprintFim && p.sprintInicio <= hojeChave && hojeChave <= p.sprintFim;
+                  // Versão prevista = sprint do PBI ("Sprint 8.21" → "v8.21"); sprint sem número de versão mostra o próprio nome.
+                  const versao = versaoPrevistaDaSprint(p.sprint);
+                  const corVersao = atual ? PASTEL.orange : PASTEL.green;
+                  const datas = p.sprintInicio && p.sprintFim ? ` (${formatarChaveDia(p.sprintInicio).slice(0, 5)} – ${formatarChaveDia(p.sprintFim).slice(0, 5)})` : "";
                   return (
-                    <li key={p.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "10px 0" }}>
+                    <li key={p.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0" }}>
                       <span aria-hidden="true" style={{ width: 22, height: 22, borderRadius: "50%", border: `1.5px solid ${C.blue}`, color: C.blue, fontSize: 11.5, fontWeight: 600, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                         {i + 1}
                       </span>
                       <a href={linkPbi({ projeto: p.projeto, id: p.id })} target="_blank" rel="noopener noreferrer" title={tituloComIdExterno(p.idExterno, p.titulo)} style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: C.text, textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {tituloComIdExterno(p.idExterno, p.titulo)}
                       </a>
-                      <Pilula bg={cor.bg} fg={cor.dot}>{p.state}</Pilula>
+                      {p.interno && <Pilula bg={C.soft} fg={C.muted} title="PBI do cliente KMM (INTERNO)">Interno</Pilula>}
+                      <Pilula bg={estado.bg} fg={estado.fg} title={`Status atual: ${p.state}`}>{p.state}</Pilula>
+                      <Pilula bg={corVersao.bg} fg={corVersao.dot} title={`Versão prevista: ${p.sprint}${datas}${atual ? " — sprint atual" : ""}`}>
+                        {versao ? `v${versao}` : p.sprint}
+                      </Pilula>
                     </li>
                   );
                 })}
               </ol>
             )}
-            <p style={{ margin: "8px 0 0", fontSize: 12, color: C.faint }}>Exemplo ilustrativo com demandas em andamento do cliente. A previsão real de entrega será definida em breve.</p>
+            <p style={{ margin: "8px 0 0", fontSize: 12, color: C.faint }}>Demandas em aberto do cliente e do KMM (INTERNO) programadas para a sprint atual ou posteriores. A versão prevista é a sprint do PBI.</p>
           </section>
         </div>
       </div>

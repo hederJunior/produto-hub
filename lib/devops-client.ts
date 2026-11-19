@@ -19,7 +19,8 @@ import {
 } from "./alocacao-pbi";
 import { estadoIndicaConcluido } from "./kmm-theme";
 import { ESTEIRAS_CLIENTES_SQUADS, TAG_REFINAMENTO_TECH, type ItemBacklog, type ItemRefinamento } from "./backlog";
-import { CLIENTE_INTERNO, montarEntregas, versaoDoCampo, type EntregasCliente, type PbiEntrega } from "./entregas-cliente";
+import { CLIENTE_INTERNO, montarEntregas, ordenarPrevisao, versaoDoCampo, type EntregasCliente, type PbiEntrega, type PbiPrevisaoCliente } from "./entregas-cliente";
+import { chaveDia } from "./datas";
 import { DEVOPS_PROJETOS, type Produto } from "./devops-projetos";
 import type { ItemGut } from "./priorizacao-gut";
 import { AREAS_KANBAN, colunaDoPbi, normKanban, type AreaKanban, type ItemKanban } from "./kanban-upstream";
@@ -1207,21 +1208,25 @@ export async function getEntregasCliente(produtos: Produto[], cliente: string): 
         if (!res.ok) throw new Error(`Falha na consulta WIQL das entregas (${project}) (${res.status}): ${await res.text()}`);
         return ((await res.json()) as { workItems: { id: number }[] }).workItems.map((w) => w.id);
       };
-      const [comVersao, fechados] = await Promise.all([
+      const [comVersao, fechados, emAberto] = await Promise.all([
         consulta(`${clausulaCliente(comInterno)} AND [${CAMPO_VERSAO}] <> ''`),
         consulta(`${clausulaCliente([cliente])} AND [Microsoft.VSTS.Common.ClosedDate] <> ''`),
+        // Próximas entregas: mesma regra de Downstream > Previsão de Entregas (PBI em aberto com sprint), do cliente + KMM (INTERNO).
+        consulta(`${clausulaCliente(comInterno)} AND [System.State] NOT IN ('Finalizado', 'Cancelado') AND [System.IterationPath] <> '${aspasWiql(project)}'`),
       ]);
-      return { project, ids: Array.from(new Set([...comVersao, ...fechados])) };
+      return { project, ids: Array.from(new Set([...comVersao, ...fechados, ...emAberto])), idsPrevisao: new Set(emAberto) };
     })
   );
 
   const pbis: PbiEntrega[] = [];
-  for (const { project, ids } of porProjeto) {
+  const candidatosPrevisao: { projeto: string; iterationPath: string; pbi: PbiPrevisaoCliente }[] = [];
+  for (const { project, ids, idsPrevisao } of porProjeto) {
     if (!ids.length) continue;
     const works = await buscarLoteCampos(org, pat, ids, [
       "System.Title",
       "System.State",
       "System.TeamProject",
+      "System.IterationPath",
       "Custom.Cliente",
       CAMPO_VERSAO,
       "Microsoft.VSTS.Common.ClosedDate",
@@ -1243,9 +1248,54 @@ export async function getEntregasCliente(produtos: Produto[], cliente: string): 
         closedDate: (f["Microsoft.VSTS.Common.ClosedDate"] as string) ?? null,
         interno: clientePbi === CLIENTE_INTERNO && cliente !== CLIENTE_INTERNO,
       });
+      const iterationPath = String(f["System.IterationPath"] ?? "");
+      const sprint = sprintDoIteration(iterationPath);
+      const state = String(f["System.State"] ?? "");
+      if (idsPrevisao.has(w.id) && sprint && !estaEncerrado(state)) {
+        candidatosPrevisao.push({
+          projeto: project,
+          iterationPath,
+          pbi: {
+            id: w.id,
+            idExterno: pbis[pbis.length - 1].idExterno,
+            projeto: String(f["System.TeamProject"] ?? project),
+            titulo: String(f["System.Title"] ?? `Item ${w.id}`),
+            cliente: clientePbi,
+            state,
+            sprint,
+            sprintInicio: null,
+            sprintFim: null,
+            interno: clientePbi === CLIENTE_INTERNO && cliente !== CLIENTE_INTERNO,
+          },
+        });
+      }
     }
   }
-  return montarEntregas(pbis, cliente);
+
+  // Sprint atual ou posterior = a que ainda não terminou hoje (fim >= hoje; sem data de fim, considera em aberto).
+  // As datas vêm da árvore de iterations, pelo caminho completo (o nome da sprint se repete entre anos).
+  const hojeChave = chaveDia(new Date());
+  const datasPorProjeto = new Map<string, Map<string, { inicio: string | null; fim: string | null }>>();
+  let avisoPrevisao: string | undefined;
+  for (const projeto of new Set(candidatosPrevisao.map((c) => c.projeto))) {
+    try {
+      datasPorProjeto.set(projeto, await getDatasIterationsPorCaminho(org, pat, projeto));
+    } catch (e) {
+      console.error(`[entregas-cliente] datas das sprints de ${projeto} não puderam ser lidas:`, e);
+      avisoPrevisao = `Não foi possível ler as datas das sprints de ${projeto}; a previsão dele ficou de fora.`;
+    }
+  }
+  const previsao: PbiPrevisaoCliente[] = [];
+  for (const c of candidatosPrevisao) {
+    const datas = datasPorProjeto.get(c.projeto);
+    if (!datas) continue;
+    const d = datas.get(c.iterationPath);
+    const fim = d?.fim ? d.fim.slice(0, 10) : null;
+    if (fim && fim < hojeChave) continue;
+    previsao.push({ ...c.pbi, sprintInicio: d?.inicio ? d.inicio.slice(0, 10) : null, sprintFim: fim });
+  }
+
+  return { ...montarEntregas(pbis, cliente), previsao: ordenarPrevisao(previsao), ...(avisoPrevisao ? { avisoPrevisao } : {}) };
 }
 
 // ===== Alocar PBI (Planejamento de capacidade, pedido por Heder em 2026-10-14) — ÚNICA parte deste

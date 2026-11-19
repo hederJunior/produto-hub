@@ -323,7 +323,7 @@ export default function ClientesPage() {
 
       {/* Seção final: lançamentos de versão, finalizadas recentemente e próximas entregas do cliente. */}
       <DivisorSecao titulo="Demandas entregues" />
-      <EntregasCliente cliente={clienteSel === SEM_CLIENTE ? "" : clienteSel} produto={produto} itensCliente={itens.filter((p) => clienteDe(p) === clienteSel)} />
+      <EntregasCliente cliente={clienteSel === SEM_CLIENTE ? "" : clienteSel} produto={produto} />
       </>
       )}
     </div>

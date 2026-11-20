@@ -1,7 +1,7 @@
 import { getRouteClient } from "./supabase-server";
 import { getServiceClient } from "./supabase";
 
-export type UsuarioAtual = { email: string; tipo: "adm" | "user"; /** AllowedUser.papel (texto livre: PM, PO, GPM...) */ papel: string | null };
+export type UsuarioAtual = { email: string; tipo: "adm" | "user"; /** AllowedUser.papel (texto livre: PM, PO, GPM...) */ papel: string | null; /** AllowedUser.nome (para assinar comentários no Azure) */ nome: string | null };
 
 /**
  * Usuário logado (via sessão do cookie) + seu tipo (AllowedUser.tipo), pra checagens de
@@ -19,13 +19,13 @@ export async function getUsuarioAtual(): Promise<UsuarioAtual | null> {
   const supabase = getServiceClient();
   const { data } = await supabase
     .from("AllowedUser")
-    .select("tipo, papel")
+    .select("tipo, papel, nome")
     .eq("email", user.email.toLowerCase())
     .maybeSingle();
 
   if (!data) return null;
   const tipo = data.tipo === "adm" ? "adm" : "user";
-  return { email: user.email, tipo, papel: typeof data.papel === "string" ? data.papel : null };
+  return { email: user.email, tipo, papel: typeof data.papel === "string" ? data.papel : null, nome: typeof data.nome === "string" && data.nome.trim() ? data.nome.trim() : null };
 }
 
 /** Atalho pras rotas de API que só podem ser chamadas por administradores (ex.: gerenciar o JOB). */

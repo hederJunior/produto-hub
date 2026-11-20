@@ -1,16 +1,19 @@
-// T05 do Fluxo do PO — valida a gravação do movimento de etapa (lib/fluxo-po-servidor.ts) no PBI DE TESTE.
+// T05 + T06 do Fluxo do PO — valida a gravação do movimento de etapa e o comentário de transição
+// (lib/fluxo-po-servidor.ts) no PBI DE TESTE.
 //
 // Roda a MESMA função que a rota POST /api/fluxo-po/mover usa (sem a camada de login) e, ao final, devolve o PBI ao
 // estado original (Etapa e Data Comitê), mesmo se um passo falhar. Antes de gravar, faz os testes que NÃO gravam:
 //   permissão negada (403), destino inválido (422), data inválida (422), Data Comitê ausente (422) e conflito de
-//   revisão (409). Depois: 1.2 → 2.1 (com Data Comitê), confere o formato salvo no Azure, volta 2.1 → 1.2 e restaura.
+//   revisão (409). Depois: 1.2 → 2.1 (com Data Comitê), confere o formato salvo no Azure e o comentário publicado, volta
+//   2.1 → 1.2 com a publicação do comentário SIMULADAMENTE falhando (o movimento não pode ser desfeito) e restaura.
+//   Os comentários criados no teste são apagados ao final.
 //
 // O PBI precisa estar em 1.2 (Status Backlog, Etapa Backlog, Area Path de uma esteira do KMM5). Só aceita o PBI de teste
 // 46766; outro ID exige FLUXO_PO_PERMITIR_OUTRO_ID=1 (não use PBI real).
 //
 // Uso: node --use-system-ca --env-file=.env --import ./scripts/registrar-ts.mjs scripts/azure-testar-mover.mjs 46766
 
-import { ErroFluxoPo, aplicarPatchPbi, lerPbiFluxoPoAtual, moverPbiFluxoPo } from "../lib/fluxo-po-servidor.ts";
+import { ErroFluxoPo, aplicarPatchPbi, apagarComentarioPbi, lerPbiFluxoPoAtual, moverPbiFluxoPo } from "../lib/fluxo-po-servidor.ts";
 import { chaveDia, derivarEtapa } from "../lib/fluxo-po.ts";
 import { CAMPOS_PBI } from "../lib/fluxo-po-campos.ts";
 
@@ -25,6 +28,15 @@ if (!Number.isInteger(id) || id <= 0) {
 if (id !== PBI_DE_TESTE && process.env.FLUXO_PO_PERMITIR_OUTRO_ID !== "1") {
   console.error(`Recusado: este script só grava no PBI de teste ${PBI_DE_TESTE}. (Outro ID exige FLUXO_PO_PERMITIR_OUTRO_ID=1 — nunca use PBI real.)`);
   process.exit(1);
+}
+
+const ORG = process.env.AZURE_DEVOPS_ORG;
+const auth = { Authorization: "Basic " + Buffer.from(`:${process.env.AZURE_DEVOPS_PAT}`).toString("base64") };
+const comentariosCriados = [];
+/** Texto de um comentário do PBI (leitura direta, só para conferir o teste). */
+async function textoDoComentario(comentarioId) {
+  const r = await fetch(`https://dev.azure.com/${ORG}/KMM5/_apis/wit/workItems/${id}/comments/${comentarioId}?api-version=7.1-preview.4`, { headers: auth });
+  return r.ok ? String((await r.json()).text ?? "") : "";
 }
 
 const admin = { email: "script-teste@local", nome: "Script de teste (T05)", tipo: "adm", papel: null };
@@ -84,13 +96,31 @@ async function main() {
     registrar("Mesmo dia na leitura (chaveDia)", chaveDia(r1.card?.pbi.dataComite) === DATA_TESTE);
     registrar("Status continua Backlog e Etapa = Comitê", r1.card?.pbi.status === "Backlog" && r1.card?.pbi.etapa === "Comitê");
     if (r1.avisos.length) console.log("       avisos:", r1.avisos.join(" | "));
+    if (r1.comentario?.id) comentariosCriados.push(r1.comentario.id);
+
+    // ---- 2b. Comentário de transição (T06) ----
+    registrar("Comentário de transição publicado", r1.comentario?.publicado === true, `id ${r1.comentario?.id}`);
+    const texto = r1.comentario?.id ? await textoDoComentario(r1.comentario.id) : "";
+    registrar("Comentário traz origem, destino e usuário", texto.includes("1.2 Priorizar") && texto.includes("2.1 Comitê") && texto.includes("Script de teste (T05)"), `texto: ${texto.slice(0, 200)}`);
 
     // ---- 3. Volta 2.1 → 1.2 (proposta) ----
-    const r2 = await moverPbiFluxoPo({ id, destino: "1.2", usuario: admin });
+    const falhaDeComentario = async () => {
+      throw new ErroFluxoPo(502, "simulado", "falha simulada pelo teste");
+    };
+    const r2 = await moverPbiFluxoPo({ id, destino: "1.2", usuario: admin, publicador: falhaDeComentario });
+    registrar("Comentário com falha NÃO desfaz o movimento (aviso, publicado=false)", r2.card?.etapa === "1.2" && r2.comentario?.publicado === false && r2.avisos.some((a) => a.includes("comentário")), `avisos: ${r2.avisos.join(" | ")}`);
     registrar("Voltar 2.1 → 1.2 (200)", r2.card?.etapa === "1.2" && r2.direcao === "volta" && r2.proposta === true, `card em ${r2.card?.etapa}`);
     registrar("Volta mantém a Data Comitê", r2.card?.pbi.dataComite === `${DATA_TESTE}T03:00:00Z`);
   } finally {
-    // ---- 4. Restauração do estado original ----
+    // ---- 4. Limpeza dos comentários e restauração do estado original ----
+    for (const cid of comentariosCriados) {
+      try {
+        await apagarComentarioPbi(id, cid);
+        registrar(`Apagar comentário de teste ${cid}`, (await textoDoComentario(cid)) === "");
+      } catch (e) {
+        registrar(`Apagar comentário de teste ${cid}`, false, `${e.message} — APAGUE MANUALMENTE`);
+      }
+    }
     if (precisaRestaurar) {
       const atual = await lerPbiFluxoPoAtual(id);
       const ops = [{ op: "test", path: "/rev", value: atual.rev }];

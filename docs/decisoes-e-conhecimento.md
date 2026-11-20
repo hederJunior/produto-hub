@@ -2365,3 +2365,14 @@ indisponível. Corpo cru do Azure só vai para `console.error`, nunca para o usu
 **Validação:** `scripts/azure-testar-mover.mjs` (só aceita o PBI de teste 46766): passos sem gravar (403, destino inválido,
 campo não permitido, data inválida, Data Comitê ausente, movimento não previsto, conflito 409) e, gravando, 1.2 → 2.1 → 1.2
 com restauração do estado original (Etapa e Data Comitê) em `finally`.
+
+## 2026-11-20 — Fluxo do PO · T06: comentário padrão ao mudar de etapa
+
+Depois do PATCH bem-sucedido, `moverPbiFluxoPo` publica o texto de `comentarioDeTransicao` (origem, destino, usuário, data em
+Brasília; "avançou"/"voltou") em `POST /_apis/wit/workItems/{id}/comments?api-version=7.1-preview.4`
+(`publicarComentarioPbi`). O autor no Azure é o dono do PAT, então o usuário logado vai no texto: `AllowedUser.nome`, ou o
+e-mail se não houver nome (`getUsuarioAtual()` passou a devolver `nome`). **Falha do comentário NÃO desfaz o movimento:** a
+resposta traz `comentario: { publicado: false, erro }` e um aviso, e o erro vai para `console.error` (e para o log da T09).
+Sem alteração gravada (nada a mudar) não há comentário. `moverPbiFluxoPo` aceita `publicador` só para testes (simular falha).
+`scripts/azure-testar-mover.mjs` agora confere o comentário (origem/destino/usuário), simula a falha na volta 2.1 → 1.2 e
+apaga os comentários criados (`apagarComentarioPbi`, uso restrito a scripts de teste).

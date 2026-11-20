@@ -7,6 +7,7 @@ import { API_VERSION, authHeader, getConfig, pbiFluxoDeWorkItem } from "./devops
 import {
   ETAPAS_FLUXO,
   avaliarMovimento,
+  comentarioDeTransicao,
   lerEntradaMovimento,
   montarCards,
   paraJsonPatch,
@@ -46,11 +47,45 @@ export type ResultadoMover = {
   alteracoes: Alteracao[];
   /** Card atualizado (releitura após gravar), para a tela atualizar sem recarregar o quadro. */
   card: CardFluxo | null;
+  /** Comentário de transição no PBI (T06). Falha NÃO desfaz o movimento: `publicado: false` + aviso. */
+  comentario: { publicado: boolean; id?: number; erro?: string };
   /** Avisos que não impediram o movimento (proposta de volta, falha de comentário, PBI sem Assesment...). */
   avisos: string[];
 };
 
+/** Publica um comentário no PBI (API de comentários 7.1-preview.4). O autor no Azure é o dono do PAT. */
+export async function publicarComentarioPbi(id: number, html: string): Promise<{ id: number }> {
+  const { org, pat } = getConfig();
+  const res = await fetch(`${urlComentarios(org, id)}?api-version=7.1-preview.4`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeader(pat) },
+    body: JSON.stringify({ text: html }),
+    cache: "no-store",
+  });
+  const corpo = await res.text();
+  if (!res.ok) {
+    console.error(`[fluxo-po] comentário no PBI ${id} falhou (${res.status}):`, corpo.slice(0, 500));
+    const e = traduzirErroAzure(res.status, corpo);
+    throw new ErroFluxoPo(e.status, e.codigo, e.mensagem);
+  }
+  return { id: (JSON.parse(corpo) as { id: number }).id };
+}
+
+/** Apaga um comentário (uso restrito a scripts de teste, para limpar o PBI de teste). */
+export async function apagarComentarioPbi(id: number, comentarioId: number): Promise<void> {
+  const { org, pat } = getConfig();
+  const res = await fetch(`${urlComentarios(org, id)}/${comentarioId}?api-version=7.1-preview.4`, {
+    method: "DELETE",
+    headers: authHeader(pat),
+  });
+  if (!res.ok) throw new Error(`Falha ao apagar o comentário ${comentarioId} do PBI ${id} (HTTP ${res.status}).`);
+}
+
 const CAMPOS_PEDIDOS = [...CAMPOS_LEITURA_PBI.filter((c) => c !== "System.Id"), "System.WorkItemType", "System.TeamProject"];
+
+function urlComentarios(org: string, id: number): string {
+  return `https://dev.azure.com/${org}/${encodeURIComponent(PROJETO_FLUXO_PO)}/_apis/wit/workItems/${id}/comments`;
+}
 
 function urlItem(org: string, id: number): string {
   return `https://dev.azure.com/${org}/${encodeURIComponent(PROJETO_FLUXO_PO)}/_apis/wit/workitems/${id}`;
@@ -106,6 +141,8 @@ export async function moverPbiFluxoPo(params: {
   entrada?: unknown;
   usuario: UsuarioFluxoPo;
   agora?: Date;
+  /** Só para testes: substitui a publicação do comentário (ex.: simular falha). */
+  publicador?: (id: number, html: string) => Promise<{ id: number }>;
 }): Promise<ResultadoMover> {
   const { usuario } = params;
   if (!podeMovimentar(usuario.papel, usuario.tipo)) {
@@ -128,7 +165,28 @@ export async function moverPbiFluxoPo(params: {
   }
 
   const avisos = [...avaliacao.avisos];
-  if (avaliacao.alteracoes.length) await aplicarPatchPbi(id, paraJsonPatch(avaliacao.alteracoes, pbi.rev));
+  let comentario: ResultadoMover["comentario"] = { publicado: false };
+  if (avaliacao.alteracoes.length) {
+    await aplicarPatchPbi(id, paraJsonPatch(avaliacao.alteracoes, pbi.rev));
+
+    // T06: comentário de transição. O PBI JÁ foi movido — se o comentário falhar, não desfaz: avisa e registra.
+    try {
+      const html = comentarioDeTransicao({
+        origem: avaliacao.origem!,
+        destino,
+        usuario: usuario.nome?.trim() || usuario.email,
+        quando: params.agora ?? new Date(),
+        direcao: avaliacao.direcao ?? undefined,
+      });
+      const c = await (params.publicador ?? publicarComentarioPbi)(id, html);
+      comentario = { publicado: true, id: c.id };
+    } catch (e) {
+      const erro = e instanceof Error ? e.message : String(e);
+      comentario = { publicado: false, erro };
+      avisos.push(`O PBI foi movido, mas o comentário de transição não pôde ser publicado no Azure DevOps (${erro}).`);
+      console.error(`[fluxo-po] movimento do PBI ${id} gravado, comentário falhou:`, e);
+    }
+  }
 
   const atualizado = await lerPbiFluxoPoAtual(id);
   return {
@@ -138,6 +196,7 @@ export async function moverPbiFluxoPo(params: {
     proposta: avaliacao.proposta,
     alteracoes: avaliacao.alteracoes,
     card: montarCards([atualizado])[0] ?? null,
+    comentario,
     avisos,
   };
 }

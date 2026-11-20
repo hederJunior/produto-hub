@@ -2392,3 +2392,26 @@ quando o movimento não mexe na Data Comitê). Escrita no Assesment: PATCH em n�
 Azure), então o teste da T07 usa o próprio PBI de teste; o script grava e restaura a Data Comitê desse Assesment.
 `scripts/azure-testar-mover.mjs` cobre T05+T06+T07 (falha parcial simulada, replicação real, restauração do PBI, do Assesment e
 exclusão dos comentários). `moverPbiFluxoPo` aceita `gravadorAssesment` só para testes.
+
+## 2026-11-20 — Fluxo do PO · T08: leitura de descrição, comentários, anexos e histórico (somente leitura)
+
+**Rotas** (qualquer usuário logado; 401 sem sessão): `GET /api/fluxo-po/pbi/{id}/descricao | comentarios | anexos | historico`
+(`app/api/fluxo-po/pbi/[id]/[parte]/route.ts` → `lib/fluxo-po-detalhe-servidor.ts`). Cada parte é uma chamada, para a falha de uma
+não derrubar a tela. Item que não é PBI do KMM5 → 422; inexistente → 404; erro do Azure → mensagem em português.
+- **Descrição:** `System.Description` (HTML) → `sanitizarHtml` → `{ html, vazia, truncada }`.
+- **Comentários:** API de comentários 7.1-preview.4, mais recentes primeiro, até 100 (páginas de 50 com `continuationToken`),
+  `{ total, comentarios: [{ id, autor, quando, editadoEm, html }], truncado }`; texto sanitizado.
+- **Anexos:** relações `AttachedFile` (nome, `resourceSize`, link do Azure). O Azure NÃO informa o autor na relação: autor e
+  data vêm da revisão (`/updates`) em que o anexo foi adicionado (`relations.added`); sem revisão → `autor: null`.
+  O link abre com a sessão do próprio usuário no Azure DevOps (a plataforma não repassa o PAT nem faz proxy do arquivo).
+- **Histórico:** `GET /workItems/{id}/updates` (só o que mudou em cada revisão; até 500 em páginas de 200), reduzido a campos
+  relevantes (`ROTULOS_HISTORICO`: Título, Status, Etapa, Area Path, Tags, Cliente, Classificação, Data Abertura Produto,
+  Data Comitê, Prioridade, PO, Responsável, Sprint) + anexos adicionados/removidos; mais recente primeiro; datas em dia (Brasília).
+  Revisões sem mudança relevante (só `Rev`/`ChangedDate`) são omitidas. As revisões de teste da T02/T05 aparecem no histórico do 46766.
+- **Sanitização (`lib/html-seguro.ts`, sem dependências — o projeto não tem DOMPurify):** lista de permissão de tags
+  (parágrafos, listas, tabelas, negrito/itálico, links...); atributos só `href` (http/https/mailto, com `rel="noopener noreferrer"`)
+  e `colspan/rowspan`; `script/style/iframe/svg/...` somem com o conteúdo; imagens viram "[imagem]" (as do Azure exigem login no
+  domínio dele); texto sempre escapado; tags abertas são fechadas. Montado só de peças permitidas (nada do HTML de entrada é
+  copiado como veio). Limite de entrada de 200 mil caracteres (`truncada`). 11 testes, incluindo ataques clássicos de XSS.
+- **Conferido com dados reais:** PBI 46766 (descrição, 3 comentários, 1 anexo com autor/data, histórico de 6 entradas).
+  `npm run test:fluxo-po` agora roda os 3 arquivos de teste (61 testes). Script de leitura: `scripts/azure-ler-detalhe.mjs <id>`.

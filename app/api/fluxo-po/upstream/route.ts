@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getFluxoPoUpstream } from "@/lib/devops-client";
 import { getUsuarioAtual } from "@/lib/auth-server";
-import { podeMovimentar, projetoSuportado } from "@/lib/fluxo-po";
+import { permissaoDoFluxo, projetoSuportado } from "@/lib/fluxo-po";
 
 // Nunca prerenderizar/cachear estaticamente (mesmo motivo documentado em app/api/roadmap/route.ts).
 export const dynamic = "force-dynamic";
@@ -18,18 +18,19 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url);
   const projeto = url.searchParams.get("projeto") ?? "KMM5";
-  const podeMover = podeMovimentar(usuario.papel, usuario.tipo);
+  const permissao = permissaoDoFluxo(usuario.papel, usuario.tipo);
+  const podeMover = permissao.pode;
   // Quem está vendo (para o filtro "Meus itens" da tela).
   const eu = { email: usuario.email, nome: usuario.nome };
   if (!projetoSuportado(projeto)) {
-    return NextResponse.json({ cards: [], esteiras: [], podeMovimentar: podeMover, eu, avisos: [`O Fluxo do PO existe só no KMM5 (projeto selecionado: ${projeto}).`] });
+    return NextResponse.json({ cards: [], esteiras: [], podeMovimentar: podeMover, permissao, eu, avisos: [`O Fluxo do PO existe só no KMM5 (projeto selecionado: ${projeto}).`] });
   }
 
   try {
     const dados = await getFluxoPoUpstream(url.searchParams.get("esteira"));
-    return NextResponse.json({ ...dados, podeMovimentar: podeMover, eu });
+    return NextResponse.json({ ...dados, podeMovimentar: podeMover, permissao, eu });
   } catch (err) {
     console.error("[fluxo-po/upstream] falha:", err);
-    return NextResponse.json({ erro: "Não foi possível carregar o quadro do Azure DevOps.", cards: [], esteiras: [], podeMovimentar: podeMover, eu, avisos: [] }, { status: 502 });
+    return NextResponse.json({ erro: "Não foi possível carregar o quadro do Azure DevOps.", cards: [], esteiras: [], podeMovimentar: podeMover, permissao, eu, avisos: [] }, { status: 502 });
   }
 }

@@ -21,6 +21,7 @@ import {
   montarCards,
   nomesCompativeis,
   normalizarDataAzure,
+  permissaoDoFluxo,
   podeMovimentar,
   projetoSuportado,
   prontidaoDoCard,
@@ -531,4 +532,26 @@ test("prontidão de um card 1.1 sem nada preenchido lista as 4 faltas resumidas"
   const p = prontidaoDoCard(pbi());
   assert.equal(p?.pronto, false);
   assert.deepEqual(p?.faltas.map(resumirFalta), ["Esteira (Area Path)", "Classificação", "Cliente", "Data Abertura Produto"]);
+});
+
+// ---------------------------------------------------------------- permissão com motivo (T11)
+
+test("permissaoDoFluxo: libera PM/PO/GPM/Product Ops e adm; nega com motivo claro aos demais", () => {
+  for (const [papel, tipo] of [["PM", "user"], ["po", "user"], ["GPM", "user"], ["Product Ops", "user"], [null, "adm"], ["CS", "adm"]] as const) {
+    assert.deepEqual(permissaoDoFluxo(papel, tipo), { pode: true, motivo: null }, `${papel}/${tipo}`);
+  }
+  const cs = permissaoDoFluxo("CS", "user");
+  assert.equal(cs.pode, false);
+  assert.match(cs.motivo ?? "", /Seu papel no cadastro de acesso é "CS"/);
+  assert.match(cs.motivo ?? "", /PM, PO, GPM, Product Ops e administradores/);
+  const semPapel = permissaoDoFluxo(null, "user");
+  assert.equal(semPapel.pode, false);
+  assert.match(semPapel.motivo ?? "", /não tem papel/);
+  assert.equal(permissaoDoFluxo("", undefined).pode, false);
+});
+
+test("permissão: o resultado concorda com podeMovimentar em todos os casos", () => {
+  for (const papel of ["PM", "PO e CS", "Tech Lead", "", null, "product ops", "Compo"]) {
+    for (const tipo of ["user", "adm", undefined]) assert.equal(permissaoDoFluxo(papel, tipo).pode, podeMovimentar(papel, tipo));
+  }
 });

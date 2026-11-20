@@ -23,7 +23,7 @@ import {
 
 type Esteira = { valor: string; rotulo: string };
 type Eu = { email: string | null; nome: string | null };
-type Resposta = { cards: CardFluxo[]; esteiras: Esteira[]; avisos: string[]; podeMovimentar: boolean; eu: Eu; erro?: string };
+type Resposta = { cards: CardFluxo[]; esteiras: Esteira[]; avisos: string[]; podeMovimentar: boolean; permissao?: { pode: boolean; motivo: string | null }; eu: Eu; erro?: string };
 
 // Uma cor por coluna (as 3 primeiras são as etapas com movimento na Fase 1).
 const COR_DA_ETAPA: Record<EtapaFluxo, { bg: string; dot: string }> = {
@@ -169,7 +169,7 @@ export default function FluxoPoUpstream() {
         )}
         {dados && !carregando && (
           <span
-            title={dados.podeMovimentar ? "Seu perfil pode movimentar cards" : "Seu perfil só visualiza o fluxo"}
+            title={dados.podeMovimentar ? "Seu perfil pode movimentar cards" : (dados.permissao?.motivo ?? "Seu perfil só visualiza o fluxo")}
             style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, borderRadius: 999, padding: "4px 11px", background: dados.podeMovimentar ? PASTEL.green.bg : C.soft, color: dados.podeMovimentar ? PASTEL.green.dot : C.muted }}
           >
             {dados.podeMovimentar ? <GitBranch size={13} /> : <Eye size={13} />}

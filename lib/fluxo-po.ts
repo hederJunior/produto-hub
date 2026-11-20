@@ -552,6 +552,22 @@ export function podeMovimentar(papel: string | null | undefined, tipo?: string |
     .some((p) => (PAPEIS_MOVIMENTADORES as readonly string[]).includes(p));
 }
 
+/** Texto para o usuário: quem movimenta (usado na mensagem de negação e na dica do selo da tela). */
+export const QUEM_MOVIMENTA = "PM, PO, GPM, Product Ops e administradores";
+
+/**
+ * Permissão do usuário no Fluxo do PO, com o motivo quando negada (mensagem do 403 do servidor e dica do selo
+ * "Somente visualização" da tela). Mesma regra de `podeMovimentar`.
+ */
+export function permissaoDoFluxo(papel: string | null | undefined, tipo?: string | null): { pode: boolean; motivo: string | null } {
+  if (podeMovimentar(papel, tipo)) return { pode: true, motivo: null };
+  const quem = String(papel ?? "").trim() ? `Seu papel no cadastro de acesso é "${String(papel).trim()}"` : "Seu cadastro de acesso não tem papel";
+  return {
+    pode: false,
+    motivo: `${quem}, então você só visualiza o Fluxo do PO. Movimentam: ${QUEM_MOVIMENTA}. Peça ao administrador para ajustar o seu papel.`,
+  };
+}
+
 /** O fluxo existe só no KMM5. */
 export function projetoSuportado(projeto: string | null | undefined): boolean {
   return norm(projeto) === "kmm5";

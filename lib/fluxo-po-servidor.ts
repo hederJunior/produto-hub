@@ -16,7 +16,7 @@ import {
   lerEntradaMovimento,
   montarCards,
   paraJsonPatch,
-  podeMovimentar,
+  permissaoDoFluxo,
   projetoSuportado,
   replicarDataComite,
   traduzirErroAzure,
@@ -222,6 +222,15 @@ export async function moverPbiFluxoPo(params: ParamsMover): Promise<ResultadoMov
   }
 }
 
+/**
+ * Verificação de permissão do Fluxo do PO NO SERVIDOR — chamar no início de TODA gravação (mover cards, marcar checklist...).
+ * Lança ErroFluxoPo 403 com o motivo quando o perfil só visualiza.
+ */
+export function exigirPermissaoMovimento(usuario: Pick<UsuarioFluxoPo, "papel" | "tipo">): void {
+  const { pode, motivo } = permissaoDoFluxo(usuario.papel, usuario.tipo);
+  if (!pode) throw new ErroFluxoPo(403, "sem_permissao", motivo ?? "Seu perfil só permite visualizar o Fluxo do PO.");
+}
+
 /** Grava uma linha no log de movimentos (tabela FluxoPoMovimento). Devolve false se falhar — nunca lança. */
 export async function registrarMovimentoNoLog(linha: LinhaLogMovimento): Promise<boolean> {
   try {
@@ -255,9 +264,7 @@ type ParamsMover = {
 /** O movimento em si; preenche `ctx` conforme descobre as coisas, para o log mesmo quando falha no meio. */
 async function executarMovimento(params: ParamsMover, ctx: ContextoLog): Promise<ResultadoMover> {
   const { usuario } = params;
-  if (!podeMovimentar(usuario.papel, usuario.tipo)) {
-    throw new ErroFluxoPo(403, "sem_permissao", "Seu perfil só permite visualizar o Fluxo do PO. Peça a um PM, PO, GPM, Product Ops ou administrador.");
-  }
+  exigirPermissaoMovimento(usuario);
 
   const id = Number(params.id);
   if (!Number.isInteger(id) || id <= 0) throw new ErroFluxoPo(422, "entrada_invalida", "ID do PBI inválido.");

@@ -2492,3 +2492,19 @@ a regra (inclui os inconsistentes); as colunas só de exibição ficam vazias; o
 feita à parte sobre a resposta da API; com "Somente bloqueados" = 127 cards (17+108+2), nenhum "Pronto para mover" visível; os 2 cards
 inconsistentes aparecem em vermelho (#38790 e #40933, Etapa Comitê sem Data Comitê, MARONI). Dado para o Heder: 108 dos 122 cards da 1.2 estão
 bloqueados por falta de Data Comitê — é o esperado, pois ainda ninguém definiu o comitê deles. `npm run test:fluxo-po`: 71 testes.
+
+## 2026-11-20 — Fluxo do PO · T11: permissões do fluxo
+
+**Regra (já valia no servidor desde a T04/T05; aqui fica formalizada):** o papel do **cadastro de acesso** (`AllowedUser.papel`, texto livre) define
+quem movimenta: **PM, PO, GPM, Product Ops** (e as grafias "Product Manager/Owner/Operations"), comparados sem caixa/acento e aceitando mais de
+um papel no campo ("PM/PO"); **usuários `tipo = adm` também**. Os demais perfis só visualizam. Quem não tem papel cadastrado só visualiza.
+O movimento só acontece a partir das etapas 1.1, 1.2 e 2.1 (3.1, 3.2 e 4.1 são só exibição).
+**Verificação no servidor, em toda gravação:** `exigirPermissaoMovimento(usuario)` (`lib/fluxo-po-servidor.ts`) é a porta de entrada de toda escrita do
+fluxo — `moverPbiFluxoPo` já a usa e a API do checklist (T10) deve chamá-la antes de gravar. Negação = 403 com o motivo
+(`permissaoDoFluxo`): "Seu papel no cadastro de acesso é "CS", então você só visualiza o Fluxo do PO. Movimentam: PM, PO, GPM, Product Ops e
+administradores. Peça ao administrador para ajustar o seu papel." (ou "não tem papel"). A leitura (quadro e detalhe) segue aberta a qualquer usuário logado.
+**Tela:** o selo "Somente visualização" passou a mostrar esse motivo na dica; a rota `/api/fluxo-po/upstream` devolve `permissao: { pode, motivo }`.
+**Como cadastrar o papel e o nome:** não existe tela para isso (o cadastro é por script), então `scripts/adicionar-acesso.mjs` ganhou `--nome="..."` e
+`--papel=...` (ex.: `--nome="Fulano de Tal" --papel=PO`). O nome alimenta o filtro "Meus itens" e a assinatura do comentário no PBI e deve se parecer com
+o do Azure DevOps. **Correção no mesmo script:** rodar sem `--tipo` num e-mail já cadastrado como `adm` o rebaixava para `user` (o código não seguia o
+próprio comentário); agora só muda o que for passado. Tela de gestão de acessos na Administração fica como melhoria futura (não pedida). `npm run test:fluxo-po`: 73 testes.

@@ -1179,6 +1179,30 @@ const CAMPO_VERSAO = "Custom.1d06fe45-f72f-4e74-9a58-33db9caf7d42";
  * de State (Finalizado/Cancelado) são feitos em JS: um nome de State inexistente num dos projetos
  * faria a WIQL inteira falhar.
  */
+async function descobrirProjetoDoCliente(org: string, pat: string, cliente: string): Promise<string | null> {
+  const contagens = await Promise.all(
+    (Object.keys(DEVOPS_PROJETOS) as Produto[]).map(async (produto) => {
+      const { project } = DEVOPS_PROJETOS[produto];
+      const wiql = `
+        SELECT [System.Id]
+        FROM WorkItems
+        WHERE [System.TeamProject] = '${aspasWiql(project)}'
+          AND [System.WorkItemType] = 'Product Backlog Item'
+          AND [Custom.Cliente] = '${aspasWiql(cliente)}'
+      `;
+      const res = await fetch(`https://dev.azure.com/${org}/${encodeURIComponent(project)}/_apis/wit/wiql?api-version=${API_VERSION}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(pat) },
+        body: JSON.stringify({ query: wiql }),
+      });
+      if (!res.ok) throw new Error(`Falha ao contar os PBIs do cliente (${project}) (${res.status}): ${await res.text()}`);
+      return { project, total: ((await res.json()) as { workItems: unknown[] }).workItems.length };
+    })
+  );
+  const melhor = contagens.sort((a, b) => b.total - a.total)[0];
+  return melhor && melhor.total > 0 ? melhor.project : null;
+}
+
 export async function getEntregasCliente(produtos: Produto[], cliente: string): Promise<EntregasCliente> {
   const { org, pat } = getConfig();
   const clausulaCliente = (nomes: string[]) =>
@@ -1187,6 +1211,11 @@ export async function getEntregasCliente(produtos: Produto[], cliente: string): 
       : `[Custom.Cliente] IN (${nomes.map((n) => `'${aspasWiql(n)}'`).join(", ")})`;
   const comInterno = Array.from(new Set([cliente, CLIENTE_INTERNO]));
   const campoIdExterno = await resolverCampoIdExterno(org, pat);
+  // Projeto do cliente (pedido por Heder em 2026-11-20): onde ele tem mais PBIs, olhando SEMPRE KMM4 e KMM5 —
+  // um cliente do KMM5 pode ter PBIs soltos no KMM4 (ex.: COOTRAVALE 150 x 4) e o KMM (INTERNO) da previsão
+  // só vale no projeto dele. Cliente vazio ou o próprio KMM (INTERNO) não tem projeto próprio (sem restrição).
+  const restringirInterno = !!cliente && cliente !== CLIENTE_INTERNO;
+  const projetoDoCliente = restringirInterno ? await descobrirProjetoDoCliente(org, pat, cliente) : null;
 
   const porProjeto = await Promise.all(
     produtos.map(async (produto) => {
@@ -1211,7 +1240,7 @@ export async function getEntregasCliente(produtos: Produto[], cliente: string): 
       const [comVersao, fechados, emAberto] = await Promise.all([
         consulta(`${clausulaCliente(comInterno)} AND [${CAMPO_VERSAO}] <> ''`),
         consulta(`${clausulaCliente([cliente])} AND [Microsoft.VSTS.Common.ClosedDate] <> ''`),
-        // Próximas entregas: mesma regra de Downstream > Previsão de Entregas (PBI em aberto com sprint), do cliente + KMM (INTERNO).
+        // Próximas entregas: mesma regra de Downstream > Previsão de Entregas (PBI em aberto com sprint), do cliente + KMM (INTERNO) do projeto dele.
         consulta(`${clausulaCliente(comInterno)} AND [System.State] NOT IN ('Finalizado', 'Cancelado') AND [System.IterationPath] <> '${aspasWiql(project)}'`),
       ]);
       return { project, ids: Array.from(new Set([...comVersao, ...fechados, ...emAberto])), idsPrevisao: new Set(emAberto) };
@@ -1251,7 +1280,9 @@ export async function getEntregasCliente(produtos: Produto[], cliente: string): 
       const iterationPath = String(f["System.IterationPath"] ?? "");
       const sprint = sprintDoIteration(iterationPath);
       const state = String(f["System.State"] ?? "");
-      if (idsPrevisao.has(w.id) && sprint && !estaEncerrado(state)) {
+      // KMM (INTERNO) só entra se for do projeto do cliente (sem restrição para cliente vazio ou o próprio interno).
+      const internoDeOutroProjeto = clientePbi === CLIENTE_INTERNO && restringirInterno && project !== projetoDoCliente;
+      if (idsPrevisao.has(w.id) && sprint && !estaEncerrado(state) && !internoDeOutroProjeto) {
         candidatosPrevisao.push({
           projeto: project,
           iterationPath,

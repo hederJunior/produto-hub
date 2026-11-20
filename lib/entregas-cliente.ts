@@ -31,7 +31,8 @@ export type PbiEntrega = {
 
 /**
  * PBI em aberto programado para a sprint atual ou posterior (mesma regra de Downstream > Previsão de
- * Entregas): do cliente ou do KMM (INTERNO), Iteration = sprint que ainda não terminou.
+ * Entregas): do cliente ou do KMM (INTERNO) — este só do(s) projeto(s) em que o cliente tem PBIs —,
+ * Iteration = sprint que ainda não terminou.
  */
 export type PbiPrevisaoCliente = {
   id: number;

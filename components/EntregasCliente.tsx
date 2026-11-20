@@ -155,7 +155,7 @@ export default function EntregasCliente({ cliente, produto }: { cliente: string;
                 })}
               </ol>
             )}
-            <p style={{ margin: "8px 0 0", fontSize: 12, color: C.faint }}>Demandas em aberto do cliente e do KMM (INTERNO) programadas para a sprint atual ou posteriores. A versão prevista é a sprint do PBI.</p>
+            <p style={{ margin: "8px 0 0", fontSize: 12, color: C.faint }}>Demandas em aberto do cliente e do KMM (INTERNO) do mesmo projeto do cliente, programadas para a sprint atual ou posteriores. A versão prevista é a sprint do PBI.</p>
           </section>
         </div>
       </div>

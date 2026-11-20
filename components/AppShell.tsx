@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Users, Map, Bell, ShieldCheck } from "lucide-react";
+import { Users, Map, Bell, ShieldCheck, Workflow } from "lucide-react";
 import { ProdutoProvider } from "./ProdutoContext";
 import ProdutoSwitcher from "./ProdutoSwitcher";
 import { C, FONTS } from "@/lib/kmm-theme";
@@ -11,6 +11,7 @@ import { C, FONTS } from "@/lib/kmm-theme";
 const NAV_ITEMS = [
   { href: "/clientes", label: "Gestão de clientes", icon: Users },
   { href: "/roadmap", label: "Roadmap e entregas", icon: Map },
+  { href: "/fluxo-po", label: "Fluxo do PO", icon: Workflow },
   { href: "/alertas", label: "Alertas e avisos", icon: Bell },
 ];
 
@@ -79,7 +80,8 @@ function Sidebar() {
 
       <nav style={{ display: "flex", flexDirection: "column", gap: 4 }}>
         {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
-          const ativo = pathname === href;
+          // Também ativo nas subrotas (ex.: o detalhe do Fluxo do PO, /fluxo-po/<id>).
+          const ativo = pathname === href || pathname.startsWith(`${href}/`);
           return (
             <Link key={href} href={href} className={`kmm-nav-item${ativo ? " active" : ""}`}>
               <Icon size={17} />

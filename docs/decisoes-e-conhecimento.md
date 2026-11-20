@@ -2443,3 +2443,15 @@ as linhas de teste (`script-teste@local` e `visitante@local`); se a tabela não 
 `TEXT NOT NULL` sem default); como o servidor grava pelo Supabase/PostgREST, o `id` precisa ser enviado. `registrarMovimentoNoLog`
 passou a gerar `randomUUID()`. **Regra para as próximas gravações em `FluxoPoChecklist` (e em qualquer tabela nova com `id` uuid):
 enviar o `id` no insert/upsert.** A migration não foi alterada.
+
+## 2026-11-20 — Fluxo do PO · T12: menu "Fluxo do PO" com abas Upstream e Downstream
+
+**Menu:** novo item "Fluxo do PO" (ícone `Workflow`) em `components/AppShell.tsx`, logo depois de "Roadmap e entregas", visível a todos
+os usuários logados. O item fica ativo também nas subrotas (`pathname.startsWith(href + "/")`), para o detalhe futuro (`/fluxo-po/<id>`).
+**Página:** `app/(app)/fluxo-po/page.tsx` — `PageHeader` + `AbasVisao` (mesmo padrão e ícones de Upstream/Downstream do Roadmap), aba padrão
+Upstream. **Upstream** (`components/FluxoPoUpstream.tsx`): por ora só a estrutura da esteira (as 6 etapas de `ETAPAS_FLUXO`, as de só exibição
+marcadas); com **KMM4** selecionado no filtro Produto mostra o aviso "O Fluxo do PO existe só no KMM5" (mesmo padrão do Kanban do Upstream);
+com Ambos avisa que o fluxo usa só o KMM5. O quadro com cards é a T13. **Downstream** (`components/FluxoPoDownstream.tsx`): aviso "Downstream
+em construção". Sem leitura de dados nesta tarefa. Conferido no navegador (servidor local): item ativo no menu, as duas abas, aviso do KMM4.
+**Para registrar:** na planilha de decisões, a linha "Identificar PM e PO — Vamos considerar todos como PO nesse momento" convive com a linha
+posterior "Quem movimenta (ajuste na T04): PM, PO, GPM, Product Ops e tipo adm". Estamos seguindo a mais recente (a T11 formaliza).

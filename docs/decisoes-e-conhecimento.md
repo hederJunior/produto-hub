@@ -2508,3 +2508,29 @@ administradores. Peça ao administrador para ajustar o seu papel." (ou "não tem
 `--papel=...` (ex.: `--nome="Fulano de Tal" --papel=PO`). O nome alimenta o filtro "Meus itens" e a assinatura do comentário no PBI e deve se parecer com
 o do Azure DevOps. **Correção no mesmo script:** rodar sem `--tipo` num e-mail já cadastrado como `adm` o rebaixava para `user` (o código não seguia o
 próprio comentário); agora só muda o que for passado. Tela de gestão de acessos na Administração fica como melhoria futura (não pedida). `npm run test:fluxo-po`: 73 testes.
+
+## 2026-11-20 — Fluxo do PO · T15: mover cards com validação e confirmação
+
+**Como se move:** só quem pode movimentar (selo "Você pode movimentar") e só cards das etapas 1.1, 1.2 e 2.1. Duas formas: **arrastar** o card (enquanto
+arrasta, as colunas de destino possíveis se destacam com borda tracejada e as demais esmaecem; soltar numa coluna não permitida nem é aceito pelo
+navegador) ou o botão **"Mover"** no card (menu com os destinos possíveis: avançar, avançar para 3.1/3.2 na 2.1, voltar). O botão serve também em tela
+de toque, onde não há arrastar. Ambos abrem a mesma confirmação (`components/FluxoPoMoverDialog.tsx`).
+**Confirmação:** mostra o destino (rádio com todos os destinos possíveis — na 2.1 dá para escolher **3.1 ou 3.2**, ou a volta marcada "proposta"), e:
+se a regra é cumprida, o quadro **"Ao avançar, grava no PBI"** (campo, valor atual → novo; 3.1 mostra Etapa + tag, 3.2 só a Etapa), mais as notas (Status
+continua Backlog, comentário e log, cópia da Data Comitê nos Assesments, aviso de proposta na volta); se NÃO é cumprida, o motivo ("Ainda não dá para mover
+este card" + as faltas), o botão de confirmar fica desabilitado, **nada é gravado e o card continua onde está**, com link para completar o PBI no Azure.
+Esc, "Cancelar" ou clique fora fecham. A regra é avaliada no navegador só para orientar (`avaliarMovimento` do módulo puro); **o servidor refaz tudo**.
+**Gravação:** `POST /api/fluxo-po/mover { id, destino }` (T05–T09). Em sucesso a tela troca o card pelo devolvido (recalcula coluna e ordem com `montarCards`),
+atualiza contadores e mostra um aviso verde com o resultado (comentário registrado, Assesments atualizados e qualquer aviso: proposta de volta, falha de comentário,
+falha de Assesment, falha do log). Erros: 422 (a regra deixou de valer no Azure desde que a tela carregou) → o diálogo continua aberto com a mensagem e as faltas
+do servidor; 409 (PBI mudou durante a gravação) → mensagem + botão "Atualizar o quadro", que recarrega; 403/502 → mensagem do servidor.
+**Esclarecimento do conflito de revisão:** o servidor lê o PBI no instante de gravar e usa ESSA revisão no `test /rev`, então uma alteração feita por outra pessoa
+depois que a TELA carregou não gera 409 — o movimento é reavaliado com o estado atual do Azure (passa se a regra ainda vale, 422 se não). O 409 só ocorre numa
+corrida dentro da janela entre a leitura e o PATCH do servidor.
+**Conferido no navegador (servidor local, dados reais; gravações só no PBI de teste 46766, depois restaurado):** diálogo de bloqueio num card real (#11991, falta Data
+Comitê; confirmar desabilitado); arrastar 1.2 → 2.1 (alvos 1.1 e 2.1 destacados, 3.1 recusa, 2.1 abre a confirmação); 46766 com Data Comitê preparada: avançar 1.2 → 2.1
+(card passou à coluna 2.1 com 31/12/2031, comentário publicado, Data Comitê copiada para o Assesment 46767), voltar 2.1 → 1.2, e de novo avançar; 3.1/3.2 trocáveis
+dentro do diálogo; Data Comitê removida no Azure com o diálogo aberto → 422 mostrado no diálogo, nada gravado. Limpeza: comentários, Assesment, PBI e 4 linhas de log do teste
+removidos; estado final igual ao inicial. Login e usuário simulados só no servidor de teste (revertido). A tela com sessão real do Supabase segue sem teste ponta a ponta.
+**Limite conhecido:** a confirmação não permite preencher campos faltantes (Data Comitê, Classificação...): isso é a T16 (informações editáveis no detalhe). Hoje 108 dos 122 cards
+da 1.2 só avançam depois de alguém preencher a Data Comitê no PBI.

@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, AlertTriangle, Building2, CalendarDays, CheckCircle2, Clock, Eye, GitBranch } from "lucide-react";
+import { AlertCircle, AlertTriangle, Building2, CalendarDays, CheckCircle2, Clock, Eye, GitBranch, MoveRight, X } from "lucide-react";
 import { useProduto } from "@/components/ProdutoContext";
+import FluxoPoMoverDialog, { type RespostaMover } from "@/components/FluxoPoMoverDialog";
 import { C, PASTEL, infoPrioridade } from "@/lib/kmm-theme";
 import { formatarChaveDia } from "@/lib/datas";
 import { urlPbiAzure } from "@/lib/fluxo-po-campos";
@@ -14,9 +15,12 @@ import {
   chaveDia,
   contarPorEtapa,
   comiteAtrasado,
+  destinosPossiveis,
   ehMeuItem,
   estaNaAreaRaiz,
+  montarCards,
   resumirFalta,
+  rotuloDaEtapa,
   type CardFluxo,
   type EtapaFluxo,
 } from "@/lib/fluxo-po";
@@ -60,6 +64,11 @@ export default function FluxoPoUpstream() {
   const [meusItens, setMeusItens] = useState(false);
   const [somenteBloqueados, setSomenteBloqueados] = useState(false);
   const [hoje] = useState(() => new Date());
+  const [recarga, setRecarga] = useState(0);
+  // Mover cards (T15): card sendo arrastado, pedido aberto na confirmação e o aviso do último resultado.
+  const [arrastando, setArrastando] = useState<CardFluxo | null>(null);
+  const [pedido, setPedido] = useState<{ card: CardFluxo; destino: EtapaFluxo } | null>(null);
+  const [aviso, setAviso] = useState<{ tipo: "ok" | "erro"; titulo: string; linhas: string[] } | null>(null);
 
   // O fluxo existe só no KMM5 — com KMM4 selecionado não há o que carregar.
   const semFluxo = produto === "KMM4";
@@ -84,9 +93,58 @@ export default function FluxoPoUpstream() {
     return () => {
       cancelado = true;
     };
-  }, [semFluxo]);
+  }, [semFluxo, recarga]);
 
   const cards = dados?.cards ?? [];
+  const podeMover = !!dados?.podeMovimentar;
+
+  function abrirMover(card: CardFluxo, destino: EtapaFluxo) {
+    setAviso(null);
+    setPedido({ card, destino });
+  }
+
+  /** Soltou o card numa coluna: se o destino é possível a partir da etapa dele, abre a confirmação (que mostra a regra). */
+  function aoSoltar(destino: EtapaFluxo) {
+    const card = arrastando;
+    setArrastando(null);
+    if (!card || card.etapa === destino) return;
+    if (!destinosPossiveis(card.etapa).some((d) => d.destino === destino)) {
+      const lista = destinosPossiveis(card.etapa).map((d) => rotuloDaEtapa(d.destino)).join(" ou ");
+      setAviso({ tipo: "erro", titulo: "Movimento não permitido", linhas: [`De ${rotuloDaEtapa(card.etapa)} o card só pode ir para ${lista || "nenhuma etapa"}.`] });
+      return;
+    }
+    abrirMover(card, destino);
+  }
+
+  /** Movimento gravado: troca o card pelo devolvido pelo servidor (recalcula coluna e ordem) e mostra o resultado. */
+  function aoConcluir(r: RespostaMover) {
+    const id = pedido?.card.pbi.id;
+    setPedido(null);
+    if (id === undefined) return;
+    setDados((d) => {
+      if (!d) return d;
+      const pbis = d.cards.filter((c) => c.pbi.id !== id).map((c) => c.pbi);
+      if (r.card) pbis.push(r.card.pbi);
+      return { ...d, cards: montarCards(pbis) };
+    });
+    const linhas: string[] = [];
+    if (r.comentario.publicado) linhas.push("Comentário de transição registrado no PBI.");
+    if (r.assesments && r.assesments.atualizados.length + r.assesments.jaIguais.length > 0) {
+      linhas.push(`Data Comitê copiada para ${r.assesments.atualizados.length + r.assesments.jaIguais.length} Assesment(s) filho(s).`);
+    }
+    setAviso({
+      tipo: "ok",
+      titulo: `#${id} movido${r.origem ? `: ${rotuloDaEtapa(r.origem)} → ${rotuloDaEtapa(r.destino)}` : ` para ${rotuloDaEtapa(r.destino)}`}`,
+      linhas: [...linhas, ...r.avisos],
+    });
+  }
+
+  /** O PBI mudou no Azure DevOps (409): fecha a confirmação e recarrega o quadro. */
+  function aoConflitar() {
+    setPedido(null);
+    setAviso({ tipo: "erro", titulo: "O PBI foi alterado por outra pessoa", linhas: ["O quadro foi atualizado com os dados mais recentes do Azure DevOps. Confira o card e tente de novo."] });
+    setRecarga((n) => n + 1);
+  }
   const eu: Eu = dados?.eu ?? { email: null, nome: null };
 
   // Esteira escolhida + os cards da raiz KMM5 (etapa 1.1, ainda sem esteira, são de quem vai classificar para qualquer uma).
@@ -178,6 +236,24 @@ export default function FluxoPoUpstream() {
         )}
       </div>
 
+      {aviso && (
+        <div
+          role="status"
+          className="kmm-card"
+          style={{ marginBottom: 12, fontSize: 13, display: "flex", alignItems: "flex-start", gap: 10, background: aviso.tipo === "ok" ? PASTEL.green.bg : "#FDF1F0", color: C.text, borderColor: aviso.tipo === "ok" ? "#CFE9D8" : "#F3C9C4" }}
+        >
+          {aviso.tipo === "ok" ? <CheckCircle2 size={16} color={PASTEL.green.dot} style={{ flexShrink: 0, marginTop: 1 }} /> : <AlertTriangle size={16} color={C.red} style={{ flexShrink: 0, marginTop: 1 }} />}
+          <div>
+            <div style={{ fontWeight: 600 }}>{aviso.titulo}</div>
+            {aviso.linhas.map((l) => (
+              <div key={l} style={{ marginTop: 3, color: C.muted }}>{l}</div>
+            ))}
+          </div>
+          <button type="button" aria-label="Fechar aviso" onClick={() => setAviso(null)} style={{ marginLeft: "auto", border: "none", background: "transparent", cursor: "pointer", color: C.muted, padding: 2 }}>
+            <X size={15} />
+          </button>
+        </div>
+      )}
       {erro && <div className="kmm-card" style={{ marginBottom: 12, fontSize: 13, color: C.red }}>{erro}</div>}
       {(dados?.avisos ?? []).map((a) => (
         <div key={a} className="kmm-card" style={{ marginBottom: 12, fontSize: 13, color: "#8a5a00", background: "#fff6e0" }}>{a}</div>
@@ -191,8 +267,32 @@ export default function FluxoPoUpstream() {
             {ETAPAS_FLUXO.map((etapa) => {
               const lista = porEtapa[etapa.codigo];
               const cor = COR_DA_ETAPA[etapa.codigo];
+              // Enquanto um card é arrastado: as colunas para onde ele pode ir se destacam; as demais esmaecem.
+              const alvoValido = !!arrastando && destinosPossiveis(arrastando.etapa).some((d) => d.destino === etapa.codigo);
               return (
-                <section key={etapa.codigo} aria-label={`${etapa.codigo} ${etapa.nome}`} style={{ background: C.soft, borderRadius: 16, borderTop: `3px solid ${cor.dot}`, padding: "12px 10px 10px" }}>
+                <section
+                  key={etapa.codigo}
+                  aria-label={`${etapa.codigo} ${etapa.nome}`}
+                  onDragOver={(e) => {
+                    if (!alvoValido) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                  }}
+                  onDrop={(e) => {
+                    if (!alvoValido) return;
+                    e.preventDefault();
+                    aoSoltar(etapa.codigo);
+                  }}
+                  style={{
+                    background: alvoValido ? cor.bg : C.soft,
+                    borderRadius: 16,
+                    borderTop: `3px solid ${cor.dot}`,
+                    padding: "12px 10px 10px",
+                    outline: alvoValido ? `2px dashed ${cor.dot}` : "none",
+                    opacity: arrastando && !alvoValido && arrastando.etapa !== etapa.codigo ? 0.55 : 1,
+                    transition: "opacity .15s ease, background .15s ease",
+                  }}
+                >
                   <header style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 4px 10px" }}>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontFamily: "Sora,sans-serif", fontWeight: 600, fontSize: 13.5, color: C.text, lineHeight: 1.25 }}>
@@ -218,7 +318,18 @@ export default function FluxoPoUpstream() {
                     {lista.length === 0 ? (
                       <div style={{ border: `1.5px dashed ${C.border}`, borderRadius: 12, padding: "22px 12px", textAlign: "center", fontSize: 12.5, color: C.faint }}>Sem demandas</div>
                     ) : (
-                      lista.map((c) => <CardEsteira key={c.pbi.id} card={c} cor={cor} hoje={hoje} />)
+                      lista.map((c) => (
+                        <CardEsteira
+                          key={c.pbi.id}
+                          card={c}
+                          cor={cor}
+                          hoje={hoje}
+                          podeMover={podeMover}
+                          aoMover={(destino) => abrirMover(c, destino)}
+                          aoIniciarArrasto={() => setArrastando(c)}
+                          aoFimArrasto={() => setArrastando(null)}
+                        />
+                      ))
                     )}
                   </div>
                 </section>
@@ -226,6 +337,17 @@ export default function FluxoPoUpstream() {
             })}
           </div>
         </div>
+      )}
+
+      {pedido && (
+        <FluxoPoMoverDialog
+          key={pedido.card.pbi.id}
+          card={pedido.card}
+          destinoInicial={pedido.destino}
+          onFechar={() => setPedido(null)}
+          onConcluido={aoConcluir}
+          onConflito={aoConflitar}
+        />
       )}
     </div>
   );
@@ -240,8 +362,27 @@ function esteiras(dados: Resposta | null, valor: string): string {
  * 1.1 número, título, aging e cliente · 1.2 + Area Path e prioridade · 2.1 número, título, Area Path, Data Comitê
  * (com indicativo de atraso), cliente e prioridade · 3.1, 3.2 e 4.1 número, título, Area Path, cliente e prioridade.
  */
-function CardEsteira({ card, cor, hoje }: { card: CardFluxo; cor: { bg: string; dot: string }; hoje: Date }) {
+function CardEsteira({
+  card,
+  cor,
+  hoje,
+  podeMover,
+  aoMover,
+  aoIniciarArrasto,
+  aoFimArrasto,
+}: {
+  card: CardFluxo;
+  cor: { bg: string; dot: string };
+  hoje: Date;
+  podeMover: boolean;
+  aoMover: (destino: EtapaFluxo) => void;
+  aoIniciarArrasto: () => void;
+  aoFimArrasto: () => void;
+}) {
   const { pbi, etapa } = card;
+  const [menuAberto, setMenuAberto] = useState(false);
+  // Só os cards das etapas com movimento (1.1, 1.2, 2.1) e só para quem pode movimentar.
+  const movel = podeMover && !!card.prontidao;
   const mostrarArea = etapa !== "1.1";
   const mostrarPrioridade = etapa !== "1.1";
   const mostrarAging = etapa === "1.1" || etapa === "1.2";
@@ -256,7 +397,21 @@ function CardEsteira({ card, cor, hoje }: { card: CardFluxo; cor: { bg: string; 
   return (
     <article
       className="fp-card"
-      style={{ background: card.inconsistencia ? "#FFF8F7" : "#fff", border: card.inconsistencia ? `1.5px solid ${C.red}` : `1px solid ${C.border}`, borderRadius: 12, padding: "11px 12px 10px" }}
+      draggable={movel}
+      onDragStart={(e) => {
+        if (!movel) return;
+        e.dataTransfer.setData("text/plain", String(pbi.id));
+        e.dataTransfer.effectAllowed = "move";
+        aoIniciarArrasto();
+      }}
+      onDragEnd={aoFimArrasto}
+      style={{
+        background: card.inconsistencia ? "#FFF8F7" : "#fff",
+        border: card.inconsistencia ? `1.5px solid ${C.red}` : `1px solid ${C.border}`,
+        borderRadius: 12,
+        padding: "11px 12px 10px",
+        cursor: movel ? "grab" : "default",
+      }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
         <a
@@ -336,6 +491,40 @@ function CardEsteira({ card, cor, hoje }: { card: CardFluxo; cor: { bg: string; 
               <Clock size={11} />
               {dias}d
             </span>
+          )}
+        </div>
+      )}
+      {movel && (
+        <div style={{ marginTop: 10, position: "relative" }}>
+          <button
+            type="button"
+            className="kmm-btn"
+            aria-haspopup="menu"
+            aria-expanded={menuAberto}
+            onClick={() => setMenuAberto((v) => !v)}
+            style={{ fontSize: 12, padding: "4px 10px", display: "inline-flex", alignItems: "center", gap: 6 }}
+          >
+            <MoveRight size={13} />
+            Mover
+          </button>
+          {menuAberto && (
+            <div role="menu" style={{ position: "absolute", left: 0, top: "100%", marginTop: 4, zIndex: 5, minWidth: 240, background: "#fff", border: `1px solid ${C.border}`, borderRadius: 10, boxShadow: "0 8px 24px rgba(30,27,24,.14)", padding: 4 }}>
+              {destinosPossiveis(etapa).map((d) => (
+                <button
+                  key={d.destino}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuAberto(false);
+                    aoMover(d.destino);
+                  }}
+                  style={{ display: "flex", width: "100%", alignItems: "center", gap: 8, textAlign: "left", border: "none", background: "transparent", cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, color: C.text, padding: "7px 10px", borderRadius: 8 }}
+                >
+                  <span style={{ fontWeight: 600 }}>{d.direcao === "volta" ? "Voltar para" : "Avançar para"}</span>
+                  {rotuloDaEtapa(d.destino)}
+                </button>
+              ))}
+            </div>
           )}
         </div>
       )}

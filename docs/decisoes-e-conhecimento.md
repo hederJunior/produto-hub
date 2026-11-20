@@ -2281,3 +2281,14 @@ centralizados em `lib/fluxo-po-campos.ts`. Confirmado:
   Cabotagem - Maersk, SWAT, Sustentacao N3, além de `Services`, `Suporte de Implantacao`, `Migracoes - Upstream` e
   `Migracoes - Downstream`, sem filhas). 1.1 = Area Path exatamente `KMM5`.
 - Observação: "Aguardando Alocação" continua não existindo; a etapa é "Aguardando Priorização".
+
+## 2026-11-20 — Fluxo do PO · T02: escrita no Azure confirmada (`scripts/azure-testar-escrita.mjs`)
+
+Rodado contra o PBI de teste 46766 (KMM5, Backlog/Backlog, Area Projetos de Implantacao). O PAT atual **tem escrita**:
+- `PATCH /wit/workitems/{id}` (json-patch com `test /rev` + `add System.Tags`) funcionou; a reversão (`remove` de
+  `System.Tags`, pois estava vazia) também. O `test /rev` serve de controle de concorrência — usar o mesmo na gravação real.
+- Comentário: `POST /wit/workItems/{id}/comments?api-version=7.1-preview.4` cria; `DELETE .../comments/{id}` apaga (conferido).
+  O autor do comentário é o dono do PAT ("Heder Luiz Martins Junior"), **não** o usuário logado no painel: por isso o
+  texto do comentário de transição precisa trazer o usuário e a data (origem, destino, usuário, data), como decidido.
+- Cada gravação sobe a revisão do PBI (9 → 10 → 11 no teste); o histórico do PBI fica com essas revisões de teste.
+- Não foi testada a escrita da Data Comitê nos Assesments (só será exercitada na T de transição 1.2 → 2.1, em PBI de teste).

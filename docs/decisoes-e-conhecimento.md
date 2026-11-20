@@ -2376,3 +2376,19 @@ resposta traz `comentario: { publicado: false, erro }` e um aviso, e o erro vai 
 Sem alteração gravada (nada a mudar) não há comentário. `moverPbiFluxoPo` aceita `publicador` só para testes (simular falha).
 `scripts/azure-testar-mover.mjs` agora confere o comentário (origem/destino/usuário), simula a falha na volta 2.1 → 1.2 e
 apaga os comentários criados (`apagarComentarioPbi`, uso restrito a scripts de teste).
+
+## 2026-11-20 — Fluxo do PO · T07: replicar a Data Comitê nos Assesments filhos
+
+**Quando:** depois de mover (e reler) o PBI, sempre que o movimento é 1.2 → 2.1 (`replicarDataComiteAssesments`) ou grava a
+Data Comitê. Replica o valor **lido do PBI** (mesmo reference name `Custom.443622e0-…` nos dois tipos) em **todos** os filhos.
+**Quais filhos:** relação `System.LinkTypes.Hierarchy-Forward` do PBI (`idsFilhosDeRelacoes`) e tipo `Assesment`
+(conferido por `workitemsbatch`). `Hierarchy-Reverse` (caso invertido, Assesment pai de PBI) é ignorado; testado.
+**Comportamento:** Assesment que já tem o mesmo **dia** não é regravado (`jaIguais`); cada Assesment é independente — falha de
+um não impede os outros e vai em `assesments.falhas` + aviso com a lista (`avisosDaReplicacao`) + `console.error` (log da
+T09 depois). PBI sem Assesment filho: aviso "PBI sem Assesment filho: a Data Comitê não foi replicada." e segue. Nada
+reverte o PBI. A resposta de `/api/fluxo-po/mover` ganhou `assesments` (`{ total, atualizados, jaIguais, falhas }` ou `null`
+quando o movimento não mexe na Data Comitê). Escrita no Assesment: PATCH em nível de organização, só o campo Data Comitê.
+**Achado:** o PBI de teste 46766 JÁ TEM um Assesment filho (46767, Status Backlog, criado 3 s depois do PBI — automação do
+Azure), então o teste da T07 usa o próprio PBI de teste; o script grava e restaura a Data Comitê desse Assesment.
+`scripts/azure-testar-mover.mjs` cobre T05+T06+T07 (falha parcial simulada, replicação real, restauração do PBI, do Assesment e
+exclusão dos comentários). `moverPbiFluxoPo` aceita `gravadorAssesment` só para testes.

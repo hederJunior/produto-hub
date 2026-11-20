@@ -13,7 +13,9 @@ import {
   derivarEtapa,
   destinosPossiveis,
   paraJsonPatch,
+  avisosDaReplicacao,
   chaveDia,
+  idsFilhosDeRelacoes,
   lerEntradaMovimento,
   montarCards,
   normalizarDataAzure,
@@ -21,6 +23,7 @@ import {
   projetoSuportado,
   prontidaoDoCard,
   removerTag,
+  replicarDataComite,
   traduzirErroAzure,
   type PbiFluxo,
 } from "./fluxo-po";
@@ -421,4 +424,60 @@ test("lerEntradaMovimento: aceita só chaves conhecidas com texto; o resto vira 
   assert.ok(lerEntradaMovimento({ cliente: 5 }).erro, "valor que não é texto");
   assert.ok(lerEntradaMovimento("texto").erro, "corpo que não é objeto");
   assert.ok(lerEntradaMovimento([1]).erro, "array");
+});
+
+// ---------------------------------------------------------------- replicação nos Assesments (T07)
+
+test("idsFilhosDeRelacoes: só Hierarchy-Forward (filhos); ignora o sentido inverso, relacionados e anexos", () => {
+  const base = "https://dev.azure.com/org/00000000-0000-0000-0000-000000000000/_apis/wit/workItems/";
+  assert.deepEqual(
+    idsFilhosDeRelacoes([
+      { rel: "System.LinkTypes.Hierarchy-Forward", url: `${base}47004` },
+      { rel: "System.LinkTypes.Hierarchy-Forward", url: `${base}21084` },
+      { rel: "System.LinkTypes.Hierarchy-Reverse", url: `${base}24008` }, // pai (caso invertido): ignorado
+      { rel: "System.LinkTypes.Related", url: `${base}999` },
+      { rel: "AttachedFile", url: "https://dev.azure.com/org/_apis/wit/attachments/abc" },
+      { rel: "System.LinkTypes.Hierarchy-Forward", url: `${base}47004` }, // duplicada
+    ]),
+    [47004, 21084],
+  );
+  assert.deepEqual(idsFilhosDeRelacoes(undefined), []);
+  assert.deepEqual(idsFilhosDeRelacoes([]), []);
+});
+
+test("replicarDataComite: grava em TODOS os filhos que diferem e pula os que já têm o mesmo dia", async () => {
+  const gravados: [number, string][] = [];
+  const r = await replicarDataComite({
+    filhos: [
+      { id: 3, dataComite: null },
+      { id: 1, dataComite: "2026-12-10T03:00:00Z" }, // já igual
+      { id: 2, dataComite: "2026-11-01T03:00:00Z" },
+    ],
+    dataComite: "2026-12-10T03:00:00Z",
+    gravar: async (id, data) => void gravados.push([id, data]),
+  });
+  assert.deepEqual(r, { total: 3, atualizados: [2, 3], jaIguais: [1], falhas: [] });
+  assert.deepEqual(gravados.sort((a, b) => a[0] - b[0]), [[2, "2026-12-10T03:00:00Z"], [3, "2026-12-10T03:00:00Z"]]);
+  assert.deepEqual(avisosDaReplicacao(r), []);
+});
+
+test("replicarDataComite: falha parcial não impede os outros e é listada", async () => {
+  const r = await replicarDataComite({
+    filhos: [{ id: 1, dataComite: null }, { id: 2, dataComite: null }, { id: 3, dataComite: null }],
+    dataComite: "2026-12-10T03:00:00Z",
+    gravar: async (id) => {
+      if (id === 2) throw new Error("Item fechado");
+    },
+  });
+  assert.deepEqual(r.atualizados, [1, 3]);
+  assert.deepEqual(r.falhas, [{ id: 2, erro: "Item fechado" }]);
+  const [aviso] = avisosDaReplicacao(r);
+  assert.match(aviso, /1 de 3/);
+  assert.match(aviso, /#2 \(Item fechado\)/);
+});
+
+test("replicarDataComite: sem filho avisa e segue", async () => {
+  const r = await replicarDataComite({ filhos: [], dataComite: "2026-12-10T03:00:00Z", gravar: async () => {} });
+  assert.deepEqual(r, { total: 0, atualizados: [], jaIguais: [], falhas: [] });
+  assert.deepEqual(avisosDaReplicacao(r), ["PBI sem Assesment filho: a Data Comitê não foi replicada."]);
 });

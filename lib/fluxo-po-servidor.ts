@@ -3,24 +3,28 @@
  * As regras vêm de `lib/fluxo-po.ts` (puras e testadas); aqui só há I/O: ler o PBI agora, validar, gravar com
  * controle de revisão e devolver o card atualizado. Nada é gravado quando uma regra falha.
  */
-import { API_VERSION, authHeader, getConfig, pbiFluxoDeWorkItem } from "./devops-client";
+import { API_VERSION, authHeader, buscarLoteCampos, getConfig, pbiFluxoDeWorkItem } from "./devops-client";
 import {
   ETAPAS_FLUXO,
   avaliarMovimento,
+  avisosDaReplicacao,
   comentarioDeTransicao,
+  idsFilhosDeRelacoes,
   lerEntradaMovimento,
   montarCards,
   paraJsonPatch,
   podeMovimentar,
   projetoSuportado,
+  replicarDataComite,
   traduzirErroAzure,
   type Alteracao,
   type CardFluxo,
   type EtapaFluxo,
   type OperacaoPatch,
   type PbiFluxo,
+  type ResultadoReplicacao,
 } from "./fluxo-po";
-import { CAMPOS_LEITURA_PBI, PROJETO_FLUXO_PO, TIPO_PBI } from "./fluxo-po-campos";
+import { CAMPOS_ASSESMENT, CAMPOS_LEITURA_PBI, CAMPOS_PBI, PROJETO_FLUXO_PO, TIPO_ASSESMENT, TIPO_PBI } from "./fluxo-po-campos";
 
 /** Erro com o status HTTP que a rota deve devolver e uma mensagem segura (sem URL interna nem credencial). */
 export class ErroFluxoPo extends Error {
@@ -47,6 +51,8 @@ export type ResultadoMover = {
   alteracoes: Alteracao[];
   /** Card atualizado (releitura após gravar), para a tela atualizar sem recarregar o quadro. */
   card: CardFluxo | null;
+  /** Replicação da Data Comitê nos Assesments filhos (T07); null quando o movimento não grava a Data Comitê. */
+  assesments: ResultadoReplicacao | null;
   /** Comentário de transição no PBI (T06). Falha NÃO desfaz o movimento: `publicado: false` + aviso. */
   comentario: { publicado: boolean; id?: number; erro?: string };
   /** Avisos que não impediram o movimento (proposta de volta, falha de comentário, PBI sem Assesment...). */
@@ -69,6 +75,50 @@ export async function publicarComentarioPbi(id: number, html: string): Promise<{
     throw new ErroFluxoPo(e.status, e.codigo, e.mensagem);
   }
   return { id: (JSON.parse(corpo) as { id: number }).id };
+}
+
+/** Assesments FILHOS do PBI (relação Hierarchy-Forward) com a Data Comitê atual de cada um. Sentido inverso é ignorado. */
+export async function listarAssesmentsFilhos(pbiId: number): Promise<{ id: number; dataComite: string | null }[]> {
+  const { org, pat } = getConfig();
+  const res = await fetch(`${urlItem(org, pbiId)}?$expand=relations&api-version=${API_VERSION}`, { headers: authHeader(pat), cache: "no-store" });
+  const corpo = await res.text();
+  if (!res.ok) {
+    const e = traduzirErroAzure(res.status, corpo);
+    throw new ErroFluxoPo(e.status, e.codigo, e.mensagem);
+  }
+  const ids = idsFilhosDeRelacoes((JSON.parse(corpo) as { relations?: { rel?: string; url?: string }[] }).relations);
+  if (!ids.length) return [];
+  const itens = await buscarLoteCampos(org, pat, ids, ["System.WorkItemType", CAMPOS_ASSESMENT.dataComite]);
+  return itens
+    .filter((w) => String(w.fields["System.WorkItemType"] ?? "").toLowerCase() === TIPO_ASSESMENT.toLowerCase())
+    .map((w) => ({ id: w.id, dataComite: (w.fields[CAMPOS_ASSESMENT.dataComite] as string) ?? null }))
+    .sort((a, b) => a.id - b.id);
+}
+
+/** Grava a Data Comitê em UM Assesment (só esse campo). */
+export async function gravarDataComiteAssesment(id: number, dataComite: string): Promise<void> {
+  const { org, pat } = getConfig();
+  const res = await fetch(`https://dev.azure.com/${org}/_apis/wit/workitems/${id}?api-version=${API_VERSION}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json-patch+json", ...authHeader(pat) },
+    body: JSON.stringify([{ op: "add", path: `/fields/${CAMPOS_ASSESMENT.dataComite}`, value: dataComite }]),
+    cache: "no-store",
+  });
+  const corpo = await res.text();
+  if (!res.ok) {
+    console.error(`[fluxo-po] Data Comitê do Assesment ${id} falhou (${res.status}):`, corpo.slice(0, 500));
+    throw new Error(traduzirErroAzure(res.status, corpo).mensagem);
+  }
+}
+
+/** Replica a Data Comitê do PBI em todos os Assesments filhos (falha de um não impede os outros). */
+export async function replicarDataComiteNosAssesments(
+  pbiId: number,
+  dataComite: string,
+  gravar: (id: number, dataComite: string) => Promise<void> = gravarDataComiteAssesment,
+): Promise<ResultadoReplicacao> {
+  const filhos = await listarAssesmentsFilhos(pbiId);
+  return replicarDataComite({ filhos, dataComite, gravar });
 }
 
 /** Apaga um comentário (uso restrito a scripts de teste, para limpar o PBI de teste). */
@@ -143,6 +193,8 @@ export async function moverPbiFluxoPo(params: {
   agora?: Date;
   /** Só para testes: substitui a publicação do comentário (ex.: simular falha). */
   publicador?: (id: number, html: string) => Promise<{ id: number }>;
+  /** Só para testes: substitui a gravação da Data Comitê em um Assesment (ex.: simular falha parcial). */
+  gravadorAssesment?: (id: number, dataComite: string) => Promise<void>;
 }): Promise<ResultadoMover> {
   const { usuario } = params;
   if (!podeMovimentar(usuario.papel, usuario.tipo)) {
@@ -189,6 +241,23 @@ export async function moverPbiFluxoPo(params: {
   }
 
   const atualizado = await lerPbiFluxoPoAtual(id);
+
+  // T07: Data Comitê do PBI → TODOS os Assesments filhos (também sempre que este movimento grava a Data Comitê).
+  // O PBI já foi movido: sem filho avisa e segue; falha (total ou parcial) não reverte, devolve a lista e registra.
+  let assesments: ResultadoReplicacao | null = null;
+  const gravouDataComite = avaliacao.alteracoes.some((a) => a.campo === CAMPOS_PBI.dataComite);
+  if ((avaliacao.replicarDataComiteAssesments || gravouDataComite) && atualizado.dataComite) {
+    try {
+      assesments = await replicarDataComiteNosAssesments(id, atualizado.dataComite, params.gravadorAssesment);
+      avisos.push(...avisosDaReplicacao(assesments));
+      if (assesments.falhas.length) console.error(`[fluxo-po] PBI ${id}: Data Comitê não replicada em`, assesments.falhas);
+    } catch (e) {
+      const erro = e instanceof Error ? e.message : String(e);
+      avisos.push(`O PBI foi movido, mas não foi possível replicar a Data Comitê nos Assesments (${erro}).`);
+      console.error(`[fluxo-po] PBI ${id}: falha ao listar/replicar nos Assesments:`, e);
+    }
+  }
+
   return {
     origem: avaliacao.origem,
     destino,
@@ -196,6 +265,7 @@ export async function moverPbiFluxoPo(params: {
     proposta: avaliacao.proposta,
     alteracoes: avaliacao.alteracoes,
     card: montarCards([atualizado])[0] ?? null,
+    assesments,
     comentario,
     avisos,
   };

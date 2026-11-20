@@ -13,6 +13,7 @@ import {
   CLASSIFICACOES_AZURE,
   DIAS_ALERTA_AGING,
   ETAPA,
+  RELACAO_FILHO,
   STATUS,
   TAG_PRONTO_REFINAMENTO_TECH,
 } from "./fluxo-po-campos";
@@ -523,7 +524,74 @@ export function comentarioDeTransicao(args: { origem: EtapaFluxo; destino: Etapa
   );
 }
 
-const CHAVES_ENTRADA = ["areaPath", "classificacao", "cliente", "dataAberturaProduto", "dataComite"] as const;
+// ---------------------------------------------------------------------------------------------------------------
+// Replicação da Data Comitê nos Assesments filhos (T07)
+// ---------------------------------------------------------------------------------------------------------------
+
+/**
+ * IDs dos FILHOS de um work item a partir das suas relações. No Azure, `Hierarchy-Forward` no PBI aponta para o filho;
+ * o sentido inverso (`Hierarchy-Reverse` = o PBI é filho de outro item, ex.: Assesment 24008 pai do PBI 21878),
+ * relacionados e anexos são ignorados.
+ */
+export function idsFilhosDeRelacoes(relacoes: { rel?: string; url?: string }[] | null | undefined): number[] {
+  const ids = new Set<number>();
+  for (const r of relacoes ?? []) {
+    if (r.rel !== RELACAO_FILHO) continue;
+    const m = /\/workitems\/(\d+)$/i.exec(String(r.url ?? ""));
+    if (m) ids.add(Number(m[1]));
+  }
+  return [...ids];
+}
+
+export type ResultadoReplicacao = {
+  /** Quantos Assesments filhos o PBI tem. */
+  total: number;
+  atualizados: number[];
+  /** Já tinham o mesmo dia: nada foi gravado. */
+  jaIguais: number[];
+  falhas: { id: number; erro: string }[];
+};
+
+/**
+ * Grava a Data Comitê em TODOS os Assesments filhos (mesmo valor do PBI). Cada Assesment é independente: a falha de um
+ * não impede os outros (devolvida em `falhas`). Quem chama injeta `gravar` (I/O no Azure); aqui só há a decisão.
+ */
+export async function replicarDataComite(args: {
+  filhos: { id: number; dataComite: string | null }[];
+  dataComite: string;
+  gravar: (id: number, dataComite: string) => Promise<void>;
+}): Promise<ResultadoReplicacao> {
+  const resultado: ResultadoReplicacao = { total: args.filhos.length, atualizados: [], jaIguais: [], falhas: [] };
+  const dia = chaveDia(args.dataComite);
+  await Promise.all(
+    args.filhos.map(async (f) => {
+      if (dia !== null && chaveDia(f.dataComite) === dia) {
+        resultado.jaIguais.push(f.id);
+        return;
+      }
+      try {
+        await args.gravar(f.id, args.dataComite);
+        resultado.atualizados.push(f.id);
+      } catch (e) {
+        resultado.falhas.push({ id: f.id, erro: e instanceof Error ? e.message : String(e) });
+      }
+    }),
+  );
+  resultado.atualizados.sort((a, b) => a - b);
+  resultado.jaIguais.sort((a, b) => a - b);
+  resultado.falhas.sort((a, b) => a.id - b.id);
+  return resultado;
+}
+
+/** Avisos para a tela: PBI sem Assesment filho (avisa e segue) e falhas parciais (lista quais). */
+export function avisosDaReplicacao(r: ResultadoReplicacao): string[] {
+  if (r.total === 0) return ["PBI sem Assesment filho: a Data Comitê não foi replicada."];
+  if (!r.falhas.length) return [];
+  const lista = r.falhas.map((f) => `#${f.id} (${f.erro})`).join(", ");
+  return [`A Data Comitê não foi replicada em ${r.falhas.length} de ${r.total} Assesment(s): ${lista}. O PBI já foi movido.`];
+}
+
+const CHAVES_ENTRADA =["areaPath", "classificacao", "cliente", "dataAberturaProduto", "dataComite"] as const;
 
 /**
  * Corpo da requisição (não confiável) → EntradaMovimento. Só aceita as chaves conhecidas e com texto; chave

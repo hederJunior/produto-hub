@@ -8,10 +8,12 @@ import {
   avaliarMovimento,
   comentarioDeTransicao,
   comiteAtrasado,
+  agruparPorEtapa,
   contarPorEtapa,
   derivarEtapa,
   destinosPossiveis,
   paraJsonPatch,
+  montarCards,
   podeMovimentar,
   projetoSuportado,
   prontidaoDoCard,
@@ -273,9 +275,40 @@ test("Data Comitê atrasada: antes de hoje", () => {
 
 // ---------------------------------------------------------------- permissões e projeto
 
-test("podeMovimentar: só PM e PO (sem caixa/acento, aceita mais de um papel)", () => {
-  for (const ok of ["PM", "pm", " PO ", "Product Owner", "Product Manager", "PM/PO", "PM, GPM", "PO e Tech Lead"]) assert.equal(podeMovimentar(ok), true, ok);
-  for (const nao of ["", null, undefined, "Product Ops", "GPM", "CS", "Tech Lead", "Pomar", "Compo"]) assert.equal(podeMovimentar(nao), false, String(nao));
+test("podeMovimentar: PM, PO, GPM e Product Ops (sem caixa/acento, aceita mais de um papel)", () => {
+  for (const ok of ["PM", "pm", " PO ", "Product Owner", "Product Manager", "PM/PO", "CS, GPM", "Tech Lead e PO", "GPM", "Product Ops"]) assert.equal(podeMovimentar(ok), true, ok);
+  for (const nao of ["", null, undefined, "CS", "Tech Lead", "QA Leader", "Pomar", "Compo", "Desenvolvedor"]) assert.equal(podeMovimentar(nao), false, String(nao));
+});
+
+test("podeMovimentar: usuário tipo adm move mesmo sem papel; tipo user depende do papel", () => {
+  assert.equal(podeMovimentar(null, "adm"), true);
+  assert.equal(podeMovimentar("CS", "adm"), true);
+  assert.equal(podeMovimentar("CS", "user"), false);
+  assert.equal(podeMovimentar("PO", "user"), true);
+});
+
+test("montarCards: ordena por prioridade, depois mais antigo, depois ID; descarta quem está fora do quadro", () => {
+  const cards = montarCards([
+    pbi12({ id: 10, prioridade: 2, dataAberturaProduto: "2026-10-01T00:00:00Z" }),
+    pbi12({ id: 11, prioridade: 1, dataAberturaProduto: "2026-11-10T00:00:00Z" }),
+    pbi12({ id: 12, prioridade: null, dataAberturaProduto: "2026-09-01T00:00:00Z" }),
+    pbi12({ id: 13, prioridade: 2, dataAberturaProduto: "2026-10-01T00:00:00Z" }),
+    pbi12({ id: 14, prioridade: 2, dataAberturaProduto: "2026-08-01T00:00:00Z" }),
+    pbi12({ id: 15, status: "Execução", etapa: "Execução" }),
+  ]);
+  assert.deepEqual(cards.map((c) => c.pbi.id), [11, 14, 10, 13, 12]);
+});
+
+test("montarCards/agruparPorEtapa: coluna, inconsistência e prontidão do card", () => {
+  const cards = montarCards([pbi({ id: 1 }), pbi21({ id: 2, dataComite: null }), pbi12({ id: 3, etapa: "Análise", tags: TAG })]);
+  const por = agruparPorEtapa(cards);
+  assert.deepEqual(por["1.1"].map((c) => c.pbi.id), [1]);
+  assert.deepEqual(por["2.1"].map((c) => c.pbi.id), [2]);
+  assert.deepEqual(por["3.1"].map((c) => c.pbi.id), [3]);
+  assert.deepEqual(por["1.2"], []);
+  assert.ok(por["2.1"][0].inconsistencia);
+  assert.equal(por["3.1"][0].prontidao, null);
+  assert.equal(por["1.1"][0].prontidao?.pronto, false);
 });
 
 test("projetoSuportado: só KMM5", () => {

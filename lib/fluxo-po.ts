@@ -370,17 +370,60 @@ export function contarPorEtapa(pbis: PbiFluxo[]): Record<EtapaFluxo, { total: nu
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// Quadro: cards por coluna
+// ---------------------------------------------------------------------------------------------------------------
+
+export type CardFluxo = {
+  pbi: PbiFluxo;
+  etapa: EtapaFluxo;
+  /** Estado fora das regras (card em vermelho na coluna mais próxima) ou null. */
+  inconsistencia: string | null;
+  /** "Pronto para mover" / o que falta; null nas etapas sem movimento na Fase 1. */
+  prontidao: { pronto: boolean; faltas: string[] } | null;
+};
+
+/** Ordem do Kanban Upstream: prioridade (1 = mais urgente; sem prioridade por último) → mais antigo primeiro → ID. */
+function compararCards(a: CardFluxo, b: CardFluxo): number {
+  const pa = a.pbi.prioridade ?? 99;
+  const pb = b.pbi.prioridade ?? 99;
+  if (pa !== pb) return pa - pb;
+  const da = chaveDia(a.pbi.dataAberturaProduto) ?? chaveDia(a.pbi.criadoEm) ?? "9999-12-31";
+  const db = chaveDia(b.pbi.dataAberturaProduto) ?? chaveDia(b.pbi.criadoEm) ?? "9999-12-31";
+  if (da !== db) return da < db ? -1 : 1;
+  return a.pbi.id - b.pbi.id;
+}
+
+/** PBIs → cards ordenados; PBIs fora do quadro (etapa não derivável) ficam de fora. */
+export function montarCards(pbis: PbiFluxo[]): CardFluxo[] {
+  const cards: CardFluxo[] = [];
+  for (const pbi of pbis) {
+    const { etapa, inconsistencia } = derivarEtapa(pbi);
+    if (etapa) cards.push({ pbi, etapa, inconsistencia, prontidao: prontidaoDoCard(pbi) });
+  }
+  return cards.sort(compararCards);
+}
+
+export function agruparPorEtapa(cards: CardFluxo[]): Record<EtapaFluxo, CardFluxo[]> {
+  const out = Object.fromEntries(ETAPAS_FLUXO.map((e) => [e.codigo, [] as CardFluxo[]])) as Record<EtapaFluxo, CardFluxo[]>;
+  for (const c of cards) out[c.etapa].push(c);
+  return out;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
 // Permissão (a verificação REAL é no servidor, em toda gravação)
 // ---------------------------------------------------------------------------------------------------------------
 
 /**
  * Papéis do cadastro de acesso (AllowedUser.papel, texto livre) que podem movimentar cards. Comparados sem caixa nem
  * acento; o campo pode trazer mais de um papel separado por vírgula, ponto e vírgula, barra ou "e" ("PM/PO").
- * Premissa padrão (docs/fluxo-po-decisoes.md §11): PM e PO. Os demais perfis só visualizam.
+ * Decisão do Heder (2026-11-20): PM, PO, GPM e Product Ops movimentam; usuários com tipo "adm" também. Os demais só visualizam.
  */
-export const PAPEIS_MOVIMENTADORES = ["pm", "po", "product manager", "product owner"] as const;
+export const PAPEIS_MOVIMENTADORES = [
+  "pm", "po", "gpm", "product ops", "product operations", "product manager", "product owner",
+] as const;
 
-export function podeMovimentar(papel: string | null | undefined): boolean {
+export function podeMovimentar(papel: string | null | undefined, tipo?: string | null): boolean {
+  if (norm(tipo) === "adm") return true;
   return String(papel ?? "")
     .split(/[,;/|]|\s+e\s+/i)
     .map(norm)

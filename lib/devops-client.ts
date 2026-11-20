@@ -26,6 +26,15 @@ import type { ItemGut } from "./priorizacao-gut";
 import { AREAS_KANBAN, colunaDoPbi, normKanban, type AreaKanban, type ItemKanban } from "./kanban-upstream";
 import { divisaoDoPbi, STATES_DOWNSTREAM, type ItemKanbanDownstream } from "./kanban-downstream";
 import type { ItemAgDeploy } from "./ag-deploy";
+import {
+  AREA_RAIZ_KMM5,
+  CAMPOS_PBI as CAMPOS_FLUXO_PO,
+  CAMPOS_LEITURA_PBI as CAMPOS_LEITURA_FLUXO_PO,
+  ETAPA as ETAPA_FLUXO_PO,
+  PROJETO_FLUXO_PO,
+  STATUS as STATUS_FLUXO_PO,
+} from "./fluxo-po-campos";
+import { montarCards, type CardFluxo, type PbiFluxo } from "./fluxo-po";
 import { estaEncerrado, sprintDoIteration, type ItemPrevisao, type SprintPrevisao } from "./previsao-entregas";
 import { ESTADOS_GESTAO_CLIENTES, htmlParaTexto, norm, type PbiGestaoCliente, type UltimoComentario } from "./gestao-clientes";
 
@@ -2083,4 +2092,86 @@ export async function getKanbanDownstream(produtos: Produto[]): Promise<{ itens:
     }
   }
   return { itens, avisos };
+}
+
+
+// ===== Fluxo do PO — Upstream (Fase 1). Esta função só LÊ; a gravação virá em tarefa própria. =====
+
+export type EsteiraFluxoPo = { valor: string; rotulo: string };
+
+/**
+ * PBIs do quadro do Fluxo do PO no KMM5, já em cards por etapa (regras puras em lib/fluxo-po.ts):
+ * Status Backlog com Etapa Backlog/Comitê/Análise (1.1, 1.2, 2.1, 3.1, 3.2) e Status Orçamento com Etapa
+ * Relacionamento/Comercial (4.1). Valores de Status/Etapa confirmados na T01, então vão direto na WIQL.
+ *
+ * `esteira` (opcional) é o Area Path de uma esteira filha do KMM5: mostra essa esteira MAIS os cards da raiz KMM5
+ * (etapa 1.1, ainda sem esteira — o PM/PO classifica a partir dali para qualquer esteira). Valor que não esteja na
+ * árvore de áreas é ignorado com aviso (Area Path inexistente na WIQL falha com TF51011).
+ * Todos os campos pedidos ao workitemsbatch foram confirmados na T01 (nome inexistente derrubaria o lote, TF51535).
+ */
+export async function getFluxoPoUpstream(esteira?: string | null): Promise<{ cards: CardFluxo[]; esteiras: EsteiraFluxoPo[]; avisos: string[] }> {
+  const { org, pat } = getConfig();
+  const project = PROJETO_FLUXO_PO;
+  const avisos: string[] = [];
+
+  const arvore = await fetch(
+    `https://dev.azure.com/${org}/${encodeURIComponent(project)}/_apis/wit/classificationnodes/areas?$depth=2&api-version=${API_VERSION}`,
+    { headers: authHeader(pat) }
+  );
+  if (!arvore.ok) throw new Error(`Falha ao ler as áreas de ${project} (${arvore.status}): ${await arvore.text()}`);
+  const raiz = (await arvore.json()) as { name: string; children?: { name: string }[] };
+  const esteiras: EsteiraFluxoPo[] = (raiz.children ?? [])
+    .map((f) => ({ valor: `${project}\\${f.name}`, rotulo: f.name }))
+    .sort((a, b) => a.rotulo.localeCompare(b.rotulo, "pt-BR"));
+
+  let clausulaEsteira = "";
+  if (esteira) {
+    const alvo = esteiras.find((e) => e.valor.toLowerCase() === esteira.trim().toLowerCase());
+    if (alvo) clausulaEsteira = `AND ([System.AreaPath] UNDER '${aspasWiql(alvo.valor)}' OR [System.AreaPath] = '${aspasWiql(AREA_RAIZ_KMM5)}')`;
+    else avisos.push(`Esteira "${esteira}" não existe no ${project}; mostrando todas.`);
+  }
+
+  const wiql = `
+    SELECT [System.Id]
+    FROM WorkItems
+    WHERE [System.TeamProject] = '${aspasWiql(project)}'
+      AND [System.WorkItemType] = 'Product Backlog Item'
+      AND (
+        ([System.State] = '${STATUS_FLUXO_PO.backlog}' AND [${CAMPOS_FLUXO_PO.etapa}] IN ('${ETAPA_FLUXO_PO.backlog}', '${ETAPA_FLUXO_PO.comite}', '${ETAPA_FLUXO_PO.analise}'))
+        OR ([System.State] = '${STATUS_FLUXO_PO.orcamento}' AND [${CAMPOS_FLUXO_PO.etapa}] = '${ETAPA_FLUXO_PO.relacionamentoComercial}')
+      )
+      ${clausulaEsteira}
+    ORDER BY [System.Id]
+  `;
+  const res = await fetch(`https://dev.azure.com/${org}/${encodeURIComponent(project)}/_apis/wit/wiql?api-version=${API_VERSION}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeader(pat) },
+    body: JSON.stringify({ query: wiql }),
+  });
+  if (!res.ok) throw new Error(`Falha na consulta WIQL do Fluxo do PO (${res.status}): ${await res.text()}`);
+  const ids = ((await res.json()) as { workItems: { id: number }[] }).workItems.map((w) => w.id);
+  if (!ids.length) return { cards: [], esteiras, avisos };
+
+  const works = await buscarLoteCampos(org, pat, ids, CAMPOS_LEITURA_FLUXO_PO.filter((c) => c !== "System.Id"));
+  const pbis = works.map((w): PbiFluxo => {
+    const f = w.fields;
+    const prioridade = f[CAMPOS_FLUXO_PO.prioridade];
+    const rev = f[CAMPOS_FLUXO_PO.revisao];
+    return {
+      id: w.id,
+      titulo: String(f[CAMPOS_FLUXO_PO.titulo] ?? `Item ${w.id}`),
+      status: String(f[CAMPOS_FLUXO_PO.status] ?? ""),
+      etapa: textoDeCampo(f[CAMPOS_FLUXO_PO.etapa]),
+      areaPath: String(f[CAMPOS_FLUXO_PO.areaPath] ?? ""),
+      tags: String(f[CAMPOS_FLUXO_PO.tags] ?? ""),
+      cliente: textoDeCampo(f[CAMPOS_FLUXO_PO.cliente]),
+      classificacao: textoDeCampo(f[CAMPOS_FLUXO_PO.classificacao]),
+      dataAberturaProduto: (f[CAMPOS_FLUXO_PO.dataAberturaProduto] as string) ?? null,
+      dataComite: (f[CAMPOS_FLUXO_PO.dataComite] as string) ?? null,
+      prioridade: typeof prioridade === "number" ? prioridade : null,
+      criadoEm: (f[CAMPOS_FLUXO_PO.criadoEm] as string) ?? null,
+      rev: typeof rev === "number" ? rev : undefined,
+    };
+  });
+  return { cards: montarCards(pbis), esteiras, avisos };
 }

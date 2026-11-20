@@ -2317,3 +2317,25 @@ Decisões de implementação (além de `docs/fluxo-po-decisoes.md`):
   com origem, destino, usuário e data (fuso de Brasília) e escapa o nome do usuário.
 - Datas gravadas vão como o usuário informou (ex.: "2026-12-10"); a normalização para o formato do Azure fica para a
   tarefa de gravação.
+
+## 2026-11-20 — Fluxo do PO · T04: leitura dos PBIs da esteira (somente leitura) + permissão ajustada
+
+**Permissão (decisão do Heder):** PM, PO, **GPM e Product Ops** movimentam cards, e **usuários com tipo `adm`** também
+(`podeMovimentar(papel, tipo)` em `lib/fluxo-po.ts`). `getUsuarioAtual()` passou a devolver também `papel`
+(AllowedUser.papel). Os demais perfis só visualizam.
+
+**Leitura:** `getFluxoPoUpstream(esteira?)` (`lib/devops-client.ts`) → `GET /api/fluxo-po/upstream[?projeto=KMM5][&esteira=<Area Path>]`.
+Resposta: `{ cards, esteiras, avisos, podeMovimentar }`; `cards` já vêm em `CardFluxo` (etapa derivada, inconsistência,
+prontidão) e ordenados por `montarCards` (prioridade → mais antigo → ID; igual ao Kanban do Upstream).
+- **Consulta:** uma WIQL só — PBI do KMM5 com (Status Backlog e Etapa em Backlog/Comitê/Análise) OU (Status Orçamento e
+  Etapa Relacionamento/Comercial). Valores confirmados na T01, então vão direto na WIQL. Campos pedidos ao `workitemsbatch`
+  = `CAMPOS_LEITURA_PBI` (todos confirmados; nada de nome inexistente, TF51535).
+- **Filtro de esteira:** é o Area Path de uma área filha do KMM5 (lista vem da árvore de áreas, `esteiras`). A esteira
+  escolhida vem **junto com os cards da raiz KMM5** (etapa 1.1 ainda não tem esteira; PM/PO classifica a partir dali para
+  qualquer uma). Valor fora da árvore é ignorado com aviso (evita TF51011). Ajuda no piloto "uma esteira".
+- **Projeto:** `?projeto=` diferente de KMM5 volta vazio com o aviso de que o fluxo existe só no KMM5. Rota exige sessão (401).
+- **Conferido com dados reais (2026-11-20):** 172 cards = 17 em 1.1, 122 em 1.2, 13 em 2.1 (2 inconsistentes: Etapa Comitê
+  sem Data Comitê), 8 em 3.1, 1 em 3.2, 11 em 4.1 — bate com as contagens independentes por State/Etapa (139+13+9+11).
+  Esteira Serviços da Carteira: 58 (31 do Backlog + 17 da raiz + 10 do Orçamento); Dedicada Maroni: 0 no Backlog, só a raiz.
+  14 cards da 1.2 e 11 da 2.1 já estão "prontos para mover".
+- **Não testado:** a chamada HTTP da rota autenticada (a função de leitura foi exercida direto contra o Azure).

@@ -412,6 +412,40 @@ export function contarPorEtapa(pbis: PbiFluxo[]): Record<EtapaFluxo, { total: nu
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// Checklist de cada etapa (guardado na plataforma: tabela FluxoPoChecklist)
+// ---------------------------------------------------------------------------------------------------------------
+
+export type ItemChecklist = { id: string; rotulo: string };
+
+/**
+ * Itens do checklist das etapas com movimento na Fase 1 (docs/fluxo-po-decisoes.md §6). O `id` é a chave estável gravada
+ * no banco (o texto pode ser ajustado sem perder o que já foi marcado); NÃO renomear ids existentes.
+ */
+export const CHECKLIST_POR_ETAPA: Partial<Record<EtapaFluxo, readonly ItemChecklist[]>> = {
+  "1.1": [
+    { id: "entendimento-dor", rotulo: "Fazer o entendimento da dor do cliente (preencher a classificação)" },
+    { id: "aderencia-estrategia", rotulo: "Análise de aderência com a estratégia do produto" },
+    { id: "distribuicao-esteiras", rotulo: "Distribuição em esteiras" },
+  ],
+  "1.2": [
+    { id: "avaliar-backlog", rotulo: "Avaliar backlog" },
+    { id: "priorizar-comites", rotulo: "Priorizar próximos comitês" },
+  ],
+  "2.1": [
+    { id: "construir-proposta", rotulo: "Construir proposta de solução" },
+    { id: "apresentacao-comite", rotulo: "Apresentação em comitê" },
+    { id: "estimativa-tech", rotulo: "Estimativa Tech" },
+    { id: "estimativa-qa", rotulo: "Estimativa QA" },
+    { id: "definicao-delivery", rotulo: "Definição de Delivery" },
+  ],
+};
+
+/** O item existe no checklist da etapa? (a rota que marca itens valida a entrada com isto) */
+export function itemDeChecklistValido(etapa: string, itemId: string): boolean {
+  return (CHECKLIST_POR_ETAPA[etapa as EtapaFluxo] ?? []).some((i) => i.id === itemId);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
 // Quadro: cards por coluna
 // ---------------------------------------------------------------------------------------------------------------
 

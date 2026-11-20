@@ -1,4 +1,4 @@
-// T05 + T06 + T07 do Fluxo do PO — valida, no PBI DE TESTE, a gravação do movimento de etapa (lib/fluxo-po-servidor.ts),
+// T05 + T06 + T07 + T09 do Fluxo do PO — valida, no PBI DE TESTE, a gravação do movimento de etapa (lib/fluxo-po-servidor.ts),
 // o comentário de transição e a replicação da Data Comitê nos Assesments filhos.
 //
 // Roda a MESMA função que a rota POST /api/fluxo-po/mover usa (sem a camada de login). Ao final, devolve TUDO ao estado
@@ -9,7 +9,7 @@
 //   2. 1.2 → 2.1 com a gravação do Assesment SIMULADAMENTE falhando (o PBI tem que ficar movido; falha listada);
 //   3. volta 2.1 → 1.2 com a publicação do comentário SIMULADAMENTE falhando (o movimento não pode ser desfeito);
 //   4. 1.2 → 2.1 de verdade: formato da data no Azure, comentário publicado, Data Comitê replicada em TODOS os Assesments;
-//   5. volta 2.1 → 1.2 e restauração.
+//   5. volta 2.1 → 1.2, confere o log de movimentos (T09: exige a migration aplicada; sem ela só avisa) e restaura.
 //
 // O PBI precisa estar em 1.2 (Status Backlog, Etapa Backlog, Area Path de uma esteira do KMM5). Só aceita o PBI de teste
 // 46766 (o Assesment filho dele, 46767, é gravado e restaurado); outro ID exige FLUXO_PO_PERMITIR_OUTRO_ID=1 — nunca use PBI real.
@@ -19,6 +19,7 @@
 import { ErroFluxoPo, aplicarPatchPbi, apagarComentarioPbi, lerPbiFluxoPoAtual, listarAssesmentsFilhos, moverPbiFluxoPo } from "../lib/fluxo-po-servidor.ts";
 import { chaveDia, derivarEtapa } from "../lib/fluxo-po.ts";
 import { CAMPOS_ASSESMENT, CAMPOS_PBI } from "../lib/fluxo-po-campos.ts";
+import { getServiceClient } from "../lib/supabase.ts";
 
 const PBI_DE_TESTE = 46766;
 const id = Number(process.argv[2]);
@@ -36,6 +37,14 @@ if (id !== PBI_DE_TESTE && process.env.FLUXO_PO_PERMITIR_OUTRO_ID !== "1") {
 const ORG = process.env.AZURE_DEVOPS_ORG;
 const auth = { Authorization: "Basic " + Buffer.from(`:${process.env.AZURE_DEVOPS_PAT}`).toString("base64") };
 const comentariosCriados = [];
+const INICIO = new Date().toISOString();
+let tentativas = 0;
+/** Toda tentativa de movimento passa por aqui (para conferir depois que o log registrou todas). */
+const mover = (params) => {
+  tentativas++;
+  return moverPbiFluxoPo(params);
+};
+const USUARIOS_DO_TESTE = ["script-teste@local", "visitante@local"];
 const admin = { email: "script-teste@local", nome: "Script de teste (T05)", tipo: "adm", papel: null };
 const semPermissao = { email: "visitante@local", nome: "Visitante", tipo: "user", papel: "CS" };
 const resultados = [];
@@ -89,16 +98,16 @@ async function main() {
 
   try {
     // ---- 1. Passos que NÃO gravam ----
-    await esperarErro("Sem permissão (perfil CS)", 403, () => moverPbiFluxoPo({ id, destino: "2.1", entrada: { dataComite: DATA_TESTE }, usuario: semPermissao }));
-    await esperarErro("Destino inválido", 422, () => moverPbiFluxoPo({ id, destino: "9.9", usuario: admin }));
-    await esperarErro("Entrada com campo não permitido", 422, () => moverPbiFluxoPo({ id, destino: "2.1", entrada: { etapa: "Comitê" }, usuario: admin }));
-    await esperarErro("Data Comitê inválida", 422, () => moverPbiFluxoPo({ id, destino: "2.1", entrada: { dataComite: "2026-02-31" }, usuario: admin }), (e) => e.faltas.length > 0);
+    await esperarErro("Sem permissão (perfil CS)", 403, () => mover({ id, destino: "2.1", entrada: { dataComite: DATA_TESTE }, usuario: semPermissao }));
+    await esperarErro("Destino inválido", 422, () => mover({ id, destino: "9.9", usuario: admin }));
+    await esperarErro("Entrada com campo não permitido", 422, () => mover({ id, destino: "2.1", entrada: { etapa: "Comitê" }, usuario: admin }));
+    await esperarErro("Data Comitê inválida", 422, () => mover({ id, destino: "2.1", entrada: { dataComite: "2026-02-31" }, usuario: admin }), (e) => e.faltas.length > 0);
     if (inicial.dataComite) {
       console.log("(PBI já tem Data Comitê; pulando o teste de 'Data Comitê ausente')");
     } else {
-      await esperarErro("Data Comitê ausente", 422, () => moverPbiFluxoPo({ id, destino: "2.1", usuario: admin }), (e) => e.faltas.some((f) => f.includes("Data Comitê")));
+      await esperarErro("Data Comitê ausente", 422, () => mover({ id, destino: "2.1", usuario: admin }), (e) => e.faltas.some((f) => f.includes("Data Comitê")));
     }
-    await esperarErro("Movimento não previsto (1.2 → 3.1)", 422, () => moverPbiFluxoPo({ id, destino: "3.1", usuario: admin }));
+    await esperarErro("Movimento não previsto (1.2 → 3.1)", 422, () => mover({ id, destino: "3.1", usuario: admin }));
     await esperarErro("Conflito de revisão (test /rev desatualizado)", 409, () =>
       aplicarPatchPbi(id, [{ op: "test", path: "/rev", value: inicial.rev - 1 }, { op: "add", path: `/fields/${CAMPOS_PBI.tags}`, value: "nao-deve-gravar" }]),
     );
@@ -110,7 +119,7 @@ async function main() {
     const gravadorQueFalha = async () => {
       throw new Error("falha simulada pelo teste");
     };
-    const r0 = await moverPbiFluxoPo({ id, destino: "2.1", entrada: { dataComite: DATA_TESTE }, usuario: admin, gravadorAssesment: gravadorQueFalha });
+    const r0 = await mover({ id, destino: "2.1", entrada: { dataComite: DATA_TESTE }, usuario: admin, gravadorAssesment: gravadorQueFalha });
     if (r0.comentario?.id) comentariosCriados.push(r0.comentario.id);
     registrar("Falha ao gravar Assesment NÃO desfaz o movimento do PBI", r0.card?.etapa === "2.1", `card em ${r0.card?.etapa}`);
     if (filhosIniciais.length) {
@@ -121,12 +130,12 @@ async function main() {
     const falhaDeComentario = async () => {
       throw new ErroFluxoPo(502, "simulado", "falha simulada pelo teste");
     };
-    const rv = await moverPbiFluxoPo({ id, destino: "1.2", usuario: admin, publicador: falhaDeComentario });
+    const rv = await mover({ id, destino: "1.2", usuario: admin, publicador: falhaDeComentario });
     registrar("Comentário com falha NÃO desfaz o movimento (aviso, publicado=false)", rv.card?.etapa === "1.2" && rv.comentario?.publicado === false && rv.avisos.some((a) => a.includes("comentário")), `avisos: ${rv.avisos.join(" | ")}`);
     registrar("Volta 2.1 → 1.2 (proposta) mantém a Data Comitê", rv.direcao === "volta" && rv.proposta === true && rv.card?.pbi.dataComite === dataGravada);
 
     // ---- 4. Avanço 1.2 → 2.1 de verdade ----
-    const r1 = await moverPbiFluxoPo({ id, destino: "2.1", usuario: admin });
+    const r1 = await mover({ id, destino: "2.1", usuario: admin });
     if (r1.comentario?.id) comentariosCriados.push(r1.comentario.id);
     registrar("Mover 1.2 → 2.1 (200)", r1.card?.etapa === "2.1" && r1.direcao === "avanco", `card em ${r1.card?.etapa}; gravou ${r1.alteracoes.map((a) => a.rotulo).join(", ") || "(só replicação)"}`);
     registrar("Data Comitê salva no formato do Azure (meia-noite de Brasília)", r1.card?.pbi.dataComite === dataGravada, `valor lido: ${r1.card?.pbi.dataComite}`);
@@ -146,9 +155,30 @@ async function main() {
     }
 
     // ---- 5. Volta final ----
-    const r2 = await moverPbiFluxoPo({ id, destino: "1.2", usuario: admin });
+    const r2 = await mover({ id, destino: "1.2", usuario: admin });
     if (r2.comentario?.id) comentariosCriados.push(r2.comentario.id);
     registrar("Voltar 2.1 → 1.2 (200)", r2.card?.etapa === "1.2" && r2.direcao === "volta" && r2.proposta === true, `card em ${r2.card?.etapa}`);
+
+    // ---- 5b. Log de movimentos (T09) ----
+    const { data: linhas, error: erroLog } = await getServiceClient()
+      .from("FluxoPoMovimento")
+      .select("resultado, origem, destino, usuario, motivo")
+      .in("usuario", USUARIOS_DO_TESTE)
+      .eq("workItemId", id)
+      .gte("criadoEm", INICIO);
+    if (erroLog) {
+      console.log(`AVISO  Log de movimentos indisponível (${erroLog.message}) — a migration 20261120120000_fluxo_po já foi aplicada no Supabase?`);
+    } else {
+      const por = {};
+      for (const l of linhas) por[l.resultado] = (por[l.resultado] ?? 0) + 1;
+      registrar("Log registrou TODAS as tentativas (bloqueadas, sem permissão e com falha parcial inclusive)", linhas.length === tentativas, `${linhas.length} linhas para ${tentativas} tentativas: ${JSON.stringify(por)}`);
+      registrar("Log tem sucesso, parcial, bloqueado e sem_permissão", ["sucesso", "parcial", "bloqueado", "sem_permissao"].every((r) => por[r] > 0));
+      const dos403 = linhas.find((l) => l.resultado === "sem_permissao");
+      registrar("Linha do bloqueio traz usuário e motivo", !!dos403?.motivo && dos403.usuario === "visitante@local", dos403?.motivo ?? "");
+      // Limpeza: as linhas de teste não ficam no log de verdade.
+      const { error: erroDel } = await getServiceClient().from("FluxoPoMovimento").delete().in("usuario", USUARIOS_DO_TESTE).eq("workItemId", id).gte("criadoEm", INICIO);
+      registrar("Linhas de teste removidas do log", !erroDel, erroDel?.message ?? "");
+    }
   } finally {
     // ---- 6. Limpeza dos comentários e restauração do estado original ----
     for (const cid of comentariosCriados) {

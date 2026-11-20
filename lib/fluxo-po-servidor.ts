@@ -4,6 +4,8 @@
  * controle de revisão e devolver o card atualizado. Nada é gravado quando uma regra falha.
  */
 import { API_VERSION, authHeader, buscarLoteCampos, getConfig, pbiFluxoDeWorkItem } from "./devops-client";
+import { getServiceClient } from "./supabase";
+import { linhaDeFalha, linhaDeSucesso, type ContextoLog, type LinhaLogMovimento } from "./fluxo-po-log";
 import {
   ETAPAS_FLUXO,
   avaliarMovimento,
@@ -185,7 +187,56 @@ export async function aplicarPatchPbi(id: number, operacoes: OperacaoPatch[]): P
  * permissão → entrada válida → lê o PBI agora → regras (`avaliarMovimento`) → PATCH com `test /rev` → relê e monta o card.
  * Lança ErroFluxoPo: 403 sem permissão, 422 entrada/regra, 404 PBI inexistente, 409 PBI mudou desde a leitura, 502 Azure.
  */
-export async function moverPbiFluxoPo(params: {
+export async function moverPbiFluxoPo(params: ParamsMover): Promise<ResultadoMover> {
+  const idNumerico = Number(params.id);
+  const ctx: ContextoLog = {
+    workItemId: Number.isInteger(idNumerico) && idNumerico > 0 ? idNumerico : null,
+    origem: null,
+    destino: String(params.destino ?? ""),
+    direcao: null,
+    proposta: false,
+    usuario: params.usuario.email,
+    usuarioNome: params.usuario.nome?.trim() || null,
+    revisaoAntes: null,
+    alteracoes: null,
+  };
+  const registrar = params.registradorLog ?? registrarMovimentoNoLog;
+
+  try {
+    const resultado = await executarMovimento(params, ctx);
+    // T09: log de TODA tentativa. Falha no log não desfaz nada: vira aviso (e console.error dentro de registrarMovimentoNoLog).
+    if (ctx.workItemId !== null && !(await registrar(linhaDeSucesso({ ...ctx, workItemId: ctx.workItemId }, resultado)))) {
+      resultado.avisos.push("O movimento foi feito, mas não foi possível registrá-lo no log da plataforma.");
+    }
+    return resultado;
+  } catch (e) {
+    if (ctx.workItemId !== null) {
+      const erro =
+        e instanceof ErroFluxoPo
+          ? { codigo: e.codigo, mensagem: e.message, faltas: e.faltas }
+          : { codigo: "erro", mensagem: e instanceof Error ? e.message : "Erro inesperado." };
+      await registrar(linhaDeFalha({ ...ctx, workItemId: ctx.workItemId }, erro));
+    }
+    throw e;
+  }
+}
+
+/** Grava uma linha no log de movimentos (tabela FluxoPoMovimento). Devolve false se falhar — nunca lança. */
+export async function registrarMovimentoNoLog(linha: LinhaLogMovimento): Promise<boolean> {
+  try {
+    const { error } = await getServiceClient().from("FluxoPoMovimento").insert(linha);
+    if (error) {
+      console.error("[fluxo-po] não foi possível gravar no log de movimentos:", error.message);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error("[fluxo-po] não foi possível gravar no log de movimentos:", e);
+    return false;
+  }
+}
+
+type ParamsMover = {
   id: unknown;
   destino: unknown;
   entrada?: unknown;
@@ -195,7 +246,12 @@ export async function moverPbiFluxoPo(params: {
   publicador?: (id: number, html: string) => Promise<{ id: number }>;
   /** Só para testes: substitui a gravação da Data Comitê em um Assesment (ex.: simular falha parcial). */
   gravadorAssesment?: (id: number, dataComite: string) => Promise<void>;
-}): Promise<ResultadoMover> {
+  /** Só para testes: substitui a gravação no log (devolve true se gravou). */
+  registradorLog?: (linha: LinhaLogMovimento) => Promise<boolean>;
+};
+
+/** O movimento em si; preenche `ctx` conforme descobre as coisas, para o log mesmo quando falha no meio. */
+async function executarMovimento(params: ParamsMover, ctx: ContextoLog): Promise<ResultadoMover> {
   const { usuario } = params;
   if (!podeMovimentar(usuario.papel, usuario.tipo)) {
     throw new ErroFluxoPo(403, "sem_permissao", "Seu perfil só permite visualizar o Fluxo do PO. Peça a um PM, PO, GPM, Product Ops ou administrador.");
@@ -210,8 +266,12 @@ export async function moverPbiFluxoPo(params: {
 
   const pbi = await lerPbiFluxoPoAtual(id);
   if (pbi.rev === undefined) throw new ErroFluxoPo(502, "sem_revisao", "O Azure DevOps não informou a revisão do PBI; nada foi gravado.");
+  ctx.revisaoAntes = pbi.rev;
 
   const avaliacao = avaliarMovimento(pbi, destino, lida.entrada);
+  ctx.origem = avaliacao.origem;
+  ctx.direcao = avaliacao.direcao;
+  ctx.proposta = avaliacao.proposta;
   if (!avaliacao.permitido) {
     throw new ErroFluxoPo(422, "regra", "O movimento não cumpre as regras do fluxo; nada foi gravado.", avaliacao.faltas);
   }

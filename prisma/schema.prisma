@@ -303,3 +303,48 @@ model PriorizacaoGut {
   atualizadoPor String?
   atualizadoEm  DateTime @default(now())
 }
+
+/// Fluxo do PO (T09, 2026-11-20): checklist de cada etapa guardado na plataforma — 1 linha por (PBI, etapa, item).
+/// `itemId` é a chave estável do item (lib/fluxo-po.ts → CHECKLIST_POR_ETAPA), não o texto, que pode mudar.
+/// Guarda quem marcou e quando (marcadoPor/marcadoEm ficam nulos ao desmarcar).
+model FluxoPoChecklist {
+  id           String    @id @default(uuid())
+  workItemId   Int
+  etapa        String
+  itemId       String
+  marcado      Boolean   @default(false)
+  marcadoPor   String?
+  marcadoEm    DateTime?
+  atualizadoEm DateTime  @default(now())
+
+  @@unique([workItemId, etapa, itemId])
+  @@index([workItemId])
+}
+
+/// Fluxo do PO (T09, 2026-11-20): log de movimentos. TODA tentativa entra, inclusive bloqueadas (regra, permissão,
+/// conflito de revisão) e as com falha parcial (comentário ou Assesment). `resultado`: sucesso | parcial | bloqueado |
+/// sem_permissao | conflito | erro. `alteracoes`/`avisos`/`assesments` são JSON (ver lib/fluxo-po-log.ts).
+model FluxoPoMovimento {
+  id                  String   @id @default(uuid())
+  workItemId          Int
+  origem              String?
+  destino             String
+  direcao             String?
+  proposta            Boolean  @default(false)
+  usuario             String
+  usuarioNome         String?
+  resultado           String
+  motivo              String?
+  alteracoes          Json?
+  avisos              Json?
+  comentarioPublicado Boolean?
+  comentarioId        Int?
+  comentarioErro      String?
+  assesments          Json?
+  revisaoAntes        Int?
+  criadoEm            DateTime @default(now())
+
+  @@index([workItemId, criadoEm])
+  @@index([criadoEm])
+  @@index([usuario])
+}

@@ -2415,3 +2415,26 @@ não derrubar a tela. Item que não é PBI do KMM5 → 422; inexistente → 404;
   copiado como veio). Limite de entrada de 200 mil caracteres (`truncada`). 11 testes, incluindo ataques clássicos de XSS.
 - **Conferido com dados reais:** PBI 46766 (descrição, 3 comentários, 1 anexo com autor/data, histórico de 6 entradas).
   `npm run test:fluxo-po` agora roda os 3 arquivos de teste (61 testes). Script de leitura: `scripts/azure-ler-detalhe.mjs <id>`.
+
+## 2026-11-20 — Fluxo do PO · T09: modelo de dados do checklist e do log de movimentos
+
+**Tabelas** (models no `prisma/schema.prisma`; SQL escrito à mão em `prisma/migrations/20261120120000_fluxo_po/migration.sql`,
+idêntico ao que `prisma migrate diff` gera; **aplicar no Supabase**):
+- `FluxoPoChecklist` — 1 linha por (PBI, etapa, item), único `(workItemId, etapa, itemId)`: `marcado`, `marcadoPor`, `marcadoEm`
+  (nulos ao desmarcar), `atualizadoEm`. `itemId` é chave estável (`CHECKLIST_POR_ETAPA` em `lib/fluxo-po.ts`: 1.1 com 3 itens,
+  1.2 com 2, 2.1 com 5 — doc §6), não o texto, para poder ajustar o texto sem perder marcações. Rotas de marcar ficam para a tarefa
+  da tela de detalhe (validar com `itemDeChecklistValido`).
+- `FluxoPoMovimento` — log: PBI, origem, destino, direção, `proposta`, usuário (e-mail e nome), `resultado`, `motivo`, `alteracoes`
+  (JSON), `avisos` (JSON), `comentarioPublicado/Id/Erro`, `assesments` (JSON: total, atualizados, já iguais, falhas), `revisaoAntes`,
+  `criadoEm`. Índices por (PBI, data), data e usuário.
+- **RLS ligado sem política** nas duas tabelas (desvio consciente do padrão das tabelas antigas, que não têm RLS): só o servidor
+  (service role, que ignora RLS) lê e grava; a chave pública (anon) do Supabase não enxerga o log nem o checklist.
+
+**Log ligado em `moverPbiFluxoPo`** (vale para a rota e para os scripts): TODA tentativa vira uma linha — `sucesso`; `parcial`
+(PBI movido mas comentário ou Assesment falhou); `bloqueado` (regra, entrada inválida ou fora do escopo); `sem_permissao`;
+`conflito` (revisão mudou); `erro` (Azure fora, etc.). `lib/fluxo-po-log.ts` monta a linha (pura, testada). **Falha ao gravar o
+log nunca desfaz nem impede o movimento:** vira `console.error` e um aviso na resposta ("...não foi possível registrá-lo no log").
+Enquanto a migration não estiver aplicada, os movimentos funcionam e só esse aviso aparece. Tentativa com ID inválido (não numérico)
+não gera linha (não há PBI a que atribuir). O corpo cru de erros do Azure não entra no log, só a mensagem já traduzida.
+`scripts/azure-testar-mover.mjs` agora confere o log (todas as tentativas registradas, tipos de resultado, motivo/usuário) e apaga
+as linhas de teste (`script-teste@local` e `visitante@local`); se a tabela não existir ainda, só avisa. `npm run test:fluxo-po`: 67 testes.

@@ -46,9 +46,9 @@ import { ESTADOS_GESTAO_CLIENTES, htmlParaTexto, norm, type PbiGestaoCliente, ty
 // Supabase (lib/supabase.ts). Este `fetch` local sombreia o global em todo o arquivo.
 const fetch: typeof globalThis.fetch = (input, init) => globalThis.fetch(input, { ...init, cache: "no-store" });
 
-const API_VERSION = "7.1";
+export const API_VERSION = "7.1";
 
-function getConfig() {
+export function getConfig() {
   const org = process.env.AZURE_DEVOPS_ORG;
   const pat = process.env.AZURE_DEVOPS_PAT;
 
@@ -86,7 +86,7 @@ function clausulaAreaPathsComRaiz(project: string, areaPaths: string[]): string 
   return "(" + clausulas.join(" OR ") + ")";
 }
 
-function authHeader(pat: string) {
+export function authHeader(pat: string) {
   const token = Buffer.from(`:${pat}`).toString("base64");
   return { Authorization: `Basic ${token}` };
 }
@@ -883,7 +883,7 @@ export async function getDemandasComite(projetos: string[]): Promise<DemandaComi
 const CAMPO_CLASSIFICACAO = "Custom.67a95862-58a3-47f7-8f7c-285ec4d13106";
 
 /** Texto de um campo que pode vir como string ou como identidade ({ displayName }). */
-function textoDeCampo(valor: unknown): string {
+export function textoDeCampo(valor: unknown): string {
   if (typeof valor === "string") return valor;
   if (valor && typeof valor === "object" && "displayName" in valor) return String((valor as { displayName?: string }).displayName ?? "");
   return "";
@@ -1342,11 +1342,11 @@ export async function getEntregasCliente(produtos: Produto[], cliente: string): 
 // cliente que ESCREVE no Azure DevOps (o resto é só leitura). Exige PAT com Work Items → Read &
 // write. Chamada só por rotas restritas a admin (ver app/api/capacidade/alocar-task). =====
 
-function aspasWiql(valor: string): string {
+export function aspasWiql(valor: string): string {
   return valor.replace(/'/g, "''");
 }
 
-async function buscarLoteCampos(org: string, pat: string, ids: number[], fields: string[]): Promise<WorkItem[]> {
+export async function buscarLoteCampos(org: string, pat: string, ids: number[], fields: string[]): Promise<WorkItem[]> {
   const lotes: number[][] = [];
   for (let i = 0; i < ids.length; i += 200) lotes.push(ids.slice(i, i + 200));
   const partes = await Promise.all(
@@ -2153,25 +2153,28 @@ export async function getFluxoPoUpstream(esteira?: string | null): Promise<{ car
   if (!ids.length) return { cards: [], esteiras, avisos };
 
   const works = await buscarLoteCampos(org, pat, ids, CAMPOS_LEITURA_FLUXO_PO.filter((c) => c !== "System.Id"));
-  const pbis = works.map((w): PbiFluxo => {
-    const f = w.fields;
-    const prioridade = f[CAMPOS_FLUXO_PO.prioridade];
-    const rev = f[CAMPOS_FLUXO_PO.revisao];
-    return {
-      id: w.id,
-      titulo: String(f[CAMPOS_FLUXO_PO.titulo] ?? `Item ${w.id}`),
-      status: String(f[CAMPOS_FLUXO_PO.status] ?? ""),
-      etapa: textoDeCampo(f[CAMPOS_FLUXO_PO.etapa]),
-      areaPath: String(f[CAMPOS_FLUXO_PO.areaPath] ?? ""),
-      tags: String(f[CAMPOS_FLUXO_PO.tags] ?? ""),
-      cliente: textoDeCampo(f[CAMPOS_FLUXO_PO.cliente]),
-      classificacao: textoDeCampo(f[CAMPOS_FLUXO_PO.classificacao]),
-      dataAberturaProduto: (f[CAMPOS_FLUXO_PO.dataAberturaProduto] as string) ?? null,
-      dataComite: (f[CAMPOS_FLUXO_PO.dataComite] as string) ?? null,
-      prioridade: typeof prioridade === "number" ? prioridade : null,
-      criadoEm: (f[CAMPOS_FLUXO_PO.criadoEm] as string) ?? null,
-      rev: typeof rev === "number" ? rev : undefined,
-    };
-  });
+  const pbis = works.map((w) => pbiFluxoDeWorkItem(w));
   return { cards: montarCards(pbis), esteiras, avisos };
+}
+
+/** Work item do Azure → PbiFluxo (os campos que o fluxo usa). `rev` vem do work item (ou do campo System.Rev). */
+export function pbiFluxoDeWorkItem(w: WorkItem & { rev?: number }): PbiFluxo {
+  const f = w.fields;
+  const prioridade = f[CAMPOS_FLUXO_PO.prioridade];
+  const rev = typeof w.rev === "number" ? w.rev : f[CAMPOS_FLUXO_PO.revisao];
+  return {
+    id: w.id,
+    titulo: String(f[CAMPOS_FLUXO_PO.titulo] ?? `Item ${w.id}`),
+    status: String(f[CAMPOS_FLUXO_PO.status] ?? ""),
+    etapa: textoDeCampo(f[CAMPOS_FLUXO_PO.etapa]),
+    areaPath: String(f[CAMPOS_FLUXO_PO.areaPath] ?? ""),
+    tags: String(f[CAMPOS_FLUXO_PO.tags] ?? ""),
+    cliente: textoDeCampo(f[CAMPOS_FLUXO_PO.cliente]),
+    classificacao: textoDeCampo(f[CAMPOS_FLUXO_PO.classificacao]),
+    dataAberturaProduto: (f[CAMPOS_FLUXO_PO.dataAberturaProduto] as string) ?? null,
+    dataComite: (f[CAMPOS_FLUXO_PO.dataComite] as string) ?? null,
+    prioridade: typeof prioridade === "number" ? prioridade : null,
+    criadoEm: (f[CAMPOS_FLUXO_PO.criadoEm] as string) ?? null,
+    rev: typeof rev === "number" ? rev : undefined,
+  };
 }

@@ -2339,3 +2339,29 @@ prontidão) e ordenados por `montarCards` (prioridade → mais antigo → ID; ig
   Esteira Serviços da Carteira: 58 (31 do Backlog + 17 da raiz + 10 do Orçamento); Dedicada Maroni: 0 no Backlog, só a raiz.
   14 cards da 1.2 e 11 da 2.1 já estão "prontos para mover".
 - **Não testado:** a chamada HTTP da rota autenticada (a função de leitura foi exercida direto contra o Azure).
+
+## 2026-11-20 — Fluxo do PO · T05: gravação do movimento com controle de revisão
+
+**Peças:** `lib/fluxo-po-servidor.ts` (`moverPbiFluxoPo`, `lerPbiFluxoPoAtual`, `aplicarPatchPbi`, `ErroFluxoPo`) e rota
+`POST /api/fluxo-po/mover` (corpo `{ id, destino, entrada? }`). Regras continuam em `lib/fluxo-po.ts` (puras, 42 testes).
+**Ordem:** sessão (401) → `podeMovimentar` (403) → entrada válida (`lerEntradaMovimento`: só Area Path, Classificação,
+Cliente, Data Abertura Produto e Data Comitê, como texto; 422) → lê o PBI AGORA no Azure com a revisão e confere que é PBI
+do KMM5 (422 se não) → `avaliarMovimento` (422 com `faltas`, nada gravado) → PATCH `test /rev` + campos → relê e devolve o
+`card` atualizado + `avisos`. Resposta: 200 / 401 / 403 / 404 / 409 (PBI mudou) / 422 / 502.
+
+**Formato de data (conferido nos dados reais):** a Data Comitê guardada pelo Azure é sempre `AAAA-MM-DDT03:00:00Z` (meia-noite
+de Brasília; 11 de 11 PBIs). Data Abertura Produto é um instante real (`...T13:36:59.03Z`). Decisão: data informada como
+`AAAA-MM-DD` é gravada como `AAAA-MM-DDT03:00:00Z` (`normalizarDataAzure`); um instante completo é mantido. Informar o MESMO dia
+já gravado não gera gravação (`diferencaData`). `chaveDia` e o "hoje" do aging passaram a usar o fuso de Brasília
+(`America/Sao_Paulo`), igual a `lib/datas.ts` — antes liam os 10 primeiros caracteres (UTC), o que erra 1 dia para instantes
+entre 21h e 24h de Brasília. Datas inexistentes (31/02), inclusive em ISO com hora, são rejeitadas.
+
+**Erros do Azure (formatos reais, testados no PBI 46766 sem gravar):** revisão desatualizada = HTTP **412**
+`TestPatchOperationFailedException` ("value 13 was not equal to test value 12"); valor fora da lista = HTTP **400**
+`RuleValidationException`. `traduzirErroAzure` converte para português sem URL nem credencial: 412/409 → 409 "atualize o
+quadro"; regra → 422 com a mensagem do Azure limpa; 401/203 → PAT inválido; 403 → sem permissão de escrita; 404; 429/5xx →
+indisponível. Corpo cru do Azure só vai para `console.error`, nunca para o usuário.
+
+**Validação:** `scripts/azure-testar-mover.mjs` (só aceita o PBI de teste 46766): passos sem gravar (403, destino inválido,
+campo não permitido, data inválida, Data Comitê ausente, movimento não previsto, conflito 409) e, gravando, 1.2 → 2.1 → 1.2
+com restauração do estado original (Etapa e Data Comitê) em `finally`.

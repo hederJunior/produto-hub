@@ -154,15 +154,45 @@ export function derivarEtapa(pbi: Pick<PbiFluxo, "status" | "etapa" | "areaPath"
 // Datas, aging e atraso
 // ---------------------------------------------------------------------------------------------------------------
 
-/** "AAAA-MM-DD" de uma data ISO do Azure (ignora hora/fuso: as datas do fluxo são datas de calendário). */
-export function chaveDia(iso: string | null | undefined): string | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso ?? ""));
-  return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
+const FUSO = "America/Sao_Paulo";
+/**
+ * Como o Azure guarda uma data escolhida no calendário (conferido na T05 em 11 PBIs: toda Data Comitê vem
+ * "AAAA-MM-DDT03:00:00Z" = meia-noite de Brasília). Brasil sem horário de verão desde 2019.
+ */
+export const HORA_MEIA_NOITE_BRASILIA = "T03:00:00Z";
+
+/**
+ * "AAAA-MM-DD" (dia no fuso de Brasília, o mesmo exibido no Azure DevOps) de uma data pura ou de um instante ISO.
+ * null se não for uma data reconhecível. Data Abertura Produto é um instante (hora real do cadastro), por isso o fuso importa.
+ */
+export function chaveDia(valor: string | null | undefined): string | null {
+  const s = String(valor ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}(T|$)/.test(s) || !diaDeCalendario(s.slice(0, 10))) return null;
+  if (s.length === 10) return s;
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString("en-CA", { timeZone: FUSO });
+}
+
+/** "AAAA-MM-DD" existe no calendário (rejeita 31/02)? */
+function diaDeCalendario(dia: string): boolean {
+  const [y, m, d] = dia.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
 }
 
 function chaveDeHoje(hoje: Date): string {
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${hoje.getFullYear()}-${p(hoje.getMonth() + 1)}-${p(hoje.getDate())}`;
+  return hoje.toLocaleDateString("en-CA", { timeZone: FUSO });
+}
+
+/**
+ * Valor de data no formato que o Azure aceita e que a tela dele mostra como o mesmo dia: data pura "AAAA-MM-DD" vira
+ * meia-noite de Brasília ("AAAA-MM-DDT03:00:00Z"); um instante ISO completo é mantido. null se inválida/vazia.
+ */
+export function normalizarDataAzure(valor: string | null | undefined): string | null {
+  const s = String(valor ?? "").trim();
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return dataValida(s) ? `${s}${HORA_MEIA_NOITE_BRASILIA}` : null;
+  return chaveDia(s) ? s : null;
 }
 
 function diasEntre(chaveA: string, chaveB: string): number {
@@ -261,6 +291,17 @@ function diferenca(campo: string, rotulo: string, de: string | null, para: strin
 }
 
 /**
+ * Igual a `diferenca` para campos de data: o mesmo DIA não é alteração (o Azure guarda hora; o usuário informa o dia) e o
+ * valor novo é gravado no formato do Azure (`normalizarDataAzure`).
+ */
+function diferencaData(campo: string, rotulo: string, de: string | null, para: string | null): Alteracao[] {
+  const diaDe = chaveDia(de);
+  const diaPara = chaveDia(para);
+  if (diaDe !== null && diaDe === diaPara) return [];
+  return diferenca(campo, rotulo, de, normalizarDataAzure(para) ?? para);
+}
+
+/**
  * Avalia mover o PBI para `destino`: diz se pode, o que falta e o que seria gravado. Pura: o servidor chama esta
  * mesma função com o PBI recém-lido do Azure antes de qualquer gravação (a tela não é confiável).
  */
@@ -307,7 +348,7 @@ export function avaliarMovimento(pbi: PbiFluxo, destino: EtapaFluxo, entrada: En
         ...diferenca(CAMPOS_PBI.areaPath, "Area Path", pbi.areaPath, ef.areaPath),
         ...diferenca(CAMPOS_PBI.classificacao, "Classificação", pbi.classificacao, ef.classificacao),
         ...diferenca(CAMPOS_PBI.cliente, "Cliente", pbi.cliente, ef.cliente),
-        ...diferenca(CAMPOS_PBI.dataAberturaProduto, "Data Abertura Produto", pbi.dataAberturaProduto, ef.dataAberturaProduto),
+        ...diferencaData(CAMPOS_PBI.dataAberturaProduto, "Data Abertura Produto", pbi.dataAberturaProduto, ef.dataAberturaProduto),
       );
     } else if (origem === "1.2") {
       // 1.2 → 2.1: Data Comitê preenchida; Etapa Backlog → Comitê (Status continua Backlog).
@@ -315,7 +356,7 @@ export function avaliarMovimento(pbi: PbiFluxo, destino: EtapaFluxo, entrada: En
       else if (!dataValida(ef.dataComite)) faltas.push("Data Comitê inválida.");
       alteracoes.push(
         ...diferenca(CAMPOS_PBI.etapa, "Etapa", pbi.etapa, ETAPA.comite),
-        ...diferenca(CAMPOS_PBI.dataComite, "Data Comitê", pbi.dataComite, ef.dataComite),
+        ...diferencaData(CAMPOS_PBI.dataComite, "Data Comitê", pbi.dataComite, ef.dataComite),
       );
       replicar = true;
     } else if (origem === "2.1") {
@@ -480,4 +521,80 @@ export function comentarioDeTransicao(args: { origem: EtapaFluxo; destino: Etapa
     `para <b>${escaparHtml(rotuloDaEtapa(args.destino))}</b>.<br>` +
     `Usuário: ${escaparHtml(args.usuario)} · Data: ${data}`
   );
+}
+
+const CHAVES_ENTRADA = ["areaPath", "classificacao", "cliente", "dataAberturaProduto", "dataComite"] as const;
+
+/**
+ * Corpo da requisição (não confiável) → EntradaMovimento. Só aceita as chaves conhecidas e com texto; chave
+ * desconhecida ou valor que não é texto vira erro (nada é gravado). `null`/ausente = sem entrada.
+ */
+export function lerEntradaMovimento(bruto: unknown): { entrada: EntradaMovimento; erro?: string } {
+  if (bruto === undefined || bruto === null) return { entrada: {} };
+  if (typeof bruto !== "object" || Array.isArray(bruto)) return { entrada: {}, erro: "Os dados informados para o movimento são inválidos." };
+  const entrada: EntradaMovimento = {};
+  for (const [chave, valor] of Object.entries(bruto as Record<string, unknown>)) {
+    if (valor === undefined) continue;
+    if (!(CHAVES_ENTRADA as readonly string[]).includes(chave)) return { entrada: {}, erro: `Campo "${chave}" não pode ser informado no movimento.` };
+    if (typeof valor !== "string") return { entrada: {}, erro: `O valor de "${chave}" precisa ser texto.` };
+    entrada[chave as (typeof CHAVES_ENTRADA)[number]] = valor.trim();
+  }
+  return { entrada };
+}
+
+export type CodigoErroAzure = "conflito" | "regra" | "autenticacao" | "permissao" | "nao_encontrado" | "indisponivel" | "recusado";
+
+export type ErroAzureTraduzido = {
+  codigo: CodigoErroAzure;
+  /** Status HTTP que a NOSSA rota devolve (409 conflito, 422 regra do Azure, 404, 502 demais). */
+  status: number;
+  /** Mensagem em português, sem URL interna nem credencial. */
+  mensagem: string;
+};
+
+/** Texto do Azure sem URLs, sem quebras e curto — nunca devolver ao usuário o corpo cru. */
+function limparMensagemAzure(texto: string): string {
+  return texto.replace(/https?:\/\/\S+/gi, "").replace(/\s+/g, " ").trim().slice(0, 240);
+}
+
+/**
+ * Traduz uma resposta de erro do Azure DevOps (status + corpo cru) em mensagem para o usuário. Formatos reais
+ * conferidos na T05 no PBI de teste: revisão desatualizada = HTTP 412 `TestPatchOperationFailedException`; valor fora da
+ * lista = HTTP 400 `RuleValidationException` com `message`.
+ */
+export function traduzirErroAzure(status: number, corpo: string): ErroAzureTraduzido {
+  let tipo = "";
+  let mensagem = "";
+  try {
+    const j = JSON.parse(corpo) as { typeKey?: unknown; message?: unknown };
+    tipo = typeof j.typeKey === "string" ? j.typeKey : "";
+    mensagem = typeof j.message === "string" ? j.message : "";
+  } catch {
+    /* corpo não é JSON (HTML de erro, vazio...) */
+  }
+
+  if (status === 412 || status === 409 || tipo === "TestPatchOperationFailedException") {
+    return {
+      codigo: "conflito",
+      status: 409,
+      mensagem: "O PBI foi alterado por outra pessoa depois que o quadro foi carregado. Atualize o quadro e tente de novo.",
+    };
+  }
+  if (status === 401 || status === 203) {
+    return { codigo: "autenticacao", status: 502, mensagem: "A credencial do Azure DevOps é inválida ou expirou. Avise o administrador." };
+  }
+  if (status === 403) {
+    return { codigo: "permissao", status: 502, mensagem: "A credencial do Azure DevOps não tem permissão de escrita neste PBI." };
+  }
+  if (status === 404) {
+    return { codigo: "nao_encontrado", status: 404, mensagem: "Item não encontrado no Azure DevOps." };
+  }
+  if (status === 429 || status >= 500) {
+    return { codigo: "indisponivel", status: 502, mensagem: "O Azure DevOps está indisponível ou limitou as chamadas. Tente de novo em instantes." };
+  }
+  if (tipo === "RuleValidationException" || status === 400) {
+    const detalhe = limparMensagemAzure(mensagem);
+    return { codigo: "regra", status: 422, mensagem: `O Azure DevOps recusou a gravação${detalhe ? `: ${detalhe}` : "."}` };
+  }
+  return { codigo: "recusado", status: 502, mensagem: `O Azure DevOps recusou a operação (HTTP ${status}).` };
 }

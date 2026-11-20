@@ -13,11 +13,15 @@ import {
   derivarEtapa,
   destinosPossiveis,
   paraJsonPatch,
+  chaveDia,
+  lerEntradaMovimento,
   montarCards,
+  normalizarDataAzure,
   podeMovimentar,
   projetoSuportado,
   prontidaoDoCard,
   removerTag,
+  traduzirErroAzure,
   type PbiFluxo,
 } from "./fluxo-po";
 
@@ -156,7 +160,7 @@ test("1.2 → 2.1: grava Etapa Comitê e a data, replica nos Assesments, Status 
     r.alteracoes.map((a) => [a.campo, a.para]),
     [
       ["Custom.Etapa", "Comitê"],
-      ["Custom.443622e0-6ab8-4ae5-9371-612b44a8fb1d", "2026-12-10"],
+      ["Custom.443622e0-6ab8-4ae5-9371-612b44a8fb1d", "2026-12-10T03:00:00Z"],
     ],
   );
   assert.ok(!r.alteracoes.some((a) => a.campo === "System.State"));
@@ -253,8 +257,8 @@ test("contarPorEtapa", () => {
 // ---------------------------------------------------------------- aging e atraso
 
 test("aging: hoje − Data Abertura Produto, com fallback no Created Date", () => {
-  const hoje = new Date(2026, 10, 20, 15, 0); // 20/11/2026, horário local
-  assert.equal(agingEmDias(pbi({ dataAberturaProduto: "2026-11-10T00:00:00Z" }), hoje), 10);
+  const hoje = new Date("2026-11-20T18:00:00Z"); // 20/11/2026 15:00 em Brasília
+  assert.equal(agingEmDias(pbi({ dataAberturaProduto: "2026-11-10T03:00:00Z" }), hoje), 10);
   assert.equal(agingEmDias(pbi({ dataAberturaProduto: null, criadoEm: "2026-10-21T08:00:00Z" }), hoje), 30);
   assert.equal(agingEmDias(pbi({ dataAberturaProduto: null, criadoEm: null }), hoje), null);
   assert.equal(agingEmDias(pbi({ dataAberturaProduto: "2026-11-25T00:00:00Z" }), hoje), 0);
@@ -267,9 +271,9 @@ test("aging: vermelho só acima de 30 dias", () => {
 });
 
 test("Data Comitê atrasada: antes de hoje", () => {
-  const hoje = new Date(2026, 10, 20, 15, 0);
-  assert.equal(comiteAtrasado("2026-11-19T00:00:00Z", hoje), true);
-  assert.equal(comiteAtrasado("2026-11-20T00:00:00Z", hoje), false);
+  const hoje = new Date("2026-11-20T18:00:00Z");
+  assert.equal(comiteAtrasado("2026-11-19T03:00:00Z", hoje), true);
+  assert.equal(comiteAtrasado("2026-11-20T03:00:00Z", hoje), false);
   assert.equal(comiteAtrasado(null, hoje), false);
 });
 
@@ -344,4 +348,77 @@ test("comentarioDeTransicao: origem, destino, usuário e data (fuso de Brasília
   assert.match(txt, /Ana &lt;script&gt;/);
   assert.match(txt, /20\/11\/2026.*12:30/);
   assert.match(comentarioDeTransicao({ origem: "2.1", destino: "1.2", usuario: "x", quando: new Date(), direcao: "volta" }), /voltou/);
+});
+
+// ---------------------------------------------------------------- datas no formato do Azure (T05)
+
+test("chaveDia: data pura, instante no fuso de Brasília e inválidos", () => {
+  assert.equal(chaveDia("2026-12-10"), "2026-12-10");
+  assert.equal(chaveDia("2026-12-10T03:00:00Z"), "2026-12-10"); // meia-noite de Brasília
+  assert.equal(chaveDia("2026-12-10T00:00:00Z"), "2026-12-09"); // 21h do dia anterior em Brasília
+  assert.equal(chaveDia("2026-06-02T13:36:59.03Z"), "2026-06-02");
+  for (const ruim of ["", null, undefined, "10/12/2026", "2026-02-31T03:00:00Z", "lixo"]) assert.equal(chaveDia(ruim), null, String(ruim));
+});
+
+test("normalizarDataAzure: data pura vira meia-noite de Brasília; instante é mantido; inválida/vazia vira null", () => {
+  assert.equal(normalizarDataAzure("2026-12-10"), "2026-12-10T03:00:00Z");
+  assert.equal(normalizarDataAzure(" 2026-12-10 "), "2026-12-10T03:00:00Z");
+  assert.equal(normalizarDataAzure("2026-06-02T13:36:59.03Z"), "2026-06-02T13:36:59.03Z");
+  for (const ruim of ["", null, undefined, "2026-02-31", "31/12/2026", "lixo"]) assert.equal(normalizarDataAzure(ruim), null, String(ruim));
+});
+
+test("movimento grava a Data Comitê normalizada e ignora o mesmo dia já gravado", () => {
+  const r = avaliarMovimento(pbi12(), "2.1", { dataComite: "2026-12-10" });
+  assert.equal(r.alteracoes.find((a) => a.campo.includes("443622e0"))?.para, "2026-12-10T03:00:00Z");
+  // PBI já tem 10/12 (T03:00Z): informar o mesmo dia não gera gravação da data
+  const igual = avaliarMovimento(pbi12({ dataComite: "2026-12-10T03:00:00Z" }), "2.1", { dataComite: "2026-12-10" });
+  assert.deepEqual(igual.alteracoes.map((a) => a.campo), ["Custom.Etapa"]);
+  // outro dia: grava
+  const outro = avaliarMovimento(pbi12({ dataComite: "2026-12-10T03:00:00Z" }), "2.1", { dataComite: "2026-12-11" });
+  assert.equal(outro.alteracoes.find((a) => a.campo.includes("443622e0"))?.para, "2026-12-11T03:00:00Z");
+});
+
+test("1.1 → 1.2 grava a Data Abertura Produto normalizada", () => {
+  const r = avaliarMovimento(pbi(), "1.2", { areaPath: "KMM5\\TMS - Melhorias", classificacao: "EDI", cliente: "X", dataAberturaProduto: "2026-11-05" });
+  assert.equal(r.permitido, true);
+  assert.equal(r.alteracoes.find((a) => a.campo === "Custom.DataAberturaProduto")?.para, "2026-11-05T03:00:00Z");
+});
+
+// ---------------------------------------------------------------- erros do Azure em português (T05)
+
+test("traduzirErroAzure: revisão desatualizada (412) vira conflito 409", () => {
+  const corpo = JSON.stringify({ typeKey: "TestPatchOperationFailedException", message: "VS403351: Test Operation for path /rev failed, value 13 was not equal to test value 12." });
+  const e = traduzirErroAzure(412, corpo);
+  assert.equal(e.codigo, "conflito");
+  assert.equal(e.status, 409);
+  assert.match(e.mensagem, /Atualize o quadro/);
+});
+
+test("traduzirErroAzure: regra do Azure vira 422 com mensagem limpa, sem URL", () => {
+  const corpo = JSON.stringify({ typeKey: "RuleValidationException", message: "The field 'Etapa' contains the value 'X' that is not in the list. Veja https://dev.azure.com/kmmbynstech/_apis/foo?token=abc" });
+  const e = traduzirErroAzure(400, corpo);
+  assert.equal(e.codigo, "regra");
+  assert.equal(e.status, 422);
+  assert.match(e.mensagem, /not in the list/);
+  assert.doesNotMatch(e.mensagem, /https?:|token=|dev\.azure/);
+});
+
+test("traduzirErroAzure: autenticação, permissão, não encontrado e indisponível", () => {
+  assert.equal(traduzirErroAzure(401, "").codigo, "autenticacao");
+  assert.equal(traduzirErroAzure(203, "<html>login</html>").codigo, "autenticacao");
+  assert.equal(traduzirErroAzure(403, "").codigo, "permissao");
+  assert.equal(traduzirErroAzure(404, "{}").status, 404);
+  assert.equal(traduzirErroAzure(503, "").codigo, "indisponivel");
+  assert.equal(traduzirErroAzure(429, "").codigo, "indisponivel");
+  assert.equal(traduzirErroAzure(418, "corpo estranho").codigo, "recusado");
+});
+
+test("lerEntradaMovimento: aceita só chaves conhecidas com texto; o resto vira erro", () => {
+  assert.deepEqual(lerEntradaMovimento(undefined), { entrada: {} });
+  assert.deepEqual(lerEntradaMovimento(null), { entrada: {} });
+  assert.deepEqual(lerEntradaMovimento({ cliente: "  MARONI ", dataComite: "2026-12-10" }), { entrada: { cliente: "MARONI", dataComite: "2026-12-10" } });
+  assert.ok(lerEntradaMovimento({ etapa: "Comitê" }).erro, "chave desconhecida");
+  assert.ok(lerEntradaMovimento({ cliente: 5 }).erro, "valor que não é texto");
+  assert.ok(lerEntradaMovimento("texto").erro, "corpo que não é objeto");
+  assert.ok(lerEntradaMovimento([1]).erro, "array");
 });

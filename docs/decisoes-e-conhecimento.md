@@ -2534,3 +2534,17 @@ dentro do diálogo; Data Comitê removida no Azure com o diálogo aberto → 422
 removidos; estado final igual ao inicial. Login e usuário simulados só no servidor de teste (revertido). A tela com sessão real do Supabase segue sem teste ponta a ponta.
 **Limite conhecido:** a confirmação não permite preencher campos faltantes (Data Comitê, Classificação...): isso é a T16 (informações editáveis no detalhe). Hoje 108 dos 122 cards
 da 1.2 só avançam depois de alguém preencher a Data Comitê no PBI.
+
+## 2026-11-20 — Fluxo do PO · T10: API do checklist
+
+`GET /api/fluxo-po/pbi/{id}/checklist` (qualquer usuário logado vê) devolve `{ checklist }` com TODAS as etapas que têm checklist (1.1 com 3 itens, 1.2 com 2, 2.1 com 5) e, em
+cada item, `marcado`, `marcadoPor` e `marcadoEm`. `PUT` no mesmo endereço, corpo `{ etapa, itemId, marcado }`, marca ou desmarca: **só quem pode movimentar** (403 com o motivo, via
+`exigirPermissaoMovimento`, refeito no servidor em toda gravação). Ordem: permissão → entrada (422 se a etapa ou o item não existem no checklist; `marcado` precisa ser booleano) →
+confere no Azure que é um PBI do KMM5 (404/422) → grava. Marcar grava **quem** (nome do cadastro de acesso; sem nome, o e-mail) e **quando**; desmarcar limpa os dois e mantém a
+mesma linha. 1 linha por (PBI, etapa, item): marcar de novo atualiza em vez de duplicar, e duas marcações simultâneas do mesmo item terminam as duas com 1 linha (o índice único
+vira atualização). Código: `lib/fluxo-po-checklist.ts` (montagem pura, testada), `lib/fluxo-po-checklist-servidor.ts` (banco), `scripts/azure-testar-checklist.mjs` (validação).
+**Achado (vale para qualquer coluna de data/hora nossa):** colunas `TIMESTAMP(3)` (sem fuso) voltam do PostgREST sem o "Z" ("2026-11-20T23:47:54.857") embora guardem hora UTC; o
+navegador leria como hora LOCAL e erraria o horário. `instanteUtc` acrescenta o "Z" na leitura do checklist. **O mesmo vale para `FluxoPoMovimento.criadoEm`** quando o histórico de
+movimentos for exibido (T17): normalizar antes de mostrar.
+**Conferido no banco real (PBI de teste 46766, linhas apagadas ao final):** 18 verificações — 403 para CS, 422 para item inexistente/etapa 3.1/valor não booleano/ID inválido/Assesment,
+404 para PBI inexistente, nada gravado nas recusas, marcar com nome e com e-mail, leitura, remarcar sem duplicar, desmarcar limpando, corrida de duas marcações. `npm run test:fluxo-po`: 78 testes.

@@ -11,7 +11,7 @@
     "postinstall": "prisma generate",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "test:fluxo-po": "node --import ./scripts/registrar-ts.mjs --test lib/fluxo-po.test.ts lib/fluxo-po-detalhe.test.ts lib/fluxo-po-log.test.ts lib/html-seguro.test.ts"
+    "test:fluxo-po": "node --import ./scripts/registrar-ts.mjs --test lib/fluxo-po.test.ts lib/fluxo-po-checklist.test.ts lib/fluxo-po-detalhe.test.ts lib/fluxo-po-log.test.ts lib/html-seguro.test.ts"
   },
   "dependencies": {
     "next": "^14.2.0",

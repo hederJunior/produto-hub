@@ -4,6 +4,7 @@
  * controle de revisão e devolver o card atualizado. Nada é gravado quando uma regra falha.
  */
 import { API_VERSION, authHeader, buscarLoteCampos, getConfig, pbiFluxoDeWorkItem } from "./devops-client";
+import { randomUUID } from "node:crypto";
 import { getServiceClient } from "./supabase";
 import { linhaDeFalha, linhaDeSucesso, type ContextoLog, type LinhaLogMovimento } from "./fluxo-po-log";
 import {
@@ -224,7 +225,8 @@ export async function moverPbiFluxoPo(params: ParamsMover): Promise<ResultadoMov
 /** Grava uma linha no log de movimentos (tabela FluxoPoMovimento). Devolve false se falhar — nunca lança. */
 export async function registrarMovimentoNoLog(linha: LinhaLogMovimento): Promise<boolean> {
   try {
-    const { error } = await getServiceClient().from("FluxoPoMovimento").insert(linha);
+    // O `id` é gerado AQUI: o @default(uuid()) do Prisma vale só no cliente dele; no banco a coluna não tem default.
+    const { error } = await getServiceClient().from("FluxoPoMovimento").insert({ id: randomUUID(), ...linha });
     if (error) {
       console.error("[fluxo-po] não foi possível gravar no log de movimentos:", error.message);
       return false;

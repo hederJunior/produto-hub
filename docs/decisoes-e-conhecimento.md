@@ -2438,3 +2438,8 @@ Enquanto a migration não estiver aplicada, os movimentos funcionam e só esse a
 não gera linha (não há PBI a que atribuir). O corpo cru de erros do Azure não entra no log, só a mensagem já traduzida.
 `scripts/azure-testar-mover.mjs` agora confere o log (todas as tentativas registradas, tipos de resultado, motivo/usuário) e apaga
 as linhas de teste (`script-teste@local` e `visitante@local`); se a tabela não existir ainda, só avisa. `npm run test:fluxo-po`: 67 testes.
+
+**2026-11-20 — T09, achado ao aplicar a migration:** `@default(uuid())` do Prisma NÃO cria default no banco (a coluna `id` fica
+`TEXT NOT NULL` sem default); como o servidor grava pelo Supabase/PostgREST, o `id` precisa ser enviado. `registrarMovimentoNoLog`
+passou a gerar `randomUUID()`. **Regra para as próximas gravações em `FluxoPoChecklist` (e em qualquer tabela nova com `id` uuid):
+enviar o `id` no insert/upsert.** A migration não foi alterada.

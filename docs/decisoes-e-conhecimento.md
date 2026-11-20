@@ -2455,3 +2455,25 @@ com Ambos avisa que o fluxo usa só o KMM5. O quadro com cards é a T13. **Downs
 em construção". Sem leitura de dados nesta tarefa. Conferido no navegador (servidor local): item ativo no menu, as duas abas, aviso do KMM4.
 **Para registrar:** na planilha de decisões, a linha "Identificar PM e PO — Vamos considerar todos como PO nesse momento" convive com a linha
 posterior "Quem movimenta (ajuste na T04): PM, PO, GPM, Product Ops e tipo adm". Estamos seguindo a mais recente (a T11 formaliza).
+
+## 2026-11-20 — Fluxo do PO · T13: tela da esteira (colunas e cards)
+
+**Tela:** aba Upstream (`components/FluxoPoUpstream.tsx`) lê `GET /api/fluxo-po/upstream` e mostra 6 colunas (1.1, 1.2, 2.1, 3.1, 3.2, 4.1 — sem
+Triagem; as 3 últimas marcadas "Somente exibição"), com contador por coluna e rolagem horizontal. Com KMM4 selecionado, aviso de que o fluxo
+existe só no KMM5.
+**Campos do card (docs/fluxo-po-decisoes.md §5):** número (link `urlPbiAzure`, abre o PBI no Azure DevOps), título, cliente em todas;
+Area Path (sem o prefixo `KMM5\`; a raiz aparece como "KMM5 (sem esteira)") e prioridade (só 1–4; 0/vazia não mostra) da 1.2 em diante;
+**aging** (hoje − Data Abertura Produto, fallback Created Date) só em 1.1 e 1.2, **vermelho acima de 30 dias**; **Data Comitê** só na 2.1, com o
+indicativo vermelho "Atrasada" quando já passou (e "Sem Data Comitê" quando falta). Ordem: a da API (prioridade → mais antigo → ID), exceto a
+2.1, que vai pela Data Comitê mais próxima/vencida primeiro. Cards inconsistentes em destaque e prontidão ficam para a T14.
+**Filtros (no cliente: ~170 cards):** *Esteira* = uma área filha do KMM5 **mais os cards da raiz KMM5** (1.1, ainda sem esteira, são de quem
+classifica); *Meus itens* = PBIs em que o usuário é o **PO** (`Custom.PO`, texto) ou o **responsável** (`System.AssignedTo`: e-mail ou nome).
+Casamento de nomes (`nomesCompativeis`): igualdade sem caixa/acento ou nome mais curto (≥ 2 palavras) contido no mais longo — "Heder Martins"
+casa "Heder Luiz Martins Junior". Para isso `PbiFluxo` ganhou `po`, `responsavel` e `responsavelEmail`, `CAMPOS_LEITURA_PBI` ganhou
+`System.AssignedTo`, e a rota devolve `eu` ({ email, nome } do `AllowedUser`). **Limite:** usuário sem `nome` nem e-mail casável no cadastro não
+terá "meus itens" (o botão avisa em dica); vale preencher o nome no cadastro de acesso.
+Um selo à direita mostra se o perfil pode movimentar ou só visualizar (a movimentação é da T15).
+**Conferido (servidor local, dados reais, 172 cards):** 17/122/13/8/1/11 por coluna; filtro Serviços da Carteira = 58 (17/21/8/2/0/10, igual à
+contagem independente da T04); "Meus itens" com a Fabiana Napoli = 26 (igual à conta feita à parte); com o Heder = 0 (não há PBI no nome dele);
+aging vermelho e "Atrasada" aparecem; rota respondeu por HTTP. Login e usuário foram simulados só no servidor de teste (revertido); a rota com
+sessão real do Supabase continua sem teste ponta a ponta. `npm run test:fluxo-po`: 69 testes.

@@ -20,6 +20,7 @@ export const CAMPOS_PBI = {
   descricao: "System.Description",
   cliente: "Custom.Cliente",
   po: "Custom.PO",
+  responsavel: "System.AssignedTo",
   classificacao: "Custom.67a95862-58a3-47f7-8f7c-285ec4d13106",
   dataAberturaProduto: "Custom.DataAberturaProduto",
   dataComite: "Custom.443622e0-6ab8-4ae5-9371-612b44a8fb1d",
@@ -65,6 +66,14 @@ export const TAG_PRONTO_REFINAMENTO_TECH = "Pronto para refinamento tech";
 /** Area Path raiz do KMM5: card nela = etapa 1.1 (esteira ainda não definida). Esteiras são áreas filhas. */
 export const AREA_RAIZ_KMM5 = "KMM5";
 
+/** Organização do Azure DevOps (a mesma usada nos links dos demais Kanbans). */
+export const ORGANIZACAO_AZURE = "kmmbynstech";
+
+/** Link do PBI no Azure DevOps (o número do card abre aqui). */
+export function urlPbiAzure(id: number): string {
+  return `https://dev.azure.com/${ORGANIZACAO_AZURE}/${PROJETO_FLUXO_PO}/_workitems/edit/${id}`;
+}
+
 /** Aging (hoje − Data Abertura Produto, fallback Created Date) fica vermelho acima disso. */
 export const DIAS_ALERTA_AGING = 30;
 
@@ -78,6 +87,7 @@ export const CAMPOS_LEITURA_PBI: string[] = [
   CAMPOS_PBI.tags,
   CAMPOS_PBI.cliente,
   CAMPOS_PBI.po,
+  CAMPOS_PBI.responsavel,
   CAMPOS_PBI.classificacao,
   CAMPOS_PBI.dataAberturaProduto,
   CAMPOS_PBI.dataComite,

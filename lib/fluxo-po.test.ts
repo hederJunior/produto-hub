@@ -15,9 +15,11 @@ import {
   paraJsonPatch,
   avisosDaReplicacao,
   chaveDia,
+  ehMeuItem,
   idsFilhosDeRelacoes,
   lerEntradaMovimento,
   montarCards,
+  nomesCompativeis,
   normalizarDataAzure,
   podeMovimentar,
   projetoSuportado,
@@ -39,6 +41,9 @@ function pbi(parcial: Partial<PbiFluxo> = {}): PbiFluxo {
     areaPath: "KMM5",
     tags: "",
     cliente: "",
+    po: "",
+    responsavel: "",
+    responsavelEmail: "",
     classificacao: "",
     dataAberturaProduto: null,
     dataComite: null,
@@ -480,4 +485,28 @@ test("replicarDataComite: sem filho avisa e segue", async () => {
   const r = await replicarDataComite({ filhos: [], dataComite: "2026-12-10T03:00:00Z", gravar: async () => {} });
   assert.deepEqual(r, { total: 0, atualizados: [], jaIguais: [], falhas: [] });
   assert.deepEqual(avisosDaReplicacao(r), ["PBI sem Assesment filho: a Data Comitê não foi replicada."]);
+});
+
+// ---------------------------------------------------------------- "Meus itens" (T13)
+
+test("nomesCompativeis: igualdade sem caixa/acento ou nome mais curto contido no mais longo (mín. 2 palavras)", () => {
+  assert.equal(nomesCompativeis("Heder Martins", "Heder Luiz Martins Junior"), true);
+  assert.equal(nomesCompativeis("heder luiz martins junior", "HEDER LUIZ MARTINS JUNIOR"), true);
+  assert.equal(nomesCompativeis("João Silva", "Joao da Silva"), true);
+  assert.equal(nomesCompativeis("Ana", "Ana Paula Souza"), false); // uma palavra só não basta
+  assert.equal(nomesCompativeis("Ana", "Ana"), true);
+  assert.equal(nomesCompativeis("Heder Martins", "Carlos Martins"), false);
+  assert.equal(nomesCompativeis("", "Ana Souza"), false);
+  assert.equal(nomesCompativeis(null, null), false);
+});
+
+test("ehMeuItem: responsável por e-mail ou nome, PO por nome; sem identificação nada é meu", () => {
+  const eu = { email: "heder.martins@nstech.com.br", nome: "Heder Martins" };
+  assert.equal(ehMeuItem({ po: "", responsavel: "", responsavelEmail: "Heder.Martins@nstech.com.br" }, eu), true);
+  assert.equal(ehMeuItem({ po: "Heder Luiz Martins Junior", responsavel: "", responsavelEmail: "" }, eu), true);
+  assert.equal(ehMeuItem({ po: "", responsavel: "Heder Luiz Martins Junior", responsavelEmail: "outro@x.com" }, eu), true);
+  assert.equal(ehMeuItem({ po: "Carlos Souza", responsavel: "Ana Lima", responsavelEmail: "ana@x.com" }, eu), false);
+  assert.equal(ehMeuItem({ po: "", responsavel: "", responsavelEmail: "" }, eu), false);
+  assert.equal(ehMeuItem({ po: "Heder Martins", responsavel: "", responsavelEmail: "" }, { email: null, nome: null }), false);
+  assert.equal(ehMeuItem({ po: "Heder Martins", responsavel: "", responsavelEmail: "" }, { email: null, nome: "Heder Martins" }), true);
 });

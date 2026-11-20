@@ -1,20 +1,111 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
+import { AlertTriangle, Building2, CalendarDays, Clock, Eye, GitBranch } from "lucide-react";
 import { useProduto } from "@/components/ProdutoContext";
-import { C, PASTEL } from "@/lib/kmm-theme";
-import { ETAPAS_FLUXO } from "@/lib/fluxo-po";
+import { C, PASTEL, infoPrioridade } from "@/lib/kmm-theme";
+import { formatarChaveDia } from "@/lib/datas";
+import { urlPbiAzure } from "@/lib/fluxo-po-campos";
+import {
+  ETAPAS_FLUXO,
+  agingEmAlerta,
+  agingEmDias,
+  agruparPorEtapa,
+  chaveDia,
+  comiteAtrasado,
+  ehMeuItem,
+  estaNaAreaRaiz,
+  type CardFluxo,
+  type EtapaFluxo,
+} from "@/lib/fluxo-po";
 
-const CORES = [PASTEL.sky, PASTEL.indigo, PASTEL.purple, PASTEL.amber, PASTEL.orange, PASTEL.green] as const;
+type Esteira = { valor: string; rotulo: string };
+type Eu = { email: string | null; nome: string | null };
+type Resposta = { cards: CardFluxo[]; esteiras: Esteira[]; avisos: string[]; podeMovimentar: boolean; eu: Eu; erro?: string };
 
-/**
- * Aba Upstream do Fluxo do PO. Nesta entrega (menu e abas) mostra só a estrutura da esteira; o quadro com os cards
- * (leitura em /api/fluxo-po/upstream) entra na tarefa seguinte. O fluxo existe apenas no KMM5: com KMM4 selecionado
- * a tela avisa (mesmo padrão do Kanban do Upstream).
- */
+// Uma cor por coluna (as 3 primeiras são as etapas com movimento na Fase 1).
+const COR_DA_ETAPA: Record<EtapaFluxo, { bg: string; dot: string }> = {
+  "1.1": PASTEL.sky,
+  "1.2": PASTEL.indigo,
+  "2.1": PASTEL.purple,
+  "3.1": PASTEL.amber,
+  "3.2": PASTEL.orange,
+  "4.1": PASTEL.green,
+};
+
+// Hover dos cards (inline style não cobre :hover).
+const ESTILO_LOCAL = `
+.fp-card{ transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease; }
+.fp-card:hover{ transform: translateY(-1px); box-shadow: 0 6px 18px rgba(30,27,24,.07); border-color:#DDD6CC; }
+.fp-id:hover{ color:#FC4C02 !important; }
+.fp-scroll::-webkit-scrollbar{ width:6px; height:8px; }
+.fp-scroll::-webkit-scrollbar-thumb{ background:#DAD5CD; border-radius:6px; }
+`;
+
+/** "KMM5\TMS - Dedicada Maroni" → "TMS - Dedicada Maroni"; a raiz KMM5 (sem esteira definida) vira um texto claro. */
+function rotuloDaArea(areaPath: string): string {
+  if (estaNaAreaRaiz(areaPath)) return "KMM5 (sem esteira)";
+  return areaPath.replace(/^KMM5\\/i, "");
+}
+
+/** Os 6 quadros do Upstream. Sem Triagem (feita pelo Atendimento em outra ferramenta). */
 export default function FluxoPoUpstream() {
   const { produto } = useProduto();
+  const [dados, setDados] = useState<Resposta | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [carregando, setCarregando] = useState(true);
+  const [esteiraSel, setEsteiraSel] = useState("");
+  const [meusItens, setMeusItens] = useState(false);
+  const [hoje] = useState(() => new Date());
 
-  if (produto === "KMM4") {
+  // O fluxo existe só no KMM5 — com KMM4 selecionado não há o que carregar.
+  const semFluxo = produto === "KMM4";
+
+  useEffect(() => {
+    if (semFluxo) {
+      setCarregando(false);
+      return;
+    }
+    let cancelado = false;
+    setCarregando(true);
+    setErro(null);
+    fetch("/api/fluxo-po/upstream", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((j: Resposta) => {
+        if (cancelado) return;
+        if (j.erro) setErro(j.erro);
+        setDados(j);
+      })
+      .catch(() => !cancelado && setErro("Não foi possível carregar o quadro do Azure DevOps."))
+      .finally(() => !cancelado && setCarregando(false));
+    return () => {
+      cancelado = true;
+    };
+  }, [semFluxo]);
+
+  const cards = dados?.cards ?? [];
+  const eu: Eu = dados?.eu ?? { email: null, nome: null };
+
+  // Esteira escolhida + os cards da raiz KMM5 (etapa 1.1, ainda sem esteira, são de quem vai classificar para qualquer uma).
+  const visiveis = useMemo(
+    () =>
+      cards.filter((c) => {
+        const area = c.pbi.areaPath;
+        if (esteiraSel && !(estaNaAreaRaiz(area) || area === esteiraSel || area.startsWith(`${esteiraSel}\\`))) return false;
+        if (meusItens && !ehMeuItem(c.pbi, eu)) return false;
+        return true;
+      }),
+    [cards, esteiraSel, meusItens, eu.email, eu.nome] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  const porEtapa = useMemo(() => {
+    const por = agruparPorEtapa(visiveis);
+    // Comitê: a Data Comitê mais próxima (ou já vencida) primeiro; sem data por último.
+    por["2.1"] = [...por["2.1"]].sort((a, b) => (chaveDia(a.pbi.dataComite) ?? "9999").localeCompare(chaveDia(b.pbi.dataComite) ?? "9999") || a.pbi.id - b.pbi.id);
+    return por;
+  }, [visiveis]);
+
+  if (semFluxo) {
     return (
       <div className="kmm-card" style={{ fontSize: 13, color: "#8a5a00", background: "#fff6e0" }}>
         O Fluxo do PO existe só no KMM5. Selecione KMM5 (ou Ambos) no filtro Produto para ver a esteira.
@@ -22,25 +113,176 @@ export default function FluxoPoUpstream() {
     );
   }
 
+  const semIdentificacao = !eu.nome && !eu.email;
+
   return (
-    <div className="kmm-card" style={{ padding: "18px 20px" }}>
-      <div style={{ fontFamily: "Sora,sans-serif", fontWeight: 600, fontSize: 15, color: C.text }}>Esteira de requisições de clientes</div>
-      <p style={{ margin: "3px 0 14px", fontSize: 13, color: C.muted }}>
-        Cada card ocupa a etapa que os campos do PBI indicam (Status, Etapa, Area Path e tags). O quadro com os cards será habilitado em
-        breve{produto === "AMBOS" ? "; o fluxo usa somente o KMM5" : ""}.
-      </p>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-        {ETAPAS_FLUXO.map((e, i) => (
-          <span
-            key={e.codigo}
-            title={e.movimenta ? "Etapa com movimento" : "Somente exibição nesta fase"}
-            style={{ background: CORES[i].bg, color: CORES[i].dot, borderRadius: 999, padding: "5px 12px", fontSize: 12.5, fontWeight: 600 }}
-          >
-            {e.codigo} {e.nome}
-            {!e.movimenta && <span style={{ fontWeight: 400, opacity: 0.8 }}> · só exibição</span>}
+    <div>
+      <style>{ESTILO_LOCAL}</style>
+
+      <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>Esteira</span>
+          <select className="kmm-input" style={{ width: "auto", minWidth: 220 }} value={esteiraSel} onChange={(e) => setEsteiraSel(e.target.value)} disabled={!dados?.esteiras.length}>
+            <option value="">Todas as esteiras</option>
+            {(dados?.esteiras ?? []).map((e) => (
+              <option key={e.valor} value={e.valor}>{e.rotulo}</option>
+            ))}
+          </select>
+        </div>
+        <button
+          type="button"
+          className="kmm-btn"
+          aria-pressed={meusItens}
+          title={semIdentificacao ? "Seu cadastro não tem nome nem e-mail para identificar seus itens" : "Mostra só os PBIs em que você é o PO ou o responsável"}
+          onClick={() => setMeusItens((v) => !v)}
+          style={meusItens ? { borderColor: C.orange, color: C.orange, background: "#FFF1EA" } : undefined}
+        >
+          Meus itens
+        </button>
+        {!carregando && !erro && (
+          <span style={{ fontSize: 12, color: C.muted }}>
+            {visiveis.length} {visiveis.length === 1 ? "demanda" : "demandas"}
+            {esteiraSel ? ` em ${esteiras(dados, esteiraSel)} (mais os cards sem esteira)` : ""}
+            {meusItens ? " suas" : ""}
           </span>
-        ))}
+        )}
+        {dados && !carregando && (
+          <span
+            title={dados.podeMovimentar ? "Seu perfil pode movimentar cards" : "Seu perfil só visualiza o fluxo"}
+            style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, borderRadius: 999, padding: "4px 11px", background: dados.podeMovimentar ? PASTEL.green.bg : C.soft, color: dados.podeMovimentar ? PASTEL.green.dot : C.muted }}
+          >
+            {dados.podeMovimentar ? <GitBranch size={13} /> : <Eye size={13} />}
+            {dados.podeMovimentar ? "Você pode movimentar" : "Somente visualização"}
+          </span>
+        )}
       </div>
+
+      {erro && <div className="kmm-card" style={{ marginBottom: 12, fontSize: 13, color: C.red }}>{erro}</div>}
+      {(dados?.avisos ?? []).map((a) => (
+        <div key={a} className="kmm-card" style={{ marginBottom: 12, fontSize: 13, color: "#8a5a00", background: "#fff6e0" }}>{a}</div>
+      ))}
+
+      {carregando ? (
+        <p style={{ color: C.muted }}>Carregando demandas do Azure DevOps…</p>
+      ) : (
+        <div className="fp-scroll" style={{ overflowX: "auto", paddingBottom: 6 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(250px, 1fr))", gap: 14, minWidth: 1620, alignItems: "start" }}>
+            {ETAPAS_FLUXO.map((etapa) => {
+              const lista = porEtapa[etapa.codigo];
+              const cor = COR_DA_ETAPA[etapa.codigo];
+              return (
+                <section key={etapa.codigo} aria-label={`${etapa.codigo} ${etapa.nome}`} style={{ background: C.soft, borderRadius: 16, borderTop: `3px solid ${cor.dot}`, padding: "12px 10px 10px" }}>
+                  <header style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 4px 10px" }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontFamily: "Sora,sans-serif", fontWeight: 600, fontSize: 13.5, color: C.text, lineHeight: 1.25 }}>
+                        <span style={{ color: cor.dot }}>{etapa.codigo}</span> {etapa.nome}
+                      </div>
+                      {!etapa.movimenta && <div style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>Somente exibição</div>}
+                    </div>
+                    <span style={{ marginLeft: "auto", fontSize: 12, fontWeight: 600, color: C.muted, background: "#fff", borderRadius: 999, padding: "1px 9px", fontVariantNumeric: "tabular-nums" }}>
+                      {lista.length}
+                    </span>
+                  </header>
+                  <div className="fp-scroll" style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: "62vh", overflowY: "auto", paddingRight: 2 }}>
+                    {lista.length === 0 ? (
+                      <div style={{ border: `1.5px dashed ${C.border}`, borderRadius: 12, padding: "22px 12px", textAlign: "center", fontSize: 12.5, color: C.faint }}>Sem demandas</div>
+                    ) : (
+                      lista.map((c) => <CardEsteira key={c.pbi.id} card={c} cor={cor} hoje={hoje} />)
+                    )}
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+function esteiras(dados: Resposta | null, valor: string): string {
+  return dados?.esteiras.find((e) => e.valor === valor)?.rotulo ?? valor;
+}
+
+/**
+ * Card da esteira, com os campos de cada coluna (docs/fluxo-po-decisoes.md §5):
+ * 1.1 número, título, aging e cliente · 1.2 + Area Path e prioridade · 2.1 número, título, Area Path, Data Comitê
+ * (com indicativo de atraso), cliente e prioridade · 3.1, 3.2 e 4.1 número, título, Area Path, cliente e prioridade.
+ */
+function CardEsteira({ card, cor, hoje }: { card: CardFluxo; cor: { bg: string; dot: string }; hoje: Date }) {
+  const { pbi, etapa } = card;
+  const mostrarArea = etapa !== "1.1";
+  const mostrarPrioridade = etapa !== "1.1";
+  const mostrarAging = etapa === "1.1" || etapa === "1.2";
+  const mostrarComite = etapa === "2.1";
+
+  const prio = mostrarPrioridade && pbi.prioridade !== null && pbi.prioridade >= 1 && pbi.prioridade <= 4 ? infoPrioridade(pbi.prioridade) : null;
+  const dias = mostrarAging ? agingEmDias(pbi, hoje) : null;
+  const agingVermelho = agingEmAlerta(dias);
+  const diaComite = chaveDia(pbi.dataComite);
+  const atrasada = mostrarComite && comiteAtrasado(pbi.dataComite, hoje);
+
+  return (
+    <article className="fp-card" style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 12, padding: "11px 12px 10px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+        <a
+          className="fp-id"
+          href={urlPbiAzure(pbi.id)}
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Abrir o PBI no Azure DevOps"
+          style={{ fontSize: 11.5, fontWeight: 600, color: C.muted, textDecoration: "none", fontVariantNumeric: "tabular-nums", letterSpacing: ".01em" }}
+        >
+          #{pbi.id}
+        </a>
+        {prio && (
+          <span title={`Prioridade ${prio.label}`} style={{ marginLeft: "auto", fontSize: 10.5, fontWeight: 600, padding: "1px 8px", borderRadius: 999, background: prio.bg, color: prio.fg }}>
+            {prio.label}
+          </span>
+        )}
+      </div>
+
+      <div style={{ fontSize: 13.5, fontWeight: 500, lineHeight: 1.38, color: C.text, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }} title={pbi.titulo}>
+        {pbi.titulo}
+      </div>
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 9 }}>
+        {pbi.cliente && (
+          <span title="Cliente" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, background: cor.bg, color: C.text, borderRadius: 7, padding: "2px 8px", maxWidth: "100%" }}>
+            <Building2 size={11} color={cor.dot} style={{ flexShrink: 0 }} />
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pbi.cliente}</span>
+          </span>
+        )}
+        {mostrarArea && (
+          <span title={`Area Path: ${pbi.areaPath}`} style={{ fontSize: 11.5, background: "#fff", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 7, padding: "1px 8px", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {rotuloDaArea(pbi.areaPath)}
+          </span>
+        )}
+      </div>
+
+      {(mostrarComite || dias !== null) && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, paddingTop: 9, borderTop: `1px solid ${C.soft}` }}>
+          {mostrarComite && (
+            <span
+              title={atrasada ? "Data Comitê já passou" : "Data Comitê"}
+              style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, fontWeight: atrasada ? 600 : 500, color: atrasada ? C.red : diaComite ? C.text : C.faint }}
+            >
+              {atrasada ? <AlertTriangle size={12} /> : <CalendarDays size={12} color={cor.dot} />}
+              {diaComite ? formatarChaveDia(diaComite) : "Sem Data Comitê"}
+              {atrasada && <span style={{ fontSize: 10.5, background: "#FBE7E4", borderRadius: 999, padding: "0 7px" }}>Atrasada</span>}
+            </span>
+          )}
+          {dias !== null && (
+            <span
+              title={`Aging: ${dias} dia(s) desde a Data Abertura Produto${agingVermelho ? " — acima de 30 dias" : ""}`}
+              style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11.5, fontWeight: agingVermelho ? 600 : 500, color: agingVermelho ? C.red : C.muted, fontVariantNumeric: "tabular-nums" }}
+            >
+              <Clock size={11} />
+              {dias}d
+            </span>
+          )}
+        </div>
+      )}
+    </article>
   );
 }

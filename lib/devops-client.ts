@@ -2170,6 +2170,12 @@ export function pbiFluxoDeWorkItem(w: WorkItem & { rev?: number }): PbiFluxo {
     areaPath: String(f[CAMPOS_FLUXO_PO.areaPath] ?? ""),
     tags: String(f[CAMPOS_FLUXO_PO.tags] ?? ""),
     cliente: textoDeCampo(f[CAMPOS_FLUXO_PO.cliente]),
+    po: textoDeCampo(f[CAMPOS_FLUXO_PO.po]),
+    responsavel: textoDeCampo(f[CAMPOS_FLUXO_PO.responsavel]),
+    responsavelEmail: (() => {
+      const r = f[CAMPOS_FLUXO_PO.responsavel];
+      return r && typeof r === "object" ? String((r as { uniqueName?: string }).uniqueName ?? "") : "";
+    })(),
     classificacao: textoDeCampo(f[CAMPOS_FLUXO_PO.classificacao]),
     dataAberturaProduto: (f[CAMPOS_FLUXO_PO.dataAberturaProduto] as string) ?? null,
     dataComite: (f[CAMPOS_FLUXO_PO.dataComite] as string) ?? null,

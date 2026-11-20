@@ -57,6 +57,11 @@ export type PbiFluxo = {
   /** System.Tags — string separada por ";". */
   tags: string;
   cliente: string;
+  /** Custom.PO (nome do PO, texto) — "" quando vazio. */
+  po: string;
+  /** System.AssignedTo: nome de exibição e e-mail — "" quando não atribuído. */
+  responsavel: string;
+  responsavelEmail: string;
   classificacao: string;
   dataAberturaProduto: string | null;
   dataComite: string | null;
@@ -94,6 +99,34 @@ export function adicionarTag(tags: string, tag: string): string {
 export function removerTag(tags: string, tag: string): string {
   const alvo = norm(tag);
   return String(tags ?? "").split(";").map((t) => t.trim()).filter((t) => t && norm(t) !== alvo).join("; ");
+}
+
+/**
+ * Dois nomes de pessoa se referem à mesma pessoa? Igualdade sem caixa/acento, ou todas as palavras do nome mais curto
+ * (mínimo 2) estão no mais longo — "Heder Martins" casa "Heder Luiz Martins Junior", porque o cadastro da plataforma e o
+ * Azure DevOps costumam escrever o nome com mais ou menos sobrenomes.
+ */
+export function nomesCompativeis(a: string | null | undefined, b: string | null | undefined): boolean {
+  const ta = norm(a).split(" ").filter(Boolean);
+  const tb = norm(b).split(" ").filter(Boolean);
+  if (!ta.length || !tb.length) return false;
+  if (ta.join(" ") === tb.join(" ")) return true;
+  const [curto, longo] = ta.length <= tb.length ? [ta, tb] : [tb, ta];
+  return curto.length >= 2 && curto.every((t) => longo.includes(t));
+}
+
+/**
+ * "Meus itens": o usuário é o responsável (e-mail do System.AssignedTo ou nome) ou o PO do PBI (Custom.PO é texto: compara
+ * por nome). Sem nome nem e-mail no cadastro, nada é "meu".
+ */
+export function ehMeuItem(
+  pbi: Pick<PbiFluxo, "po" | "responsavel" | "responsavelEmail">,
+  eu: { email?: string | null; nome?: string | null },
+): boolean {
+  const email = String(eu.email ?? "").trim().toLowerCase();
+  if (email && String(pbi.responsavelEmail ?? "").trim().toLowerCase() === email) return true;
+  if (email && norm(pbi.po) === norm(email)) return true;
+  return nomesCompativeis(eu.nome, pbi.po) || nomesCompativeis(eu.nome, pbi.responsavel);
 }
 
 /** O Area Path é exatamente a raiz do KMM5 (esteira ainda não definida)? */

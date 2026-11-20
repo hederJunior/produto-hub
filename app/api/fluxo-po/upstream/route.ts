@@ -19,15 +19,17 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const projeto = url.searchParams.get("projeto") ?? "KMM5";
   const podeMover = podeMovimentar(usuario.papel, usuario.tipo);
+  // Quem está vendo (para o filtro "Meus itens" da tela).
+  const eu = { email: usuario.email, nome: usuario.nome };
   if (!projetoSuportado(projeto)) {
-    return NextResponse.json({ cards: [], esteiras: [], podeMovimentar: podeMover, avisos: [`O Fluxo do PO existe só no KMM5 (projeto selecionado: ${projeto}).`] });
+    return NextResponse.json({ cards: [], esteiras: [], podeMovimentar: podeMover, eu, avisos: [`O Fluxo do PO existe só no KMM5 (projeto selecionado: ${projeto}).`] });
   }
 
   try {
     const dados = await getFluxoPoUpstream(url.searchParams.get("esteira"));
-    return NextResponse.json({ ...dados, podeMovimentar: podeMover });
+    return NextResponse.json({ ...dados, podeMovimentar: podeMover, eu });
   } catch (err) {
     console.error("[fluxo-po/upstream] falha:", err);
-    return NextResponse.json({ erro: "Não foi possível carregar o quadro do Azure DevOps.", cards: [], esteiras: [], podeMovimentar: podeMover, avisos: [] }, { status: 502 });
+    return NextResponse.json({ erro: "Não foi possível carregar o quadro do Azure DevOps.", cards: [], esteiras: [], podeMovimentar: podeMover, eu, avisos: [] }, { status: 502 });
   }
 }

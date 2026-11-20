@@ -2257,3 +2257,27 @@ Resumo: Triagem fora do painel; coluna derivada dos campos do PBI; 1.1→1.2 exi
 Data Abertura Produto; 1.2→2.1 exige Data Comitê, Etapa Backlog→Comitê e replica a data nos Assesment filhos (todos);
 2.1→3.1/3.2 por Etapa Análise (3.1 com tag "Pronto para refinamento tech"); PM e PO movem e podem voltar; checklist na
 plataforma; comentário no PBI ao mudar de etapa; só KMM5; 3.1/3.2/4.1 só exibição na Fase 1.
+
+## 2026-11-20 — Fluxo do PO · T01: campos reais do Azure (KMM5), lidos com `scripts/azure-campos.mjs`
+
+Script somente leitura (`node --use-system-ca --env-file=.env scripts/azure-campos.mjs [PROJETO]`). Nomes técnicos
+centralizados em `lib/fluxo-po-campos.ts`. Confirmado:
+- **PBI** (`Product Backlog Item`): Etapa `Custom.Etapa`; Classificação `Custom.67a95862-58a3-47f7-8f7c-285ec4d13106`;
+  Cliente `Custom.Cliente`; PO `Custom.PO`; Data Abertura Produto `Custom.DataAberturaProduto`; Data Comitê
+  `Custom.443622e0-6ab8-4ae5-9371-612b44a8fb1d`; tags `System.Tags` (plainText); descrição `System.Description` (html);
+  prioridade `Microsoft.VSTS.Common.Priority`. Todos existem.
+- **Status (System.State):** Aguardando Deploy, Backlog, Cancelado, Execução, Finalizado, Orçamento, Teste Aceite Usuário.
+- **Etapa (12):** Aguardando Priorização, Análise, Backlog, Cancelado, Comitê, Delivery, Execução, Finalizado, Impedimento,
+  Negado, Relacionamento/Comercial, Validação Interna.
+- **Classificação (12):** Customização Produto, Débito Técnico, E-Commerce, Ecossistema, EDI, Fast Track, Integração Padrão,
+  Nota Técnica, Prefeitura/Banco, Reprocessamento, Tarefa Tech, Versionamento.
+- **Assesment:** o tipo se chama exatamente `Assesment` e tem o campo **Data Comitê com o mesmo reference name do PBI**
+  (`Custom.443622e0-…`; é `dateTime`). Não tem Etapa. Estado de exemplo: "Refinamento".
+- **Relação:** o normal é PBI pai → Assesment filho (`System.LinkTypes.Hierarchy-Forward`, ~199 pares só nas primeiras 200
+  linhas lidas). Existe pelo menos um caso invertido (Assesment 24008 pai do PBI 21878): ao replicar a Data Comitê usar
+  apenas filhos do PBI e ignorar o sentido inverso.
+- **Area Path:** raiz `KMM5` com 16 áreas filhas (TMS - Sustentacao, Ecossistema, Migracao, Dedicada Maroni, Dedicada
+  Transben, Serviços da Carteira, Projetos de Implantacao, Torre de Controle, Melhorias, Obrigacoes Legais e Financeiras,
+  Cabotagem - Maersk, SWAT, Sustentacao N3, além de `Services`, `Suporte de Implantacao`, `Migracoes - Upstream` e
+  `Migracoes - Downstream`, sem filhas). 1.1 = Area Path exatamente `KMM5`.
+- Observação: "Aguardando Alocação" continua não existindo; a etapa é "Aguardando Priorização".

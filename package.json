@@ -10,7 +10,8 @@
     "lint": "next lint",
     "postinstall": "prisma generate",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev"
+    "prisma:migrate": "prisma migrate dev",
+    "test:fluxo-po": "node --import ./scripts/registrar-ts.mjs --test lib/fluxo-po.test.ts"
   },
   "dependencies": {
     "next": "^14.2.0",

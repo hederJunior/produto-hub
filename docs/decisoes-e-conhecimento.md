@@ -2292,3 +2292,28 @@ Rodado contra o PBI de teste 46766 (KMM5, Backlog/Backlog, Area Projetos de Impl
   texto do comentário de transição precisa trazer o usuário e a data (origem, destino, usuário, data), como decidido.
 - Cada gravação sobe a revisão do PBI (9 → 10 → 11 no teste); o histórico do PBI fica com essas revisões de teste.
 - Não foi testada a escrita da Data Comitê nos Assesments (só será exercitada na T de transição 1.2 → 2.1, em PBI de teste).
+
+## 2026-11-20 — Fluxo do PO · T03: regras puras em `lib/fluxo-po.ts` (31 testes: `npm run test:fluxo-po`)
+
+Módulo sem fetch/banco/React; a rota de gravação do servidor deve chamar `avaliarMovimento` com o PBI recém-lido do Azure.
+Testes rodam no Node direto (`scripts/registrar-ts.mjs` resolve imports sem extensão); não há Jest/Vitest no projeto.
+Decisões de implementação (além de `docs/fluxo-po-decisoes.md`):
+- **Derivação:** Backlog+Etapa Backlog → 1.1 (Area exatamente `KMM5`) ou 1.2; Backlog+Etapa Comitê → 2.1; Backlog+Etapa
+  Análise → 3.1 (com a tag) ou 3.2; Orçamento+Relacionamento/Comercial → 4.1; o resto fica fora do quadro. Comparação sem
+  caixa/acento/pontuação.
+- **Inconsistência:** só um caso hoje — Etapa Comitê sem Data Comitê. O card fica **na 2.1** (coluna da Etapa), em vermelho,
+  com o motivo ("coluna mais próxima" interpretada como a da Etapa). Mudar se o Heder preferir a 1.2.
+- **1.1→1.2:** exige Area do KMM5 diferente da raiz, Classificação **da lista do Azure**, Cliente e Data Abertura Produto
+  válida; só grava os campos que mudaram. **1.2→2.1:** exige Data Comitê; grava Etapa Comitê (+ data se mudou) e sinaliza a
+  replicação nos Assesments filhos. **2.1→3.1/3.2:** exige Data Comitê; grava Etapa Análise e adiciona/remove a tag
+  preservando as demais tags.
+- **Volta (PROPOSTA, `proposta: true`, com aviso):** 2.1→1.2 = Etapa Comitê→Backlog mantendo a Data Comitê; 1.2→1.1 = Area
+  Path→`KMM5`. 3.x/4.1 não voltam nem avançam na Fase 1. Aguarda validação do Heder antes de liberar na tela.
+- **Aging:** dias de calendário (hoje − Data Abertura Produto; fallback Created Date), vermelho **> 30**. Atraso da Data
+  Comitê = antes de hoje.
+- **Permissão:** `podeMovimentar(papel)` aceita `pm`, `po`, `product manager`, `product owner` (sem caixa/acento; aceita
+  vários papéis separados por `, ; / | e`). **`adm` não entra** por si só e GPM/Product Ops também não — pendente confirmar.
+- **Gravação:** `paraJsonPatch` começa com `test /rev` (concorrência, validado na T02). `comentarioDeTransicao` gera HTML
+  com origem, destino, usuário e data (fuso de Brasília) e escapa o nome do usuário.
+- Datas gravadas vão como o usuário informou (ex.: "2026-12-10"); a normalização para o formato do Azure fica para a
+  tarefa de gravação.

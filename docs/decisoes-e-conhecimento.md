@@ -2248,3 +2248,12 @@ informativo recolhível "Regras do fluxo" com "Quando a demanda avança" por col
 **Suposições / não testado contra o Azure (sem rede no sandbox):** Etapa de Orçamento comparada de forma tolerante
 ("Relacionamento/Comercial" ou "Relacionamento Comercial"); State "Orçamento" precisa existir no KMM5; idade = dias desde
 Created Date.
+
+## 2026-11-20 — Fluxo do PO (novo menu Upstream/Downstream): decisões da Fase 1
+
+Decisões completas, regras por etapa (1.1, 1.2, 2.1), o que grava no Azure DevOps, permissões e premissas técnicas estão em
+`docs/fluxo-po-decisoes.md`. Prompt de continuidade para a sessão de código: `docs/fluxo-po-prompt-sessao-codigo.md`.
+Resumo: Triagem fora do painel; coluna derivada dos campos do PBI; 1.1→1.2 exige Area ≠ KMM5 + Classificação + Cliente +
+Data Abertura Produto; 1.2→2.1 exige Data Comitê, Etapa Backlog→Comitê e replica a data nos Assesment filhos (todos);
+2.1→3.1/3.2 por Etapa Análise (3.1 com tag "Pronto para refinamento tech"); PM e PO movem e podem voltar; checklist na
+plataforma; comentário no PBI ao mudar de etapa; só KMM5; 3.1/3.2/4.1 só exibição na Fase 1.

@@ -26,6 +26,7 @@ import {
   prontidaoDoCard,
   removerTag,
   replicarDataComite,
+  resumirFalta,
   traduzirErroAzure,
   type PbiFluxo,
 } from "./fluxo-po";
@@ -509,4 +510,25 @@ test("ehMeuItem: responsável por e-mail ou nome, PO por nome; sem identificaç�
   assert.equal(ehMeuItem({ po: "", responsavel: "", responsavelEmail: "" }, eu), false);
   assert.equal(ehMeuItem({ po: "Heder Martins", responsavel: "", responsavelEmail: "" }, { email: null, nome: null }), false);
   assert.equal(ehMeuItem({ po: "Heder Martins", responsavel: "", responsavelEmail: "" }, { email: null, nome: "Heder Martins" }), true);
+});
+
+// ---------------------------------------------------------------- prontidão no card (T14)
+
+test("resumirFalta: texto curto para o card", () => {
+  assert.equal(resumirFalta("Preencher a Data Comitê."), "Data Comitê");
+  assert.equal(resumirFalta("Preencher a Classificação."), "Classificação");
+  assert.equal(resumirFalta("Preencher o Cliente."), "Cliente");
+  assert.equal(resumirFalta("Preencher a Data Abertura Produto."), "Data Abertura Produto");
+  assert.equal(resumirFalta("Definir a esteira: o Area Path ainda é a raiz KMM5."), "Esteira (Area Path)");
+  assert.equal(resumirFalta("Definir a esteira (Area Path)."), "Esteira (Area Path)");
+  assert.equal(resumirFalta("O Area Path precisa ser uma esteira do KMM5."), "Area Path fora do KMM5");
+  assert.equal(resumirFalta('Classificação "X" não existe na lista do Azure.'), "Classificação fora da lista");
+  assert.equal(resumirFalta("Data Comitê inválida."), "Data Comitê inválida");
+  assert.equal(resumirFalta("O Status precisa continuar Backlog."), "O Status precisa continuar Backlog");
+});
+
+test("prontidão de um card 1.1 sem nada preenchido lista as 4 faltas resumidas", () => {
+  const p = prontidaoDoCard(pbi());
+  assert.equal(p?.pronto, false);
+  assert.deepEqual(p?.faltas.map(resumirFalta), ["Esteira (Area Path)", "Classificação", "Cliente", "Data Abertura Produto"]);
 });

@@ -428,6 +428,19 @@ export function prontidaoDoCard(pbi: PbiFluxo): { pronto: boolean; faltas: strin
   return { pronto: av.permitido, faltas: av.faltas };
 }
 
+/**
+ * Falta em formato curto para o card ("Preencher a Data Comitê." → "Data Comitê"; "Definir a esteira: o Area Path ainda é a
+ * raiz KMM5." → "Esteira (Area Path)"). Texto desconhecido volta só sem o ponto final.
+ */
+export function resumirFalta(falta: string): string {
+  const f = falta.trim().replace(/\.$/, "");
+  if (/^Definir a esteira/i.test(f)) return "Esteira (Area Path)";
+  if (/^O Area Path precisa/i.test(f)) return "Area Path fora do KMM5";
+  if (/^Classificação ".*" não existe/i.test(f)) return "Classificação fora da lista";
+  const m = /^Preencher (?:a |o )(.+)$/i.exec(f);
+  return m ? m[1] : f;
+}
+
 /** Contadores por coluna: total, prontos e bloqueados (cards sem movimento na Fase 1 só entram no total). */
 export function contarPorEtapa(pbis: PbiFluxo[]): Record<EtapaFluxo, { total: number; prontos: number; bloqueados: number }> {
   const out = Object.fromEntries(ETAPAS_FLUXO.map((e) => [e.codigo, { total: 0, prontos: 0, bloqueados: 0 }])) as Record<

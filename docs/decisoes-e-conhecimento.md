@@ -2477,3 +2477,18 @@ Um selo à direita mostra se o perfil pode movimentar ou só visualizar (a movim
 contagem independente da T04); "Meus itens" com a Fabiana Napoli = 26 (igual à conta feita à parte); com o Heder = 0 (não há PBI no nome dele);
 aging vermelho e "Atrasada" aparecem; rota respondeu por HTTP. Login e usuário foram simulados só no servidor de teste (revertido); a rota com
 sessão real do Supabase continua sem teste ponta a ponta. `npm run test:fluxo-po`: 69 testes.
+
+## 2026-11-20 — Fluxo do PO · T14: prontidão, bloqueios e contadores
+
+**Card:** nas etapas com movimento (1.1, 1.2, 2.1) mostra **"Pronto para mover"** (verde) ou **"Falta: …"** (âmbar) com o que falta em texto curto
+(`resumirFalta`: "Esteira (Area Path)", "Classificação", "Cliente", "Data Abertura Produto", "Data Comitê"; o texto completo fica na dica do
+card). 3.1, 3.2 e 4.1 não mostram prontidão (só exibição na Fase 1). **Card inconsistente** (hoje, só Etapa Comitê sem Data Comitê, na 2.1):
+borda e fundo vermelhos e faixa "Inconsistente: <motivo>" no lugar da prontidão (o motivo já diz o que falta).
+**Contadores:** no cabeçalho de cada coluna com movimento, "N prontos" (verde) e "M bloqueados" (âmbar), calculados com `contarPorEtapa` sobre os
+cards que passam nos filtros de esteira e "Meus itens". **"Somente bloqueados (N)":** mostra só os cards com movimento que ainda não cumprem
+a regra (inclui os inconsistentes); as colunas só de exibição ficam vazias; os contadores de prontos NÃO zeram com o filtro ligado.
+"Bloqueado" aqui = não cumpre a regra do PRÓXIMO movimento (para a 2.1, a regra de ir à 3.1/3.2); a volta não conta como bloqueio.
+**Conferido (servidor local, 172 cards reais):** 1.1 = 0 prontos/17 bloqueados; 1.2 = 14/108; 2.1 = 11/2 com 2 inconsistentes — idêntico à conta
+feita à parte sobre a resposta da API; com "Somente bloqueados" = 127 cards (17+108+2), nenhum "Pronto para mover" visível; os 2 cards
+inconsistentes aparecem em vermelho (#38790 e #40933, Etapa Comitê sem Data Comitê, MARONI). Dado para o Heder: 108 dos 122 cards da 1.2 estão
+bloqueados por falta de Data Comitê — é o esperado, pois ainda ninguém definiu o comitê deles. `npm run test:fluxo-po`: 71 testes.

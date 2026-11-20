@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Building2, CalendarDays, Clock, Eye, GitBranch } from "lucide-react";
+import { AlertCircle, AlertTriangle, Building2, CalendarDays, CheckCircle2, Clock, Eye, GitBranch } from "lucide-react";
 import { useProduto } from "@/components/ProdutoContext";
 import { C, PASTEL, infoPrioridade } from "@/lib/kmm-theme";
 import { formatarChaveDia } from "@/lib/datas";
@@ -12,9 +12,11 @@ import {
   agingEmDias,
   agruparPorEtapa,
   chaveDia,
+  contarPorEtapa,
   comiteAtrasado,
   ehMeuItem,
   estaNaAreaRaiz,
+  resumirFalta,
   type CardFluxo,
   type EtapaFluxo,
 } from "@/lib/fluxo-po";
@@ -56,6 +58,7 @@ export default function FluxoPoUpstream() {
   const [carregando, setCarregando] = useState(true);
   const [esteiraSel, setEsteiraSel] = useState("");
   const [meusItens, setMeusItens] = useState(false);
+  const [somenteBloqueados, setSomenteBloqueados] = useState(false);
   const [hoje] = useState(() => new Date());
 
   // O fluxo existe só no KMM5 — com KMM4 selecionado não há o que carregar.
@@ -98,12 +101,20 @@ export default function FluxoPoUpstream() {
     [cards, esteiraSel, meusItens, eu.email, eu.nome] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
+  // Contadores por coluna (prontos e bloqueados): sobre os cards dos filtros de esteira e meus itens. O filtro
+  // "Somente bloqueados" não os zera, senão o número de prontos sumiria justamente quando ele está ligado.
+  const contadores = useMemo(() => contarPorEtapa(visiveis.map((c) => c.pbi)), [visiveis]);
+  const totalBloqueados = ETAPAS_FLUXO.reduce((soma, e) => soma + contadores[e.codigo].bloqueados, 0);
+
+  // "Somente bloqueados": cards de etapas com movimento que ainda não cumprem a regra (inclui os inconsistentes).
+  const exibidos = useMemo(() => (somenteBloqueados ? visiveis.filter((c) => c.prontidao && !c.prontidao.pronto) : visiveis), [visiveis, somenteBloqueados]);
+
   const porEtapa = useMemo(() => {
-    const por = agruparPorEtapa(visiveis);
+    const por = agruparPorEtapa(exibidos);
     // Comitê: a Data Comitê mais próxima (ou já vencida) primeiro; sem data por último.
     por["2.1"] = [...por["2.1"]].sort((a, b) => (chaveDia(a.pbi.dataComite) ?? "9999").localeCompare(chaveDia(b.pbi.dataComite) ?? "9999") || a.pbi.id - b.pbi.id);
     return por;
-  }, [visiveis]);
+  }, [exibidos]);
 
   if (semFluxo) {
     return (
@@ -139,9 +150,19 @@ export default function FluxoPoUpstream() {
         >
           Meus itens
         </button>
+        <button
+          type="button"
+          className="kmm-btn"
+          aria-pressed={somenteBloqueados}
+          title="Mostra só os cards que ainda não cumprem a regra para avançar"
+          onClick={() => setSomenteBloqueados((v) => !v)}
+          style={somenteBloqueados ? { borderColor: C.orange, color: C.orange, background: "#FFF1EA" } : undefined}
+        >
+          Somente bloqueados{dados ? ` (${totalBloqueados})` : ""}
+        </button>
         {!carregando && !erro && (
           <span style={{ fontSize: 12, color: C.muted }}>
-            {visiveis.length} {visiveis.length === 1 ? "demanda" : "demandas"}
+            {exibidos.length} {exibidos.length === 1 ? "demanda" : "demandas"}
             {esteiraSel ? ` em ${esteiras(dados, esteiraSel)} (mais os cards sem esteira)` : ""}
             {meusItens ? " suas" : ""}
           </span>
@@ -178,6 +199,16 @@ export default function FluxoPoUpstream() {
                         <span style={{ color: cor.dot }}>{etapa.codigo}</span> {etapa.nome}
                       </div>
                       {!etapa.movimenta && <div style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>Somente exibição</div>}
+                      {etapa.movimenta && (
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 5 }}>
+                          <span title="Cards que já cumprem a regra para avançar" style={{ fontSize: 11, fontWeight: 600, borderRadius: 999, padding: "1px 8px", background: PASTEL.green.bg, color: PASTEL.green.dot }}>
+                            {contadores[etapa.codigo].prontos} {contadores[etapa.codigo].prontos === 1 ? "pronto" : "prontos"}
+                          </span>
+                          <span title="Cards a que ainda falta algo para avançar" style={{ fontSize: 11, fontWeight: 600, borderRadius: 999, padding: "1px 8px", background: PASTEL.amber.bg, color: PASTEL.amber.dot }}>
+                            {contadores[etapa.codigo].bloqueados} {contadores[etapa.codigo].bloqueados === 1 ? "bloqueado" : "bloqueados"}
+                          </span>
+                        </div>
+                      )}
                     </div>
                     <span style={{ marginLeft: "auto", fontSize: 12, fontWeight: 600, color: C.muted, background: "#fff", borderRadius: 999, padding: "1px 9px", fontVariantNumeric: "tabular-nums" }}>
                       {lista.length}
@@ -223,7 +254,10 @@ function CardEsteira({ card, cor, hoje }: { card: CardFluxo; cor: { bg: string; 
   const atrasada = mostrarComite && comiteAtrasado(pbi.dataComite, hoje);
 
   return (
-    <article className="fp-card" style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 12, padding: "11px 12px 10px" }}>
+    <article
+      className="fp-card"
+      style={{ background: card.inconsistencia ? "#FFF8F7" : "#fff", border: card.inconsistencia ? `1.5px solid ${C.red}` : `1px solid ${C.border}`, borderRadius: 12, padding: "11px 12px 10px" }}
+    >
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
         <a
           className="fp-id"
@@ -259,6 +293,28 @@ function CardEsteira({ card, cor, hoje }: { card: CardFluxo; cor: { bg: string; 
           </span>
         )}
       </div>
+
+      {card.inconsistencia ? (
+        <div role="alert" title={card.inconsistencia} style={{ display: "flex", alignItems: "flex-start", gap: 6, marginTop: 9, fontSize: 11.5, fontWeight: 600, color: C.red, background: "#FBE7E4", borderRadius: 8, padding: "5px 8px" }}>
+          <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+          <span>Inconsistente: {card.inconsistencia}</span>
+        </div>
+      ) : (
+        card.prontidao &&
+        (card.prontidao.pronto ? (
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 9, fontSize: 11.5, fontWeight: 600, color: PASTEL.green.dot, background: PASTEL.green.bg, borderRadius: 8, padding: "3px 9px" }}>
+            <CheckCircle2 size={13} />
+            Pronto para mover
+          </div>
+        ) : (
+          <div title={card.prontidao.faltas.join("\n")} style={{ display: "flex", alignItems: "flex-start", gap: 6, marginTop: 9, fontSize: 11.5, color: "#8a5a00", background: PASTEL.amber.bg, borderRadius: 8, padding: "4px 9px" }}>
+            <AlertCircle size={13} color={PASTEL.amber.dot} style={{ flexShrink: 0, marginTop: 1 }} />
+            <span>
+              <strong style={{ fontWeight: 600 }}>Falta:</strong> {card.prontidao.faltas.map(resumirFalta).join(", ")}
+            </span>
+          </div>
+        ))
+      )}
 
       {(mostrarComite || dias !== null) && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, paddingTop: 9, borderTop: `1px solid ${C.soft}` }}>

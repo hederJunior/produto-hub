@@ -2647,3 +2647,13 @@ Entregues (em `docs/`): **`fluxo-po-guia-de-uso.md`** (guia para PM e PO: quem p
 (identificação por papel e nome, lista de Classificação do Azure, piloto em todas as esteiras) e nova seção 14 com o estado da Fase 1 e as três decisões ainda abertas.
 **O piloto em si é com o Heder, PM e PO** (esta tarefa deixa tudo pronto para ele começar). **Pendências P1 que dependem do Heder:** (1) o que cada volta grava; (2) onde fica o card inconsistente; (3) quem recebe papel e nome no cadastro (hoje só 2 de 17 movimentam).
 **Melhoria de maior valor identificada para o piloto (ajuste 1):** permitir preencher o que falta (Data Comitê, esteira, classificação...) na própria confirmação do movimento — o servidor já aceita esses valores; falta o formulário.
+
+## 2026-11-20 — Fluxo do PO · T22: publicação
+
+**O que eu consegui verificar daqui (e está ✅ em `docs/fluxo-po-publicacao.md`):** build de produção (`next build`) compila, passa no lint e nos tipos, com as rotas do Fluxo do PO dinâmicas; testes (101 unitários, 113 de integração); e, com o novo
+`scripts/verificar-publicacao-fluxo-po.mjs` (somente leitura + uma linha de teste do RLS, apagada na hora): variáveis necessárias presentes (o `.env` aponta para o Supabase `dcojvfhoskaxqhoxgadh` e a organização Azure `kmmbynstech`), tabelas
+`FluxoPoChecklist` e `FluxoPoMovimento` existem (migration aplicada), **RLS ligado** (a chave pública não lê nem grava), o PAT lê o KMM5, os **15 campos** do fluxo e o tipo `Assesment` existem no Azure.
+**O que só o Heder pode fazer** (checklist com os passos exatos no mesmo documento): confirmar que a **Vercel** tem as mesmas variáveis (mesmo projeto Supabase e o PAT com Work Items Read & write — e anotar a validade do PAT), **cadastrar papel e nome** de quem opera,
+fazer o **`git push`** (T10 a T22 estão só commitadas localmente) e o **teste com login real** depois do deploy (roteiro de 6 passos com o PBI 46766). Rollback: promover o deploy anterior na Vercel; a migration só acrescenta tabelas.
+**Achado do relatório de acessos (dados reais, sem mexer):** 17 usuários cadastrados, **só 2 movimentam** (as duas administradoras; uma sem nome e a outra com nome de uma palavra só, que não casa no "Meus itens"), 15 só visualizam, 16 sem nome. Dois e-mails parecidos
+(`catrini.olkowski`/`catrini.olkwoski`) merecem conferência. Papel e nome são dado de acesso e decisão do Heder: **não alterei o cadastro**; deixei o comando pronto.

@@ -4,10 +4,11 @@
  * Limites: 100 comentários, 100 anexos e 500 revisões por PBI (acima disso `truncado: true`).
  */
 import { API_VERSION, authHeader, getConfig } from "./devops-client";
-import { ErroFluxoPo } from "./fluxo-po-servidor";
-import { traduzirErroAzure, projetoSuportado } from "./fluxo-po";
+import { ErroFluxoPo, exigirPermissaoMovimento, lerPbiFluxoPoAtual, publicarComentarioPbi, type UsuarioFluxoPo } from "./fluxo-po-servidor";
+import { comentarioDoUsuario, traduzirErroAzure, projetoSuportado, validarComentario } from "./fluxo-po";
+import { getServiceClient } from "./supabase";
 import { PROJETO_FLUXO_PO, TIPO_PBI } from "./fluxo-po-campos";
-import { montarAnexos, montarHistorico, type AnexoPbi, type EntradaHistorico, type RelacaoAzure, type UpdateAzure } from "./fluxo-po-detalhe";
+import { montarAnexos, montarHistorico, montarMovimentos, type AnexoPbi, type EntradaHistorico, type LinhaMovimento, type MovimentoPbi, type RelacaoAzure, type UpdateAzure } from "./fluxo-po-detalhe";
 import { sanitizarHtml } from "./html-seguro";
 
 const MAX_COMENTARIOS = 100;
@@ -134,4 +135,37 @@ export async function lerHistoricoPbi(idBruto: unknown): Promise<HistoricoPbi> {
   await lerItemDoEscopo(id, `fields=${CAMPOS_ESCOPO}&`);
   const { updates, truncado } = await lerUpdates(id);
   return { entradas: montarHistorico(updates), truncado };
+}
+
+export type MovimentosPbi = { movimentos: MovimentoPbi[]; truncado: boolean };
+const MAX_MOVIMENTOS = 100;
+
+/** Movimentos da plataforma (log do Fluxo do PO) de um PBI: quem moveu, de onde para onde, resultado e avisos. Lê só o banco. */
+export async function lerMovimentosPbi(idBruto: unknown): Promise<MovimentosPbi> {
+  const id = validarId(idBruto);
+  const { data, error } = await getServiceClient()
+    .from("FluxoPoMovimento")
+    .select("id, criadoEm, origem, destino, direcao, proposta, usuario, usuarioNome, resultado, motivo, alteracoes, avisos, comentarioPublicado, assesments")
+    .eq("workItemId", id)
+    .order("criadoEm", { ascending: false })
+    .limit(MAX_MOVIMENTOS + 1);
+  if (error) {
+    console.error("[fluxo-po/detalhe] leitura do log de movimentos falhou:", error.message);
+    throw new ErroFluxoPo(502, "banco", "Não foi possível ler o log de movimentos (banco de dados).");
+  }
+  const linhas = (data ?? []) as LinhaMovimento[];
+  return { movimentos: montarMovimentos(linhas.slice(0, MAX_MOVIMENTOS)), truncado: linhas.length > MAX_MOVIMENTOS };
+}
+
+/**
+ * Publica no PBI um comentário escrito na tela (T17). Só quem pode movimentar o fluxo (403); texto não vazio e dentro do limite
+ * (422); o item precisa ser PBI do KMM5. O autor no Azure é o dono do PAT, então o nome do usuário e a data vão no texto.
+ */
+export async function publicarComentarioUsuario(params: { id: unknown; texto: unknown; usuario: UsuarioFluxoPo; agora?: Date }): Promise<{ id: number }> {
+  exigirPermissaoMovimento(params.usuario);
+  const id = validarId(params.id);
+  const v = validarComentario(params.texto);
+  if (v.erro !== undefined) throw new ErroFluxoPo(422, "entrada_invalida", v.erro);
+  await lerPbiFluxoPoAtual(id); // confere que é um PBI do KMM5 (404/422 se não)
+  return publicarComentarioPbi(id, comentarioDoUsuario({ texto: v.texto, usuario: params.usuario.nome?.trim() || params.usuario.email, quando: params.agora ?? new Date() }));
 }

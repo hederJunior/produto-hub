@@ -2573,3 +2573,25 @@ inexistente, valor fora da lista do Azure, "sem mudanças", editar Classificaç�
 sem reverter, log com todas as tentativas, estado final igual ao inicial). No navegador: cabeçalho, 3 abas, faixa ("Falta: Data Comitê" → "Pronto para mover" após salvar a data), edição da Classificação e da
 Data Comitê pela tela, botão Mover da faixa, modo CS sem controles, "Detalhes" nos 172 cards. Login e usuário simulados só no servidor de teste (revertido); sessão real do Supabase segue sem teste ponta a ponta.
 `npm run test:fluxo-po`: 84 testes. **Para a T17:** checklist (API pronta, T10), descrição, comentários, anexos, histórico (leitura pronta, T08), "Quando avança" e "Ao avançar, grava no PBI".
+
+## 2026-11-20 — Fluxo do PO · T17: detalhe com checklist, descrição, comentários, anexos, histórico e quadros "Quando avança" / "Ao avançar"
+
+Abaixo do quadro de informações (T16), a aba aberta mostra (`components/FluxoPoDetalheBlocos.tsx`, cada bloco carrega sozinho; a falha de um não derruba os outros):
+- **Checklist da etapa** (API da T10): caixas de marcar com "feitos de total"; cada item marcado mostra **quem marcou e quando** (fuso de Brasília). Quem só visualiza vê tudo e não marca (a dica explica); marcar é
+  otimista e volta atrás se o servidor recusar.
+- **Descrição da solicitação** (somente leitura): HTML do campo Descrição já sanitizado (T08), com rolagem e aviso quando muito longa.
+- **Comentários:** lista (mais recentes primeiro, autor, data, "editado em", HTML sanitizado) e, para quem pode movimentar, caixa para **publicar comentário novo no PBI**
+  (`POST /api/fluxo-po/pbi/<id>/comentarios`, corpo `{ texto }`; `GET` no mesmo endereço lê). Regras: só quem movimenta (403 com o motivo), texto não vazio e até **4000 caracteres** (422), o item precisa
+  ser PBI do KMM5. **O autor no Azure é o dono do PAT** (a integração), então o texto sai como "**Nome** · data (via Produto Hub)" + a mensagem, tudo **escapado** (testado: tags viram texto, quebras de linha viram `<br>`).
+  Não vai para o log `FluxoPoMovimento` (o próprio comentário já traz o nome e a data).
+- **Anexos:** nome (link do Azure), tamanho, autor e data (T08). **Histórico**, com duas visões: "PBI no Azure" (revisões, T08) e **"Movimentos na plataforma"** (novo: `GET /api/fluxo-po/pbi/<id>/movimentos`, até 100 linhas do log
+  `FluxoPoMovimento` — quem, quando, de → para, "Concluído/Concluído com aviso/Bloqueado/Sem permissão/Conflito/Erro", motivo, campos gravados e avisos; edições aparecem como "Edição das informações").
+- **"Quando avança"** (`QUANDO_AVANCA`) e **"Ao avançar, grava no PBI"** (`AO_AVANCAR`) por aba, com os textos do doc §6 e as regras de movimento; 2.1 lista as duas saídas (3.1 com a tag, 3.2 sem). Um teste garante que os destinos descritos
+  são exatamente os avanços que `destinosPossiveis` permite.
+**Dois achados nos dados reais (corrigidos):** (1) `GET /workItems/<id>/updates` traz `revisedDate` = **até quando a revisão valeu** (o instante em que a seguinte a substituiu) e, na mais recente, o marcador
+`9999-01-01` — a tela chegou a mostrar "31/12/9998". O horário em que a revisão FOI FEITA é `System.ChangedDate`; `instanteDaRevisao` usa esse campo (ignora o marcador). Isso também corrige o horário do histórico e a data dos anexos
+desde a T08. (2) as datas do log (`criadoEm`) voltam sem fuso: `montarMovimentos` aplica `instanteUtc` (o aviso da T10 sobre isso se confirmou).
+**Conferido (servidor local, PBI de teste 46766, tudo desfeito depois):** os 7 blocos carregam com dados reais; marcar o checklist grava "Marcado por Heder Martins em 20/11/2026 21:12" (e a hora de Brasília bate);
+comentário publicado aparece no topo com a assinatura e o texto escapado, e o total sobe de 3 para 4; edição de Classificação aparece em "Movimentos na plataforma"; HTTP: 422 para comentário vazio/não texto/Assesment, 403 para
+perfil CS (POST de comentário e PUT de checklist) e leitura aberta (200); modo CS: caixas desabilitadas, sem campo de comentário, mas tudo visível. Comentário, classificação, linha do checklist e linha do log apagados/restaurados ao final.
+Login e usuário simulados só no servidor de teste (revertido); sessão real do Supabase segue sem teste ponta a ponta. `npm run test:fluxo-po`: 90 testes.

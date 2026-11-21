@@ -787,6 +787,76 @@ export function lerEntradaMovimento(bruto: unknown): { entrada: EntradaMovimento
   return { entrada };
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// Textos da tela de detalhe (T17) e comentário escrito pelo usuário
+// ---------------------------------------------------------------------------------------------------------------
+
+/** Quadro "Quando avança" de cada aba (docs/fluxo-po-decisoes.md §6). */
+export const QUANDO_AVANCA: Record<"1.1" | "1.2" | "2.1", string> = {
+  "1.1": "Demanda classificada, com a esteira definida.",
+  "1.2": "Proposta de solução pronta para ser apresentada em Comitê de Produto.",
+  "2.1": "Pós aprovação de proposta de solução em Comitê de Produto.",
+};
+
+/**
+ * Quadro "Ao avançar, grava no PBI" de cada aba: o que o movimento escreve no Azure DevOps (a regra de `avaliarMovimento`
+ * descrita em texto, para qualquer aba — a confirmação do movimento mostra os valores reais do card).
+ */
+export const AO_AVANCAR: Record<"1.1" | "1.2" | "2.1", { destino: EtapaFluxo; grava: string[] }[]> = {
+  "1.1": [
+    {
+      destino: "1.2",
+      grava: [
+        "Area Path, Classificação, Cliente e Data Abertura Produto, como informados",
+        "Status e Etapa continuam Backlog",
+        "Comentário de transição no PBI (origem, destino, usuário e data)",
+      ],
+    },
+  ],
+  "1.2": [
+    {
+      destino: "2.1",
+      grava: [
+        "Etapa: Backlog → Comitê (o Status continua Backlog)",
+        "Data Comitê, como informada",
+        "A Data Comitê é copiada para todos os Assesments filhos (sem filho, o sistema avisa e segue)",
+        "Comentário de transição no PBI (origem, destino, usuário e data)",
+      ],
+    },
+  ],
+  "2.1": [
+    {
+      destino: "3.1",
+      grava: ["Etapa: Comitê → Análise", `Tag "${TAG_PRONTO_REFINAMENTO_TECH}"`, "Comentário de transição no PBI"],
+    },
+    {
+      destino: "3.2",
+      grava: ["Etapa: Comitê → Análise, sem a tag", "Comentário de transição no PBI"],
+    },
+  ],
+};
+
+/** Tamanho máximo de um comentário escrito na tela. */
+export const LIMITE_COMENTARIO = 4000;
+
+/** Texto do comentário vindo da tela (não confiável): só texto, sem vazio e dentro do limite. */
+export function validarComentario(bruto: unknown): { texto: string; erro?: undefined } | { texto?: undefined; erro: string } {
+  if (typeof bruto !== "string") return { erro: "O comentário precisa ser um texto." };
+  const texto = bruto.replace(/\r\n/g, "\n").trim();
+  if (!texto) return { erro: "Escreva o comentário antes de publicar." };
+  if (texto.length > LIMITE_COMENTARIO) return { erro: `O comentário passa do limite de ${LIMITE_COMENTARIO} caracteres (tem ${texto.length}).` };
+  return { texto };
+}
+
+/**
+ * HTML do comentário que o usuário escreveu na tela. O autor no Azure é o dono do PAT (como no comentário de transição), então o
+ * nome e a data vão no texto, marcados como "via Produto Hub". Texto escapado; quebras de linha viram <br>.
+ */
+export function comentarioDoUsuario(args: { texto: string; usuario: string; quando: Date }): string {
+  const data = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(args.quando);
+  return `<p><b>${escaparHtml(args.usuario)}</b> · ${data} <i>(via Produto Hub)</i></p><div>${escaparHtml(args.texto).replace(/\n/g, "<br>")}</div>`;
+}
+
 export type CodigoErroAzure = "conflito" | "regra" | "autenticacao" | "permissao" | "nao_encontrado" | "indisponivel" | "recusado";
 
 export type ErroAzureTraduzido = {

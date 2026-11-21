@@ -2,12 +2,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  AO_AVANCAR,
+  LIMITE_COMENTARIO,
+  QUANDO_AVANCA,
   adicionarTag,
   agingEmAlerta,
   agingEmDias,
   avaliarEdicao,
   avaliarMovimento,
   comentarioDeTransicao,
+  comentarioDoUsuario,
   comiteAtrasado,
   agruparPorEtapa,
   contarPorEtapa,
@@ -30,6 +34,7 @@ import {
   replicarDataComite,
   resumirFalta,
   traduzirErroAzure,
+  validarComentario,
   valorLegivelDaAlteracao,
   type PbiFluxo,
 } from "./fluxo-po";
@@ -617,4 +622,36 @@ test("valorLegivelDaAlteracao: datas em dd/mm/aaaa (Brasília), vazio, Area Path
   assert.equal(valorLegivelDaAlteracao("System.AreaPath", "KMM5"), "KMM5 (sem esteira)");
   assert.equal(valorLegivelDaAlteracao("Custom.Etapa", "Comitê"), "Comitê");
   assert.equal(valorLegivelDaAlteracao(dataComite, "lixo"), "lixo");
+});
+
+// ---------------------------------------------------------------- detalhe: textos e comentário do usuário (T17)
+
+test("QUANDO_AVANCA e AO_AVANCAR: textos para as 3 etapas com movimento, de acordo com as regras", () => {
+  assert.deepEqual(Object.keys(QUANDO_AVANCA), ["1.1", "1.2", "2.1"]);
+  assert.match(QUANDO_AVANCA["1.1"], /esteira definida/);
+  assert.match(QUANDO_AVANCA["2.1"], /Comitê de Produto/);
+  // os destinos descritos são exatamente os avanços que o módulo de regras permite
+  for (const etapa of ["1.1", "1.2", "2.1"] as const) {
+    const avancos = destinosPossiveis(etapa).filter((d) => d.direcao === "avanco").map((d) => d.destino);
+    assert.deepEqual(AO_AVANCAR[etapa].map((a) => a.destino), avancos, etapa);
+    for (const a of AO_AVANCAR[etapa]) assert.ok(a.grava.length >= 2);
+  }
+  assert.match(AO_AVANCAR["2.1"][0].grava.join(" "), /Pronto para refinamento tech/);
+  assert.doesNotMatch(AO_AVANCAR["2.1"][1].grava.join(" "), /Pronto para refinamento tech/);
+});
+
+test("validarComentario: só texto, sem vazio, dentro do limite; normaliza quebras de linha", () => {
+  assert.deepEqual(validarComentario("  Olá\r\nmundo  "), { texto: "Olá\nmundo" });
+  for (const ruim of ["", "   ", "\n\n", null, undefined, 5, {}]) assert.ok(validarComentario(ruim).erro, String(ruim));
+  assert.equal(validarComentario("a".repeat(LIMITE_COMENTARIO)).erro, undefined);
+  assert.match(validarComentario("a".repeat(LIMITE_COMENTARIO + 1)).erro ?? "", /limite de 4000/);
+});
+
+test("comentarioDoUsuario: nome, data (Brasília) e 'via Produto Hub'; texto escapado; quebras viram <br>", () => {
+  const html = comentarioDoUsuario({ texto: "Linha 1\n<script>alert(1)</script> & fim", usuario: "Ana <b>", quando: new Date("2026-11-20T15:30:00Z") });
+  assert.match(html, /<b>Ana &lt;b&gt;<\/b>/);
+  assert.match(html, /20\/11\/2026.*12:30/);
+  assert.match(html, /via Produto Hub/);
+  assert.match(html, /Linha 1<br>&lt;script&gt;alert\(1\)&lt;\/script&gt; &amp; fim/);
+  assert.doesNotMatch(html, /<script/);
 });

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { AlertCircle, AlertTriangle, ArrowLeft, CalendarDays, CheckCircle2, Check, Clock, ExternalLink, Eye, Loader2, Lock, MoveRight, X } from "lucide-react";
+import FluxoPoDetalheBlocos from "@/components/FluxoPoDetalheBlocos";
 import FluxoPoMoverDialog from "@/components/FluxoPoMoverDialog";
 import MultiSelectFiltro from "@/components/MultiSelectFiltro";
 import { C, PASTEL, infoPrioridade } from "@/lib/kmm-theme";
@@ -361,6 +362,9 @@ export default function FluxoPoDetalhe({ id }: { id: string }) {
         {!pode && <p style={{ margin: "14px 0 0", fontSize: 12, color: C.muted }}>{info.permissao.motivo ?? `Movimentam: ${QUEM_MOVIMENTA}.`}</p>}
         <style>{"@keyframes kmm-giro{to{transform:rotate(360deg)}}"}</style>
       </div>
+
+      {/* Checklist, descrição, comentários, anexos, histórico e os quadros "Quando avança" / "Ao avançar" (T17) */}
+      <FluxoPoDetalheBlocos id={pbi.id} aba={abaAtiva} pode={pode} motivoSemPermissao={info.permissao.motivo} versao={pbi.rev} />
 
       {movendo && card && proximo && (
         <FluxoPoMoverDialog

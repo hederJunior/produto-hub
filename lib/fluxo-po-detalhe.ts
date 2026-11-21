@@ -2,7 +2,8 @@
  * Fluxo do PO — leitura do detalhe de um PBI (T08): montagem PURA de anexos e histórico a partir do que o Azure devolve.
  * Sem fetch (a leitura está em lib/fluxo-po-detalhe-servidor.ts). Descrição e comentários passam por `lib/html-seguro.ts`.
  */
-import { chaveDia } from "./fluxo-po";
+import { chaveDia, type Alteracao } from "./fluxo-po";
+import { instanteUtc } from "./fluxo-po-checklist";
 import { CAMPOS_PBI } from "./fluxo-po-campos";
 
 export type AnexoPbi = {
@@ -62,6 +63,18 @@ function valorLegivel(campo: string, valor: unknown): string | null {
   return CAMPOS_DE_DATA.has(campo) ? (chaveDia(texto) ?? texto) : texto;
 }
 
+/**
+ * Quando a revisão FOI FEITA. No `/updates` do Azure, `revisedDate` é até quando a revisão valeu (o instante em que a seguinte a
+ * substituiu; na mais recente é o marcador "9999-01-01"), então o horário certo é o `System.ChangedDate` da própria revisão.
+ * Sem ele, cai no `revisedDate` desde que não seja o marcador. null se nenhum serve.
+ */
+export function instanteDaRevisao(u: Pick<UpdateAzure, "fields" | "revisedDate">): string | null {
+  const valido = (v: unknown): v is string => typeof v === "string" && /^\d{4}-\d{2}-\d{2}T/.test(v) && !v.startsWith("9");
+  const alterado = u.fields?.["System.ChangedDate"]?.newValue;
+  if (valido(alterado)) return alterado;
+  return valido(u.revisedDate) ? u.revisedDate : null;
+}
+
 function idDoAnexo(url: string | undefined): string {
   return /\/attachments\/([0-9a-f-]+)/i.exec(String(url ?? ""))?.[1]?.toLowerCase() ?? String(url ?? "");
 }
@@ -84,7 +97,7 @@ export function montarHistorico(updates: UpdateAzure[]): EntradaHistorico[] {
     for (const r of u.relations?.added ?? []) if (r.rel === "AttachedFile") mudancas.push({ campo: "Anexo", de: null, para: r.attributes?.name ?? "(sem nome)" });
     for (const r of u.relations?.removed ?? []) if (r.rel === "AttachedFile") mudancas.push({ campo: "Anexo", de: r.attributes?.name ?? "(sem nome)", para: null });
     if (!mudancas.length) continue;
-    entradas.push({ rev: u.rev ?? 0, quando: u.revisedDate ?? null, usuario: u.revisedBy?.displayName ?? "(desconhecido)", mudancas });
+    entradas.push({ rev: u.rev ?? 0, quando: instanteDaRevisao(u), usuario: u.revisedBy?.displayName ?? "(desconhecido)", mudancas });
   }
   return entradas.sort((a, b) => b.rev - a.rev);
 }
@@ -96,7 +109,7 @@ export function montarAnexos(relacoes: RelacaoAzure[] | null | undefined, update
     for (const r of u.relations?.added ?? []) {
       if (r.rel !== "AttachedFile") continue;
       const chave = idDoAnexo(r.url);
-      if (!origem.has(chave)) origem.set(chave, { autor: u.revisedBy?.displayName ?? null, quando: u.revisedDate ?? null });
+      if (!origem.has(chave)) origem.set(chave, { autor: u.revisedBy?.displayName ?? null, quando: instanteDaRevisao(u) });
     }
   }
   return (relacoes ?? [])
@@ -111,4 +124,67 @@ export function montarAnexos(relacoes: RelacaoAzure[] | null | undefined, update
         link: r.url as string,
       };
     });
+}
+
+/** Linha de FluxoPoMovimento como o PostgREST devolve (só o que a tela usa). */
+export type LinhaMovimento = {
+  id: string;
+  criadoEm: string | null;
+  origem: string | null;
+  destino: string;
+  direcao: string | null;
+  proposta: boolean | null;
+  usuario: string;
+  usuarioNome: string | null;
+  resultado: string;
+  motivo: string | null;
+  alteracoes: unknown;
+  avisos: unknown;
+  comentarioPublicado: boolean | null;
+  assesments: unknown;
+};
+
+export type MovimentoPbi = {
+  id: string;
+  /** Instante em ISO com "Z" (a coluna do banco volta sem fuso). */
+  quando: string | null;
+  quem: string;
+  origem: string | null;
+  destino: string;
+  /** "avanco" | "volta" | "edicao" */
+  direcao: string | null;
+  proposta: boolean;
+  /** sucesso | parcial | bloqueado | sem_permissao | conflito | erro */
+  resultado: string;
+  motivo: string | null;
+  alteracoes: Alteracao[];
+  avisos: string[];
+  comentarioPublicado: boolean | null;
+  assesmentsFalhas: number;
+};
+
+const lista = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
+
+/** Movimentos da plataforma (log do Fluxo do PO) de um PBI, do mais recente para o mais antigo. */
+export function montarMovimentos(linhas: LinhaMovimento[]): MovimentoPbi[] {
+  return linhas
+    .map((l): MovimentoPbi => {
+      const ass = (l.assesments ?? null) as { falhas?: unknown[] } | null;
+      return {
+        id: l.id,
+        quando: instanteUtc(l.criadoEm),
+        quem: l.usuarioNome?.trim() || l.usuario,
+        origem: l.origem,
+        destino: l.destino,
+        direcao: l.direcao,
+        proposta: !!l.proposta,
+        resultado: l.resultado,
+        motivo: l.motivo,
+        alteracoes: lista<Alteracao>(l.alteracoes),
+        avisos: lista<string>(l.avisos),
+        comentarioPublicado: l.comentarioPublicado,
+        assesmentsFalhas: Array.isArray(ass?.falhas) ? ass!.falhas!.length : 0,
+      };
+    })
+    .sort((a, b) => (b.quando ?? "").localeCompare(a.quando ?? ""));
 }

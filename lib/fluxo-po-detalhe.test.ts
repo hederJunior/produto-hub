@@ -1,7 +1,7 @@
 // Testes da montagem de anexos e histórico do detalhe do PBI. Rodar: npm run test:fluxo-po
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { montarAnexos, montarHistorico, type UpdateAzure } from "./fluxo-po-detalhe";
+import { instanteDaRevisao, montarAnexos, montarHistorico, montarMovimentos, type UpdateAzure } from "./fluxo-po-detalhe";
 
 const URL_ANEXO = "https://dev.azure.com/org/proj/_apis/wit/attachments/149B7752-F4DD-47DD-BF30-493D0068BCBD";
 
@@ -70,4 +70,47 @@ test("montarAnexos: PBI sem anexos", () => {
   assert.deepEqual(montarAnexos(undefined), []);
   assert.deepEqual(montarAnexos([]), []);
   assert.deepEqual(montarAnexos([{ rel: "Related", url: "x" }]), []);
+});
+
+test("montarMovimentos: mais recente primeiro, nome ou e-mail, instante com Z, listas JSON seguras", () => {
+  const m = montarMovimentos([
+    { id: "a", criadoEm: "2026-11-20T10:00:00.000", origem: "1.2", destino: "2.1", direcao: "avanco", proposta: false, usuario: "ana@x.com", usuarioNome: "Ana", resultado: "sucesso", motivo: null, alteracoes: [{ campo: "Custom.Etapa", rotulo: "Etapa", de: "Backlog", para: "Comitê" }], avisos: null, comentarioPublicado: true, assesments: { total: 1, atualizados: [5], jaIguais: [], falhas: [] } },
+    { id: "b", criadoEm: "2026-11-20T12:00:00.000", origem: "2.1", destino: "1.2", direcao: "volta", proposta: true, usuario: "bia@x.com", usuarioNome: null, resultado: "parcial", motivo: null, alteracoes: "lixo", avisos: ["comentário falhou"], comentarioPublicado: false, assesments: { total: 2, atualizados: [], jaIguais: [], falhas: [{ id: 1, erro: "x" }, { id: 2, erro: "y" }] } },
+    { id: "c", criadoEm: null, origem: null, destino: "-", direcao: "edicao", proposta: null, usuario: "cris@x.com", usuarioNome: "  ", resultado: "bloqueado", motivo: "Valores inválidos", alteracoes: null, avisos: null, comentarioPublicado: null, assesments: null },
+  ]);
+  assert.deepEqual(m.map((x) => x.id), ["b", "a", "c"]);
+  assert.equal(m[0].quando, "2026-11-20T12:00:00.000Z");
+  assert.equal(m[0].quem, "bia@x.com");
+  assert.equal(m[1].quem, "Ana");
+  assert.deepEqual(m[0].alteracoes, []);
+  assert.deepEqual(m[0].avisos, ["comentário falhou"]);
+  assert.equal(m[0].assesmentsFalhas, 2);
+  assert.equal(m[0].proposta, true);
+  assert.equal(m[1].alteracoes[0].rotulo, "Etapa");
+  assert.equal(m[2].quem, "cris@x.com");
+  assert.equal(m[2].quando, null);
+  assert.equal(m[2].proposta, false);
+  assert.deepEqual(montarMovimentos([]), []);
+});
+
+test("instanteDaRevisao: usa o ChangedDate da revisão; revisedDate de 'até quando valeu' e o marcador 9999 não servem", () => {
+  // dados reais do PBI 46766: revisedDate = quando a revisão SEGUINTE a substituiu
+  assert.equal(instanteDaRevisao({ fields: { "System.ChangedDate": { newValue: "2026-11-20T23:58:56.107Z" } }, revisedDate: "2026-11-20T23:59:10.68Z" }), "2026-11-20T23:58:56.107Z");
+  // última revisão: revisedDate é o marcador
+  assert.equal(instanteDaRevisao({ fields: { "System.ChangedDate": { newValue: "2026-11-21T00:03:34.463Z" } }, revisedDate: "9999-01-01T00:00:00Z" }), "2026-11-21T00:03:34.463Z");
+  // sem ChangedDate: cai no revisedDate, menos se for o marcador
+  assert.equal(instanteDaRevisao({ revisedDate: "2026-10-02T20:21:10.613Z" }), "2026-10-02T20:21:10.613Z");
+  assert.equal(instanteDaRevisao({ revisedDate: "9999-01-01T00:00:00Z" }), null);
+  assert.equal(instanteDaRevisao({ fields: { "System.ChangedDate": { newValue: "lixo" } } }), null);
+  assert.equal(instanteDaRevisao({}), null);
+});
+
+test("montarHistorico e montarAnexos usam o horário em que a revisão foi feita", () => {
+  const ups: UpdateAzure[] = [
+    { rev: 1, revisedDate: "2026-10-02T20:22:00Z", revisedBy: { displayName: "A" }, fields: { "System.ChangedDate": { newValue: "2026-10-02T20:21:10Z" }, "Custom.Etapa": { newValue: "Backlog" } }, relations: { added: [{ rel: "AttachedFile", url: "https://x/_apis/wit/attachments/abc", attributes: { name: "a.pdf" } }] } },
+    { rev: 2, revisedDate: "9999-01-01T00:00:00Z", revisedBy: { displayName: "B" }, fields: { "System.ChangedDate": { newValue: "2026-11-20T18:00:00Z" }, "Custom.Etapa": { oldValue: "Backlog", newValue: "Comitê" } } },
+  ];
+  const h = montarHistorico(ups);
+  assert.deepEqual(h.map((e) => e.quando), ["2026-11-20T18:00:00Z", "2026-10-02T20:21:10Z"]);
+  assert.equal(montarAnexos([{ rel: "AttachedFile", url: "https://x/_apis/wit/attachments/abc", attributes: { name: "a.pdf" } }], ups)[0].quando, "2026-10-02T20:21:10Z");
 });

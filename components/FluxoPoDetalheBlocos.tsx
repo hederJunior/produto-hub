@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { AlertCircle, Check, ExternalLink, Loader2, Paperclip, Send } from "lucide-react";
+import { AlertCircle, Check, ExternalLink, Loader2, Paperclip, Send, Sparkles } from "lucide-react";
 import { C, PASTEL } from "@/lib/kmm-theme";
 import { AO_AVANCAR, LIMITE_COMENTARIO, QUANDO_AVANCA, rotuloDaEtapa, valorLegivelDaAlteracao, type EtapaFluxo } from "@/lib/fluxo-po";
 import type { ChecklistPbi, ItemChecklistEstado } from "@/lib/fluxo-po-checklist";
@@ -82,7 +82,7 @@ const ESTILO_HTML = `
 `;
 
 /**
- * Blocos do detalhe do card (T17): checklist da etapa, descrição, comentários,
+ * Blocos do detalhe do card (T17): checklist da etapa, descrição (com o botão do Agente de Classificação na 1.1), comentários,
  * anexos, histórico do PBI e dos movimentos, e os quadros "Quando avança" e "Ao avançar, grava no PBI". Cada um lê sua parte
  * do servidor (T08/T10) sozinho. Escrever (checklist, comentário) exige poder movimentar; o servidor confere.
  */
@@ -185,6 +185,21 @@ function Descricao({ id, aba }: { id: number; aba: AbaEtapa }) {
   return (
     <Bloco
       titulo="Descrição da solicitação"
+      extra={
+        // T18: só na aba 1.1, junto da descrição. SEM FUNÇÃO nesta fase (Fase 2 do roadmap): não tem ação ao clicar.
+        aba === "1.1" ? (
+          <button
+            type="button"
+            className="kmm-btn"
+            title="Em breve: o agente que ajuda a classificar a demanda chega em uma fase seguinte"
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5 }}
+          >
+            <Sparkles size={14} color={C.orange} />
+            Agente de Classificação
+            <span style={{ fontSize: 10.5, fontWeight: 600, color: C.muted, background: C.soft, borderRadius: 999, padding: "0 7px" }}>em breve</span>
+          </button>
+        ) : undefined
+      }
     >
       {carregando && !dados ? (
         <Carregando />

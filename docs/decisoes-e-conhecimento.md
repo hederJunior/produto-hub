@@ -2595,3 +2595,10 @@ desde a T08. (2) as datas do log (`criadoEm`) voltam sem fuso: `montarMovimentos
 comentário publicado aparece no topo com a assinatura e o texto escapado, e o total sobe de 3 para 4; edição de Classificação aparece em "Movimentos na plataforma"; HTTP: 422 para comentário vazio/não texto/Assesment, 403 para
 perfil CS (POST de comentário e PUT de checklist) e leitura aberta (200); modo CS: caixas desabilitadas, sem campo de comentário, mas tudo visível. Comentário, classificação, linha do checklist e linha do log apagados/restaurados ao final.
 Login e usuário simulados só no servidor de teste (revertido); sessão real do Supabase segue sem teste ponta a ponta. `npm run test:fluxo-po`: 90 testes.
+
+## 2026-11-20 — Fluxo do PO · T18: botão "Agente de Classificação", sem função
+
+O botão **"Agente de Classificação"** aparece **só na aba 1.1**, no cabeçalho do bloco "Descrição da solicitação" (`components/FluxoPoDetalheBlocos.tsx`), com um selo "em breve" e a dica
+"Em breve: o agente que ajuda a classificar a demanda chega em uma fase seguinte". **Não executa nenhuma ação** (Fase 2 do roadmap, `docs/fluxo-po-decisoes.md` §6 e §12): é um `<button type="button">` sem
+`onClick`, sem navegação e sem chamada ao servidor. Nas abas 1.2 e 2.1 ele não existe.
+**Conferido no navegador:** presente na 1.1 e ausente na 1.2 e na 2.1; ao clicar, não abre diálogo, a URL não muda e nenhuma requisição nova é feita; `type="button"` (não envia formulário).

@@ -64,7 +64,7 @@ Grava:
 - **para 3.2:** Etapa Análise, sem a tag.
 
 ### Voltar uma etapa
-**PM e PO podem voltar** o card para a etapa anterior. O que cada volta altera no PBI ainda precisa ser detalhado na implementação. Proposta inicial, a validar com o Heder:
+**PM e PO podem voltar** o card para a etapa anterior. Implementado em 2026-11-20 como **proposta** (a tela mostra o aviso "proposta" até o Heder confirmar):
 - 2.1 → 1.2: Etapa de Comitê para Backlog, Data Comitê mantida.
 - 1.2 → 1.1: Area Path volta para KMM5 (hoje não há outra forma de refletir "sem esteira").
 Toda volta também grava comentário no PBI e entra no log.
@@ -106,8 +106,8 @@ Na aba 1.1, junto à descrição, há um botão **"Agente de Classificação"** 
 
 ## 8. Permissões
 
-- **PM e PO** movimentam os cards nas etapas 1.1, 1.2 e 2.1, inclusive na 2.1.
-- Os demais perfis só visualizam.
+- Movimentam os cards nas etapas 1.1, 1.2 e 2.1: quem tem o papel **PM, PO, GPM ou Product Ops** no cadastro de acesso e os usuários **tipo adm** (decisão de 2026-11-20).
+- Os demais perfis só visualizam (o quadro, o detalhe, o checklist, os comentários, os anexos e o histórico ficam abertos a todos os usuários logados).
 - A verificação de permissão é feita **no servidor** em toda gravação.
 
 ## 9. Controles e visibilidade incluídos no protótipo
@@ -122,6 +122,8 @@ Propostas apresentadas no protótipo, assumidas como parte da Fase 1 (ajustar se
 
 ## 10. Premissas técnicas a validar antes de gravar
 
+**Status (2026-11-20): todas confirmadas** na T01 e na T02 (nomes dos campos, tipo Assesment, relação pai/filho, escrita do PAT, listas de Etapa e Classificação, árvore de Area Path). Detalhes e valores reais em `docs/decisoes-e-conhecimento.md` (entradas "T01" e "T02").
+
 - Reference names reais no Azure: Etapa (`Custom.Etapa`), Classificação, Cliente (`Custom.Cliente`), PO (`Custom.PO`), Data Abertura Produto, Data Comitê (campo custom já usado em `lib/devops-client.ts`), tags e Area Path.
 - Tipo do work item **Assesment** e o nome do campo Data Comitê nele; relação **filho** do PBI (Hierarchy).
 - O PAT atual precisa de permissão de **leitura e escrita** em work items e comentários no KMM5.
@@ -131,9 +133,9 @@ Propostas apresentadas no protótipo, assumidas como parte da Fase 1 (ajustar se
 
 ## 11. Pendências residuais (premissas padrão até confirmação)
 
-- Identificação de PM e PO: usar um **papel no cadastro de acesso** da plataforma.
-- Valores de Classificação: usar a lista do Azure; definir quem inclui valores novos.
-- Piloto: começar por todas as esteiras ou por uma (sugestão: uma esteira).
+- Identificação de PM e PO: **papel no cadastro de acesso** da plataforma (`AllowedUser.papel`), com o **nome** também preenchido (usado no filtro "Meus itens" e na assinatura dos comentários). **Decidido.**
+- Valores de Classificação: lista do Azure (lida em tempo real nos editores). Quem inclui valor novo no Azure: ainda em aberto; a validação da 1.1 → 1.2 usa a lista fixa do código (ver `docs/fluxo-po-ajustes.md`, item 6).
+- Piloto: **todas as esteiras** (decisão do Heder). Roteiro em `docs/fluxo-po-piloto.md`.
 
 ## 12. Evolução prevista
 
@@ -148,3 +150,16 @@ Propostas apresentadas no protótipo, assumidas como parte da Fase 1 (ajustar se
 - **Regra de priorização por esteira:** SWAT/Melhorias por GUT; Regulatória pela data de implantação da obrigação legal; TNS/Integrações por Road Map/SLA; Projetos de Implantação junto à PMO; Serviços cliente por SLA de Viabilidade.
 - **Atalhos:** SWAT crítica, integrações com embarcadores, integrações padrão e tarefas técnicas podem ir direto para a análise tech. Obrigações legais, SWAT e itens do ecossistema que seguem o roadmap não vão para Orçamento.
 - **Obrigações Legais e Ecossistema TNS:** são fluxos próprios (registro no Confluence, desdobramento em Épico, Feature e PBI no Azure, Now/Next/Later) previstos para fase posterior.
+
+## 14. Estado da Fase 1 (implementada em 2026-11-20)
+
+Menu **Fluxo do PO** com as abas Upstream e Downstream (Downstream mostra "em construção"). Tudo o que está neste documento para o Upstream foi implementado:
+
+- **Quadro** com as 6 colunas, cards por coluna, aging (vermelho acima de 30 dias), Data Comitê com indicativo de atraso, prontidão ("Pronto para mover" ou o que falta), contadores de prontos e bloqueados, filtros de esteira, "Meus itens" e "Somente bloqueados", botão **Atualizar** e atualização ao voltar para a tela.
+- **Mover** por arrastar ou pelo botão, com confirmação do que será gravado, motivo do bloqueio e escolha 3.1 ou 3.2 na 2.1; comentário de transição no PBI; Data Comitê copiada para os Assesments filhos; log de todas as tentativas; controle de revisão (conflito = 409).
+- **Detalhe** (`/fluxo-po/<id>`) com uma aba por etapa, faixa de prontidão, informações editáveis (listas do Azure), checklist, descrição, comentários (com publicação), anexos, histórico do PBI e dos movimentos, quadros "Quando avança" e "Ao avançar, grava no PBI", e o botão "Agente de Classificação" sem função na aba 1.1.
+- **Permissões** verificadas no servidor em toda gravação; aviso quando o PBI muda no Azure enquanto a tela está aberta; conflito por campo ao salvar.
+
+**Ainda em aberto, dependem do Heder:** (1) confirmar o que cada **volta** grava (2.1 → 1.2 e 1.2 → 1.1) para retirar o aviso "proposta"; (2) onde fica o **card inconsistente** (Etapa Comitê sem Data Comitê: hoje na 2.1, em vermelho); (3) quem recebe papel e nome no cadastro de acesso para o piloto.
+
+Documentos desta fase: `docs/fluxo-po-guia-de-uso.md` (para PM e PO), `docs/fluxo-po-piloto.md` (roteiro do piloto), `docs/fluxo-po-ajustes.md` (ajustes priorizados), `docs/fluxo-po-publicacao.md` (checklist de publicação) e o histórico técnico em `docs/decisoes-e-conhecimento.md` (entradas "Fluxo do PO · T01 a T22").

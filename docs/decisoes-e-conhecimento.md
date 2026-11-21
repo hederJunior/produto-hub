@@ -2637,3 +2637,13 @@ falso conflito; mudança do MESMO campo → 409 com a lista, rascunho mantido, A
    **Como rodar:** na máquina do Heder (usa o PAT e a chave do Supabase do `.env`; `--use-system-ca` por causa do certificado corporativo): `npm run test:fluxo-po:integracao`. Os unitários não precisam de nada.
 **Não coberto por teste automatizado (limite conhecido):** as telas (conferidas à mão no navegador em cada tarefa) e a rota HTTP com sessão real do Supabase (login por link mágico) — os testes chamam as mesmas funções das rotas, e as rotas foram conferidas por HTTP com usuário simulado em servidor local.
 **Lição registrada:** apagar ou criar comentário sobe a revisão do PBI; todo script que restaura o PBI lê a revisão DEPOIS de apagar os comentários.
+
+## 2026-11-20 — Fluxo do PO · T21: documentação e piloto com PM e PO
+
+Entregues (em `docs/`): **`fluxo-po-guia-de-uso.md`** (guia para PM e PO: quem pode o quê, as etapas e o estado do PBI em cada uma, o quadro, como mover e o que cada movimento grava, o detalhe, avisos e perguntas frequentes),
+**`fluxo-po-piloto.md`** (plano do piloto em **todas as esteiras**: pré-requisitos, retrato do quadro em 20/11/2026 — 172 cards, 17/122/13/8/1/11, com 14 prontos e 108 bloqueados na 1.2 —, roteiro de 9 cenários para o ensaio no PBI de teste, consultas SQL sobre o log
+`FluxoPoMovimento` para medir bloqueios, motivos e quem movimentou, como registrar ajustes e critérios de encerramento) e **`fluxo-po-ajustes.md`** (22 ajustes priorizados P1/P2/P3 com a evidência de cada um e o esforço).
+`docs/fluxo-po-decisoes.md` foi atualizado: volta de etapa marcada como "proposta implementada", permissões com a decisão de 2026-11-20 (PM, PO, GPM, Product Ops e adm), premissas técnicas confirmadas (T01/T02), pendências residuais resolvidas
+(identificação por papel e nome, lista de Classificação do Azure, piloto em todas as esteiras) e nova seção 14 com o estado da Fase 1 e as três decisões ainda abertas.
+**O piloto em si é com o Heder, PM e PO** (esta tarefa deixa tudo pronto para ele começar). **Pendências P1 que dependem do Heder:** (1) o que cada volta grava; (2) onde fica o card inconsistente; (3) quem recebe papel e nome no cadastro (hoje só 2 de 17 movimentam).
+**Melhoria de maior valor identificada para o piloto (ajuste 1):** permitir preencher o que falta (Data Comitê, esteira, classificação...) na própria confirmação do movimento — o servidor já aceita esses valores; falta o formulário.

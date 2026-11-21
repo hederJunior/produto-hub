@@ -2620,3 +2620,20 @@ sozinha), e scripts de teste que restauram o PBI precisam ler a revisão DEPOIS 
 **Conferido (servidor local, dados reais, PBI de teste 46766, restaurado):** `scripts/azure-testar-editar.mjs` agora com 33 verificações (revisão leve, 409 com base desatualizada e lista, base inválida 422, base certa grava, base de campo não editado ignorada, comentário e a revisão).
 No navegador: Atualizar com quadro visível (172 cards durante a busca), falha de atualização mantendo os 172, foco/visibilidade antes de 30 s sem busca e depois de 30 s com 1 busca; no detalhe, rascunho + mudança de outro campo no Azure → aviso com "alterações não salvas" e salvar passa sem
 falso conflito; mudança do MESMO campo → 409 com a lista, rascunho mantido, Azure intocado, "Atualizar e descartar" traz o valor novo; comentário próprio não dispara o aviso. Login e usuário simulados só no servidor de teste (revertido). `npm run test:fluxo-po`: 93 testes.
+
+## 2026-11-20 — Fluxo do PO · T20: testes das regras e da escrita
+
+**Duas camadas de teste:**
+1. **Unitários (sem rede; `npm run test:fluxo-po`, 101 testes):** regras puras (`lib/fluxo-po.ts`: etapa derivada, os 3 movimentos e a volta, edição, conflito, aging, permissão, comentário, replicação, erros do Azure), checklist, log,
+   detalhe (anexos, histórico, movimentos) e sanitizador de HTML. **Cobertura medida** (`node --test --experimental-test-coverage`): **100% das linhas** em todos os módulos de regras; **ramos 95,4%** em `fluxo-po.ts`, 98,3% em `html-seguro.ts`,
+   89,9% em `fluxo-po-detalhe.ts`, 100% em checklist, log e campos. Os ramos restantes são valores padrão defensivos (`?? ""`) e o caso inalcançável "Status diferente de Backlog" na 2.1 → 3.x (a derivação já garante Backlog). Nesta tarefa entraram
+   testes das bordas reais: Area Path vazio na 1.1, Data Comitê inexistente na 1.2, limpar a Data Abertura Produto, relações sem URL, falha de Assesment que não é `Error`, 400 do Azure sem mensagem, nomes em ordem inversa, link do PBI e ordenação sem datas.
+2. **Integração (Azure DevOps e Supabase REAIS, só no PBI de teste 46766; `npm run test:fluxo-po:integracao`, 113 verificações em 4 scripts):**
+   `azure-testar-mover.mjs` (29: movimento, volta, comentário com falha simulada, Assesment com falha simulada, conflito de revisão, log) · `azure-testar-editar.mjs` (33: edição, listas do Azure, conflito por campo, revisão leve) ·
+   `azure-testar-checklist.mjs` (18) · **`azure-testar-fluxo-completo.mjs` (33, novo)**: volta 1.2 → 1.1 (proposta), **1.1 → 1.2**, **1.2 → 2.1 com a Data Comitê copiada para o Assesment**, **2.1 → 3.1 e 2.1 → 3.2** (os dois, em execuções reais),
+   bloqueios com motivo sem gravar nada, perfil sem permissão (403), "3.x não se movimenta", comentário de transição (origem, destino e usuário), log de todas as tentativas e uma **corrida real**: dois movimentos ao mesmo tempo no mesmo PBI — passou exatamente
+   um e o outro levou **409** de conflito de revisão, sem escrita nem comentário dele (nesta rodada, 3.2 venceu).
+   Todos restauram o PBI, o Assesment 46767, os comentários e o log ao estado original (mesmo se um passo falhar) e só aceitam o PBI 46766 (outro ID exige `FLUXO_PO_PERMITIR_OUTRO_ID=1`). **Pré-requisito do fluxo completo:** o PBI de teste em 1.2, sem Data Comitê e sem tags.
+   **Como rodar:** na máquina do Heder (usa o PAT e a chave do Supabase do `.env`; `--use-system-ca` por causa do certificado corporativo): `npm run test:fluxo-po:integracao`. Os unitários não precisam de nada.
+**Não coberto por teste automatizado (limite conhecido):** as telas (conferidas à mão no navegador em cada tarefa) e a rota HTTP com sessão real do Supabase (login por link mágico) — os testes chamam as mesmas funções das rotas, e as rotas foram conferidas por HTTP com usuário simulado em servidor local.
+**Lição registrada:** apagar ou criar comentário sobe a revisão do PBI; todo script que restaura o PBI lê a revisão DEPOIS de apagar os comentários.

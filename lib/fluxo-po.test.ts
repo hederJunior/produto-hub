@@ -1,6 +1,7 @@
 // Testes das regras puras do Fluxo do PO. Rodar: npm run test:fluxo-po
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { urlPbiAzure } from "./fluxo-po-campos";
 import {
   AO_AVANCAR,
   LIMITE_COMENTARIO,
@@ -690,4 +691,58 @@ test("detectarConflitoDeEdicao: várias divergências são todas listadas", () =
   const c = detectarConflitoDeEdicao(agora, { cliente: "B", classificacao: "Fast Track", areaPath: "KMM5" }, { cliente: "Z", classificacao: "EDI", areaPath: "KMM5\\TMS - SWAT" });
   assert.deepEqual(c.map((x) => x.rotulo).sort(), ["Area Path", "Cliente"]);
   assert.equal(c.find((x) => x.rotulo === "Area Path")!.atual, "TMS - Melhorias");
+});
+
+// ---------------------------------------------------------------- bordas das regras (T20)
+
+test("1.1 → 1.2: Area Path vazio informado na tela é falta; 1.2 → 2.1: Data Comitê inexistente é falta", () => {
+  const semArea = avaliarMovimento(pbi(), "1.2", { areaPath: "", classificacao: "EDI", cliente: "X", dataAberturaProduto: "2026-11-01" });
+  assert.equal(semArea.permitido, false);
+  assert.deepEqual(semArea.faltas, ["Definir a esteira (Area Path)."]);
+  const dataRuim = avaliarMovimento(pbi12(), "2.1", { dataComite: "2026-02-31" });
+  assert.equal(dataRuim.permitido, false);
+  assert.deepEqual(dataRuim.faltas, ["Data Comitê inválida."]);
+  assert.deepEqual(dataRuim.alteracoes, []);
+});
+
+test("avaliarEdicao: limpar a Data Abertura Produto grava vazio; data de abertura inválida bloqueia", () => {
+  const base = pbi12({ dataAberturaProduto: "2026-11-01T13:00:00.000Z" });
+  const limpa = avaliarEdicao(base, { dataAberturaProduto: "" });
+  assert.equal(limpa.permitido, true);
+  assert.deepEqual(limpa.alteracoes.map((a) => a.para), [null]);
+  const ruim = avaliarEdicao(base, { dataAberturaProduto: "31/12/2026" });
+  assert.equal(ruim.permitido, false);
+  assert.deepEqual(ruim.faltas, ["Data Abertura Produto inválida."]);
+});
+
+test("lerEntradaMovimento ignora chaves undefined; relações sem URL e falha que não é Error não quebram", async () => {
+  assert.deepEqual(lerEntradaMovimento({ cliente: undefined, dataComite: "2026-12-10" }), { entrada: { dataComite: "2026-12-10" } });
+  assert.deepEqual(idsFilhosDeRelacoes([{ rel: "System.LinkTypes.Hierarchy-Forward" }, { rel: "System.LinkTypes.Hierarchy-Forward", url: "sem-id" }]), []);
+  const r = await replicarDataComite({
+    filhos: [{ id: 1, dataComite: null }],
+    dataComite: "2026-12-10T03:00:00Z",
+    gravar: async () => {
+      throw "texto solto"; // eslint-disable-line no-throw-literal
+    },
+  });
+  assert.deepEqual(r.falhas, [{ id: 1, erro: "texto solto" }]);
+});
+
+test("traduzirErroAzure: 400 sem mensagem, corpo que não é JSON e status desconhecido", () => {
+  assert.equal(traduzirErroAzure(400, JSON.stringify({ typeKey: "RuleValidationException" })).mensagem, "O Azure DevOps recusou a gravação.");
+  const naoJson = traduzirErroAzure(400, "<html>erro</html>");
+  assert.equal(naoJson.codigo, "regra");
+  assert.equal(naoJson.mensagem, "O Azure DevOps recusou a gravação.");
+  assert.equal(traduzirErroAzure(418, "{}").mensagem, "O Azure DevOps recusou a operação (HTTP 418).");
+});
+
+test("nomes em ordem inversa de tamanho, PO igual ao e-mail e link do PBI no Azure", () => {
+  assert.equal(nomesCompativeis("Heder Luiz Martins Junior", "Heder Martins"), true);
+  assert.equal(ehMeuItem({ po: "Heder.Martins@nstech.com.br", responsavel: "", responsavelEmail: "" }, { email: "heder.martins@nstech.com.br", nome: null }), true);
+  assert.equal(urlPbiAzure(46766), "https://dev.azure.com/kmmbynstech/KMM5/_workitems/edit/46766");
+});
+
+test("montarCards: sem Data Abertura nem Created Date vai para o fim da prioridade e desempata por ID", () => {
+  const cards = montarCards([pbi12({ id: 30, dataAberturaProduto: null, criadoEm: null }), pbi12({ id: 20, dataAberturaProduto: null, criadoEm: null }), pbi12({ id: 10, dataAberturaProduto: "2026-11-01T13:00:00Z" })]);
+  assert.deepEqual(cards.map((c) => c.pbi.id), [10, 20, 30]);
 });

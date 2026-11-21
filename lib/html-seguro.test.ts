@@ -87,3 +87,9 @@ test("ataques clássicos de XSS não geram tag executável nem atributo de event
     assert.doesNotMatch(out, /<script|<svg|<iframe|\son\w+=|javascript:/i, `${a} → ${out}`);
   }
 });
+
+test("bordas: colspan/rowspan inválidos somem, link sem href vira texto e href sem aspas é aceito", () => {
+  assert.equal(h('<table><tr><td colspan="abc" rowspan="0">x</td><td colspan="3">y</td></tr></table>'), '<table><tr><td>x</td><td colspan="3">y</td></tr></table>');
+  assert.equal(h("<a>sem link</a>"), "<span>sem link</span>");
+  assert.equal(h("<a href=https://x.com/a>l</a>"), '<a href="https://x.com/a" target="_blank" rel="noopener noreferrer">l</a>');
+});

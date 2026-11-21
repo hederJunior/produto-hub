@@ -114,3 +114,17 @@ test("montarHistorico e montarAnexos usam o horário em que a revisão foi feita
   assert.deepEqual(h.map((e) => e.quando), ["2026-11-20T18:00:00Z", "2026-10-02T20:21:10Z"]);
   assert.equal(montarAnexos([{ rel: "AttachedFile", url: "https://x/_apis/wit/attachments/abc", attributes: { name: "a.pdf" } }], ups)[0].quando, "2026-10-02T20:21:10Z");
 });
+
+test("bordas do histórico e dos anexos: valor sem displayName, anexo sem nome, revisão sem número nem autor", () => {
+  const h = montarHistorico([
+    { fields: { "System.AssignedTo": { oldValue: {}, newValue: { displayName: "Ana" } } } },
+    { rev: 3, revisedBy: { displayName: "B" }, relations: { removed: [{ rel: "AttachedFile" }] } },
+  ]);
+  assert.deepEqual(h.map((e) => e.rev), [3, 0]);
+  assert.deepEqual(h[0].mudancas, [{ campo: "Anexo", de: "(sem nome)", para: null }]);
+  assert.deepEqual(h[1].mudancas, [{ campo: "Responsável", de: null, para: "Ana" }]);
+  assert.equal(h[1].usuario, "(desconhecido)");
+  const a = montarAnexos([{ rel: "AttachedFile", url: "https://x/_apis/wit/attachments/zzz" }]);
+  assert.equal(a[0].nome, "(sem nome)");
+  assert.equal(a[0].quando, null);
+});

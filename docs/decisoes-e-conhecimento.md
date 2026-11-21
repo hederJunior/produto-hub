@@ -2548,3 +2548,28 @@ navegador leria como hora LOCAL e erraria o horário. `instanteUtc` acrescenta o
 movimentos for exibido (T17): normalizar antes de mostrar.
 **Conferido no banco real (PBI de teste 46766, linhas apagadas ao final):** 18 verificações — 403 para CS, 422 para item inexistente/etapa 3.1/valor não booleano/ID inválido/Assesment,
 404 para PBI inexistente, nada gravado nas recusas, marcar com nome e com e-mail, leitura, remarcar sem duplicar, desmarcar limpando, corrida de duas marcações. `npm run test:fluxo-po`: 78 testes.
+
+## 2026-11-20 — Fluxo do PO · T16: detalhe do card (abas por etapa, faixa de prontidão e informações editáveis)
+
+**Tela:** `/fluxo-po/<id>` (`components/FluxoPoDetalhe.tsx`), aberta pelo botão **"Detalhes"** que agora existe em todos os cards do quadro (inclusive 3.1, 3.2 e 4.1, só leitura).
+Cabeçalho (número com link para o Azure, título, etapa atual, prioridade, cliente, esteira, aging vermelho acima de 30 dias, Data Comitê com "atrasada"), **uma aba por etapa**
+(1.1 Classificação, 1.2 Priorizar e propor solução, 2.1 Comitê / Proposta de solução; a aba aberta é a da etapa atual; concluídas com ✓, atual marcada), **faixa de prontidão** da etapa atual
+("Pronto para mover", "Falta: …", "Inconsistente: …" ou "somente exibição", com o botão "Mover card…" que reabre a confirmação da T15) e o quadro **"Informações da etapa"**.
+**Campos por aba (doc §6):** 1.1 = Cliente, Classificação, Area Path (esteira), Data Abertura Produto · 1.2 e 2.1 = Cliente, Classificação, Data Comitê. O rascunho é um só para as três abas
+(trocar de aba não perde o que foi digitado); "Salvar informações" grava só os campos alterados, "Descartar alterações" volta ao PBI.
+**Listas do Azure (`lib/fluxo-po-listas-servidor.ts`, cache de 5 min, só quando completas):** Classificação (12) e **Cliente (273, com busca)** são listas fechadas lidas do Azure; Area Path = esteiras
+(áreas filhas do KMM5) + "KMM5 (sem esteira)"; datas por seletor de data. Valor atual fora da lista (legado) continua selecionável. Falha ao ler uma lista não derruba a tela (aviso).
+**Gravação (`PATCH /api/fluxo-po/pbi/<id>/informacoes`, `editarInformacoesPbi`):** permissão no servidor (403) → só campos conhecidos como texto (422) → lê o PBI agora → `avaliarEdicao`
+(422 com as faltas: Area Path vazio/fora do KMM5, data inexistente; valor fora da lista é recusado pelo Azure e a mensagem dele volta limpa) → PATCH `test /rev` → relê → se a **Data Comitê ganhou valor**,
+copia para **todos os Assesments filhos** (falha não reverte; limpar a data NÃO limpa os Assesments e avisa). Texto vazio limpa o campo (exceto Area Path). O PBI precisa estar em alguma etapa do
+quadro (fora disso, 422). Mudar o Area Path pode trocar o card entre 1.1 e 1.2 — a tela e o servidor avisam ("passa a aparecer em 1.1/1.2"). Sem comentário no PBI (só troca de etapa comenta).
+`GET` no mesmo endereço devolve PBI, card, listas, permissão e quem está vendo (qualquer usuário logado).
+**Auditoria das edições:** no histórico do Azure toda edição aparece como feita pelo **dono do PAT**, não pelo usuário. Por isso cada tentativa de edição entra no log `FluxoPoMovimento` com
+`direcao = "edicao"` (origem/destino = etapa antes/depois, `alteracoes` com de/para, quem e o resultado; recusas também). "Sem mudanças" não gera linha. (Decisão minha, sem mudança de schema: a
+coluna é texto; vale confirmar com o Heder.)
+**Somente visualização:** quem não pode movimentar vê os mesmos valores sem controles, com o selo e o motivo ("Seu papel no cadastro de acesso é …"); o servidor recusa PATCH/PUT por HTTP (conferido: 403).
+**Conferido (servidor local, dados reais; gravações só no PBI de teste 46766 e no Assesment 46767, restaurados):** `scripts/azure-testar-editar.mjs` — 25 verificações (403, 422 por campo/vazio/fora do KMM5/data
+inexistente, valor fora da lista do Azure, "sem mudanças", editar Classificação e Cliente, Area Path para a raiz → card na 1.1 e de volta à 1.2, Data Comitê copiada ao Assesment, limpar, falha de Assesment
+sem reverter, log com todas as tentativas, estado final igual ao inicial). No navegador: cabeçalho, 3 abas, faixa ("Falta: Data Comitê" → "Pronto para mover" após salvar a data), edição da Classificação e da
+Data Comitê pela tela, botão Mover da faixa, modo CS sem controles, "Detalhes" nos 172 cards. Login e usuário simulados só no servidor de teste (revertido); sessão real do Supabase segue sem teste ponta a ponta.
+`npm run test:fluxo-po`: 84 testes. **Para a T17:** checklist (API pronta, T10), descrição, comentários, anexos, histórico (leitura pronta, T08), "Quando avança" e "Ao avançar, grava no PBI".

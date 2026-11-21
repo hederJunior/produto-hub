@@ -11,7 +11,8 @@ export type LinhaLogMovimento = {
   workItemId: number;
   origem: EtapaFluxo | null;
   destino: string;
-  direcao: "avanco" | "volta" | null;
+  /** "edicao" = edição das informações do PBI na tela de detalhe (T16), não troca de etapa. */
+  direcao: "avanco" | "volta" | "edicao" | null;
   proposta: boolean;
   usuario: string;
   usuarioNome: string | null;
@@ -32,7 +33,7 @@ export type ContextoLog = {
   workItemId: number | null;
   origem: EtapaFluxo | null;
   destino: string;
-  direcao: "avanco" | "volta" | null;
+  direcao: "avanco" | "volta" | "edicao" | null;
   proposta: boolean;
   usuario: string;
   usuarioNome: string | null;
@@ -96,5 +97,24 @@ export function linhaDeFalha(
     comentarioId: null,
     comentarioErro: null,
     assesments: null,
+  };
+}
+
+/** Edição das informações do PBI concluída (T16). Não há comentário no PBI; "parcial" só se algum Assesment falhou. */
+export function linhaDeEdicao(
+  ctx: ContextoLog & { workItemId: number },
+  r: { alteracoes: Alteracao[]; avisos: string[]; assesments: ResultadoReplicacao | null; etapaDepois: EtapaFluxo | null },
+): LinhaLogMovimento {
+  const assesmentFalhou = (r.assesments?.falhas.length ?? 0) > 0;
+  return {
+    ...baseDaLinha({ ...ctx, direcao: "edicao", destino: r.etapaDepois ?? ctx.destino }),
+    resultado: assesmentFalhou ? "parcial" : "sucesso",
+    motivo: null,
+    alteracoes: r.alteracoes,
+    avisos: r.avisos.length ? r.avisos : null,
+    comentarioPublicado: null,
+    comentarioId: null,
+    comentarioErro: null,
+    assesments: r.assesments,
   };
 }

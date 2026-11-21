@@ -1,7 +1,7 @@
 // Testes da montagem do log de movimentos e das definições de checklist. Rodar: npm run test:fluxo-po
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { linhaDeFalha, linhaDeSucesso, resultadoDoErro, type ContextoLog } from "./fluxo-po-log";
+import { linhaDeEdicao, linhaDeFalha, linhaDeSucesso, resultadoDoErro, type ContextoLog } from "./fluxo-po-log";
 import { CHECKLIST_POR_ETAPA, ETAPAS_FLUXO, itemDeChecklistValido } from "./fluxo-po";
 
 const ctx: ContextoLog & { workItemId: number } = {
@@ -96,4 +96,20 @@ test("checklist: itens das 3 etapas com movimento, ids únicos e válidos", () =
   assert.equal(itemDeChecklistValido("2.1", "estimativa-qa"), true);
   assert.equal(itemDeChecklistValido("1.1", "estimativa-qa"), false);
   assert.equal(itemDeChecklistValido("3.1", "qualquer"), false);
+});
+
+test("linhaDeEdicao: direção 'edicao', destino = etapa depois da edição, sem comentário; parcial só se um Assesment falhou", () => {
+  const ctxEdicao = { ...ctx, direcao: "edicao" as const, destino: "1.2" };
+  const ok = linhaDeEdicao(ctxEdicao, { alteracoes, avisos: [], assesments: null, etapaDepois: "1.1" });
+  assert.equal(ok.direcao, "edicao");
+  assert.equal(ok.resultado, "sucesso");
+  assert.equal(ok.destino, "1.1");
+  assert.equal(ok.origem, "1.2");
+  assert.equal(ok.comentarioPublicado, null);
+  assert.equal(ok.avisos, null);
+  const semEtapa = linhaDeEdicao(ctxEdicao, { alteracoes, avisos: ["x"], assesments: null, etapaDepois: null });
+  assert.equal(semEtapa.destino, "1.2");
+  assert.deepEqual(semEtapa.avisos, ["x"]);
+  const parcial = linhaDeEdicao(ctxEdicao, { alteracoes, avisos: [], assesments: { total: 1, atualizados: [], jaIguais: [], falhas: [{ id: 5, erro: "fechado" }] }, etapaDepois: "1.2" });
+  assert.equal(parcial.resultado, "parcial");
 });

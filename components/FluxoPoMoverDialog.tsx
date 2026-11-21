@@ -3,14 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowRight, CheckCircle2, ExternalLink, Loader2, X } from "lucide-react";
 import { C, PASTEL } from "@/lib/kmm-theme";
-import { formatarChaveDia } from "@/lib/datas";
-import { CAMPOS_PBI, urlPbiAzure } from "@/lib/fluxo-po-campos";
+import { urlPbiAzure } from "@/lib/fluxo-po-campos";
 import {
   avaliarMovimento,
-  chaveDia,
   destinosPossiveis,
   resumirFalta,
   rotuloDaEtapa,
+  valorLegivelDaAlteracao,
   type Alteracao,
   type CardFluxo,
   type EtapaFluxo,
@@ -31,17 +30,6 @@ export type RespostaMover = {
 };
 
 type ErroMover = { mensagem: string; faltas: string[]; conflito: boolean };
-
-const CAMPOS_DE_DATA: string[] = [CAMPOS_PBI.dataComite, CAMPOS_PBI.dataAberturaProduto];
-
-function valorLegivel(campo: string, valor: string | null): string {
-  if (valor === null || valor === "") return "vazio";
-  if (CAMPOS_DE_DATA.includes(campo)) {
-    const dia = chaveDia(valor);
-    return dia ? formatarChaveDia(dia) : valor;
-  }
-  return valor;
-}
 
 /**
  * Confirmação do movimento de um card. Mostra o destino (com a escolha 3.1 ou 3.2 quando vem da 2.1, e a volta), o que
@@ -162,9 +150,9 @@ export default function FluxoPoMoverDialog({
               {av.alteracoes.map((a, i) => (
                 <div key={a.campo} style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, padding: "8px 12px", fontSize: 13, borderTop: i ? `1px solid ${C.soft}` : "none" }}>
                   <span style={{ minWidth: 118, fontWeight: 600, color: C.text }}>{a.rotulo}</span>
-                  <span style={{ color: C.muted }}>{valorLegivel(a.campo, a.de)}</span>
+                  <span style={{ color: C.muted }}>{valorLegivelDaAlteracao(a.campo, a.de)}</span>
                   <ArrowRight size={13} color={C.faint} />
-                  <span style={{ color: C.text, fontWeight: 600 }}>{valorLegivel(a.campo, a.para)}</span>
+                  <span style={{ color: C.text, fontWeight: 600 }}>{valorLegivelDaAlteracao(a.campo, a.para)}</span>
                 </div>
               ))}
               {av.alteracoes.length === 0 && <div style={{ padding: "8px 12px", fontSize: 13, color: C.muted }}>Nenhum campo do PBI muda neste movimento.</div>}

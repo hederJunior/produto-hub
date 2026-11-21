@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, AlertTriangle, Building2, CalendarDays, CheckCircle2, Clock, Eye, GitBranch, MoveRight, X } from "lucide-react";
+import Link from "next/link";
+import { AlertCircle, AlertTriangle, Building2, CalendarDays, CheckCircle2, Clock, Eye, FileText, GitBranch, MoveRight, X } from "lucide-react";
 import { useProduto } from "@/components/ProdutoContext";
 import FluxoPoMoverDialog, { type RespostaMover } from "@/components/FluxoPoMoverDialog";
 import { C, PASTEL, infoPrioridade } from "@/lib/kmm-theme";
@@ -20,6 +21,7 @@ import {
   estaNaAreaRaiz,
   montarCards,
   resumirFalta,
+  rotuloDaArea,
   rotuloDaEtapa,
   type CardFluxo,
   type EtapaFluxo,
@@ -47,12 +49,6 @@ const ESTILO_LOCAL = `
 .fp-scroll::-webkit-scrollbar{ width:6px; height:8px; }
 .fp-scroll::-webkit-scrollbar-thumb{ background:#DAD5CD; border-radius:6px; }
 `;
-
-/** "KMM5\TMS - Dedicada Maroni" → "TMS - Dedicada Maroni"; a raiz KMM5 (sem esteira definida) vira um texto claro. */
-function rotuloDaArea(areaPath: string): string {
-  if (estaNaAreaRaiz(areaPath)) return "KMM5 (sem esteira)";
-  return areaPath.replace(/^KMM5\\/i, "");
-}
 
 /** Os 6 quadros do Upstream. Sem Triagem (feita pelo Atendimento em outra ferramenta). */
 export default function FluxoPoUpstream() {
@@ -494,8 +490,18 @@ function CardEsteira({
           )}
         </div>
       )}
-      {movel && (
-        <div style={{ marginTop: 10, position: "relative" }}>
+      <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8, position: "relative" }}>
+        <Link
+          href={`/fluxo-po/${pbi.id}`}
+          draggable={false}
+          className="kmm-btn"
+          title="Abrir o detalhe do card (informações, etapas e prontidão)"
+          style={{ fontSize: 12, padding: "4px 10px", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6, color: C.text }}
+        >
+          <FileText size={13} />
+          Detalhes
+        </Link>
+        {movel && (
           <button
             type="button"
             className="kmm-btn"
@@ -507,7 +513,8 @@ function CardEsteira({
             <MoveRight size={13} />
             Mover
           </button>
-          {menuAberto && (
+        )}
+        {movel && menuAberto && (
             <div role="menu" style={{ position: "absolute", left: 0, top: "100%", marginTop: 4, zIndex: 5, minWidth: 240, background: "#fff", border: `1px solid ${C.border}`, borderRadius: 10, boxShadow: "0 8px 24px rgba(30,27,24,.14)", padding: 4 }}>
               {destinosPossiveis(etapa).map((d) => (
                 <button
@@ -526,8 +533,7 @@ function CardEsteira({
               ))}
             </div>
           )}
-        </div>
-      )}
+      </div>
     </article>
   );
 }

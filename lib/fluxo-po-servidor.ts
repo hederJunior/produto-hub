@@ -6,12 +6,15 @@
 import { API_VERSION, authHeader, buscarLoteCampos, getConfig, pbiFluxoDeWorkItem } from "./devops-client";
 import { randomUUID } from "node:crypto";
 import { getServiceClient } from "./supabase";
-import { linhaDeFalha, linhaDeSucesso, type ContextoLog, type LinhaLogMovimento } from "./fluxo-po-log";
+import { linhaDeEdicao, linhaDeFalha, linhaDeSucesso, type ContextoLog, type LinhaLogMovimento } from "./fluxo-po-log";
+import { lerListasDeValores, type ListasFluxoPo } from "./fluxo-po-listas-servidor";
 import {
   ETAPAS_FLUXO,
+  avaliarEdicao,
   avaliarMovimento,
   avisosDaReplicacao,
   comentarioDeTransicao,
+  derivarEtapa,
   idsFilhosDeRelacoes,
   lerEntradaMovimento,
   montarCards,
@@ -338,4 +341,120 @@ async function executarMovimento(params: ParamsMover, ctx: ContextoLog): Promise
     comentario,
     avisos,
   };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Tela de detalhe (T16): ler as informações do PBI e editá-las
+// ---------------------------------------------------------------------------------------------------------------
+
+export type InformacoesPbi = {
+  pbi: PbiFluxo;
+  /** Card do PBI no quadro (etapa derivada, prontidão, inconsistência); null quando o PBI não faz parte do fluxo. */
+  card: CardFluxo | null;
+  listas: ListasFluxoPo;
+};
+
+/** PBI + card + listas de valores do Azure para o detalhe. Qualquer usuário logado lê. */
+export async function lerInformacoesPbi(idBruto: unknown): Promise<InformacoesPbi> {
+  const id = Number(idBruto);
+  if (!Number.isInteger(id) || id <= 0) throw new ErroFluxoPo(422, "entrada_invalida", "ID do PBI inválido.");
+  const [pbi, listas] = await Promise.all([lerPbiFluxoPoAtual(id), lerListasDeValores()]);
+  return { pbi, card: montarCards([pbi])[0] ?? null, listas };
+}
+
+export type ResultadoEdicaoPbi = {
+  /** Nada mudou em relação ao que já está no PBI: nada foi gravado. */
+  semMudancas: boolean;
+  alteracoes: Alteracao[];
+  pbi: PbiFluxo;
+  card: CardFluxo | null;
+  assesments: ResultadoReplicacao | null;
+  avisos: string[];
+};
+
+type ParamsEdicao = {
+  id: unknown;
+  entrada: unknown;
+  usuario: UsuarioFluxoPo;
+  /** Só para testes. */
+  gravadorAssesment?: (id: number, dataComite: string) => Promise<void>;
+  registradorLog?: (linha: LinhaLogMovimento) => Promise<boolean>;
+};
+
+/**
+ * Edita as informações do PBI (Cliente, Classificação, Area Path, Data Abertura Produto, Data Comitê). Mesma disciplina do
+ * movimento: permissão no servidor → entrada válida → lê o PBI agora → `avaliarEdicao` (422 com as faltas) → PATCH com
+ * `test /rev` → relê → se a Data Comitê ganhou valor, copia para os Assesments filhos (falha não reverte). Sem comentário no PBI
+ * (só troca de etapa comenta). TODA tentativa vai para o log (direção "edicao"), porque no histórico do Azure a edição aparece
+ * como feita pelo dono do PAT, não pelo usuário.
+ */
+export async function editarInformacoesPbi(params: ParamsEdicao): Promise<ResultadoEdicaoPbi> {
+  const idNumerico = Number(params.id);
+  const ctx: ContextoLog = {
+    workItemId: Number.isInteger(idNumerico) && idNumerico > 0 ? idNumerico : null,
+    origem: null,
+    destino: "-",
+    direcao: "edicao",
+    proposta: false,
+    usuario: params.usuario.email,
+    usuarioNome: params.usuario.nome?.trim() || null,
+    revisaoAntes: null,
+    alteracoes: null,
+  };
+  const registrar = params.registradorLog ?? registrarMovimentoNoLog;
+  try {
+    const resultado = await executarEdicao(params, ctx);
+    if (!resultado.semMudancas && ctx.workItemId !== null) {
+      const ok = await registrar(linhaDeEdicao({ ...ctx, workItemId: ctx.workItemId }, { ...resultado, etapaDepois: resultado.card?.etapa ?? null }));
+      if (!ok) resultado.avisos.push("A edição foi feita, mas não foi possível registrá-la no log da plataforma.");
+    }
+    return resultado;
+  } catch (e) {
+    if (ctx.workItemId !== null) {
+      const erro =
+        e instanceof ErroFluxoPo
+          ? { codigo: e.codigo, mensagem: e.message, faltas: e.faltas }
+          : { codigo: "erro", mensagem: e instanceof Error ? e.message : "Erro inesperado." };
+      await registrar(linhaDeFalha({ ...ctx, workItemId: ctx.workItemId }, erro));
+    }
+    throw e;
+  }
+}
+
+async function executarEdicao(params: ParamsEdicao, ctx: ContextoLog): Promise<ResultadoEdicaoPbi> {
+  exigirPermissaoMovimento(params.usuario);
+  const id = Number(params.id);
+  if (!Number.isInteger(id) || id <= 0) throw new ErroFluxoPo(422, "entrada_invalida", "ID do PBI inválido.");
+  const lida = lerEntradaMovimento(params.entrada);
+  if (lida.erro) throw new ErroFluxoPo(422, "entrada_invalida", lida.erro);
+  if (!Object.keys(lida.entrada).length) throw new ErroFluxoPo(422, "entrada_invalida", "Nenhum campo foi informado.");
+
+  const pbi = await lerPbiFluxoPoAtual(id);
+  if (pbi.rev === undefined) throw new ErroFluxoPo(502, "sem_revisao", "O Azure DevOps não informou a revisão do PBI; nada foi gravado.");
+  ctx.revisaoAntes = pbi.rev;
+  ctx.origem = derivarEtapa(pbi).etapa;
+  ctx.destino = ctx.origem ?? "-";
+  if (!ctx.origem) throw new ErroFluxoPo(422, "fora_do_escopo", "Este PBI não está em nenhuma etapa do Fluxo do PO; as informações dele não são editadas por aqui.");
+
+  const av = avaliarEdicao(pbi, lida.entrada);
+  if (!av.permitido) throw new ErroFluxoPo(422, "regra", "Há valores inválidos; nada foi gravado.", av.faltas);
+  if (!av.alteracoes.length) return { semMudancas: true, alteracoes: [], pbi, card: montarCards([pbi])[0] ?? null, assesments: null, avisos: ["Nada mudou: os valores informados já são os do PBI."] };
+
+  await aplicarPatchPbi(id, paraJsonPatch(av.alteracoes, pbi.rev));
+  const atualizado = await lerPbiFluxoPoAtual(id);
+  const avisos = [...av.avisos];
+
+  // Data Comitê ganhou valor: copia para os Assesments filhos (o PBI já foi gravado — falha não reverte, só avisa).
+  let assesments: ResultadoReplicacao | null = null;
+  if (av.replicarDataComiteAssesments && atualizado.dataComite) {
+    try {
+      assesments = await replicarDataComiteNosAssesments(id, atualizado.dataComite, params.gravadorAssesment);
+      avisos.push(...avisosDaReplicacao(assesments));
+      if (assesments.falhas.length) console.error(`[fluxo-po] PBI ${id}: Data Comitê não replicada em`, assesments.falhas);
+    } catch (e) {
+      avisos.push(`As informações foram gravadas, mas não foi possível replicar a Data Comitê nos Assesments (${e instanceof Error ? e.message : String(e)}).`);
+      console.error(`[fluxo-po] PBI ${id}: falha ao replicar a Data Comitê:`, e);
+    }
+  }
+  return { semMudancas: false, alteracoes: av.alteracoes, pbi: atualizado, card: montarCards([atualizado])[0] ?? null, assesments, avisos };
 }

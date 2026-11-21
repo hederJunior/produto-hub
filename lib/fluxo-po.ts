@@ -129,6 +129,26 @@ export function ehMeuItem(
   return nomesCompativeis(eu.nome, pbi.po) || nomesCompativeis(eu.nome, pbi.responsavel);
 }
 
+/**
+ * Valor de uma alteração para mostrar ao usuário: datas como dd/mm/aaaa (dia de Brasília), vazio como "vazio", Area Path
+ * sem o prefixo KMM5. Os valores que vão ao Azure continuam como estão em `Alteracao` (esta função é só de exibição).
+ */
+export function valorLegivelDaAlteracao(campo: string, valor: string | null): string {
+  if (valor === null || valor === "") return "vazio";
+  if (campo === CAMPOS_PBI.dataComite || campo === CAMPOS_PBI.dataAberturaProduto) {
+    const dia = chaveDia(valor);
+    return dia ? `${dia.slice(8, 10)}/${dia.slice(5, 7)}/${dia.slice(0, 4)}` : valor;
+  }
+  if (campo === CAMPOS_PBI.areaPath) return rotuloDaArea(valor);
+  return valor;
+}
+
+/** "KMM5\\TMS - Dedicada Maroni" → "TMS - Dedicada Maroni"; a raiz KMM5 (sem esteira definida) vira um texto claro. */
+export function rotuloDaArea(areaPath: string): string {
+  if (estaNaAreaRaiz(areaPath)) return "KMM5 (sem esteira)";
+  return String(areaPath ?? "").replace(/^KMM5\\/i, "");
+}
+
 /** O Area Path é exatamente a raiz do KMM5 (esteira ainda não definida)? */
 export function estaNaAreaRaiz(areaPath: string | null | undefined): boolean {
   return norm(areaPath) === norm(AREA_RAIZ_KMM5);
@@ -415,6 +435,67 @@ export function avaliarMovimento(pbi: PbiFluxo, destino: EtapaFluxo, entrada: En
   return { ...base, permitido: true, alteracoes, replicarDataComiteAssesments: replicar };
 }
 
+export type ResultadoEdicao = {
+  /** false = algum valor é inválido (nada é gravado). */
+  permitido: boolean;
+  faltas: string[];
+  avisos: string[];
+  /** O que será gravado (só os campos que mudam). */
+  alteracoes: Alteracao[];
+  /** A Data Comitê mudou para um valor: copiar para todos os Assesments filhos (T07). */
+  replicarDataComiteAssesments: boolean;
+};
+
+/**
+ * Edição das informações do PBI na tela de detalhe (T16): Cliente, Classificação, Area Path, Data Abertura Produto e Data
+ * Comitê. Só entram os campos informados em `entrada`; texto vazio LIMPA o campo (exceto o Area Path, que não pode ficar
+ * vazio). Valida o que dá para validar aqui; as listas de valores (Cliente, Classificação) quem confere é o Azure, que recusa
+ * valor fora da lista com mensagem. Não grava nada: devolve as alterações.
+ */
+export function avaliarEdicao(pbi: PbiFluxo, entrada: EntradaMovimento): ResultadoEdicao {
+  const faltas: string[] = [];
+  const avisos: string[] = [];
+  const alteracoes: Alteracao[] = [];
+  let replicar = false;
+  const informado = (k: keyof EntradaMovimento) => entrada[k] !== undefined;
+
+  if (informado("areaPath")) {
+    const area = String(entrada.areaPath ?? "").trim();
+    if (!area) faltas.push("O Area Path não pode ficar vazio.");
+    else if (!areaDoKmm5(area)) faltas.push("O Area Path precisa ser a raiz KMM5 ou uma esteira do KMM5.");
+    else alteracoes.push(...diferenca(CAMPOS_PBI.areaPath, "Area Path", pbi.areaPath, area));
+  }
+  if (informado("classificacao")) alteracoes.push(...diferenca(CAMPOS_PBI.classificacao, "Classificação", pbi.classificacao, String(entrada.classificacao ?? "")));
+  if (informado("cliente")) alteracoes.push(...diferenca(CAMPOS_PBI.cliente, "Cliente", pbi.cliente, String(entrada.cliente ?? "")));
+  if (informado("dataAberturaProduto")) {
+    const v = String(entrada.dataAberturaProduto ?? "").trim();
+    if (v && !dataValida(v)) faltas.push("Data Abertura Produto inválida.");
+    else alteracoes.push(...diferencaData(CAMPOS_PBI.dataAberturaProduto, "Data Abertura Produto", pbi.dataAberturaProduto, v || null));
+  }
+  if (informado("dataComite")) {
+    const v = String(entrada.dataComite ?? "").trim();
+    if (v && !dataValida(v)) faltas.push("Data Comitê inválida.");
+    else {
+      const mudou = diferencaData(CAMPOS_PBI.dataComite, "Data Comitê", pbi.dataComite, v || null);
+      alteracoes.push(...mudou);
+      if (mudou.length && v) replicar = true;
+      if (mudou.length && !v) {
+        avisos.push("Os Assesments filhos mantêm a Data Comitê anterior (o sistema só copia datas preenchidas).");
+        if (derivarEtapa(pbi).etapa === "2.1") avisos.push("O PBI está na Etapa Comitê: sem Data Comitê o card fica inconsistente.");
+      }
+    }
+  }
+
+  // Efeito colateral visível: o Area Path decide entre 1.1 e 1.2 (Backlog/Backlog) — avisar quando o card vai trocar de coluna.
+  const mudouArea = alteracoes.find((a) => a.campo === CAMPOS_PBI.areaPath);
+  if (mudouArea && norm(pbi.status) === norm(STATUS.backlog) && norm(pbi.etapa) === norm(ETAPA.backlog)) {
+    const iraPara = estaNaAreaRaiz(mudouArea.para) ? "1.1" : "1.2";
+    if (iraPara !== derivarEtapa(pbi).etapa) avisos.push(`Com este Area Path o card passa a aparecer em ${rotuloDaEtapa(iraPara)}.`);
+  }
+
+  return { permitido: faltas.length === 0, faltas, avisos, alteracoes: faltas.length ? [] : alteracoes, replicarDataComiteAssesments: !faltas.length && replicar };
+}
+
 /**
  * Prontidão do card no quadro: "Pronto para mover" ou a lista do que falta para avançar, usando só os campos do PBI
  * (sem entrada do usuário). null para etapas sem movimento na Fase 1 (3.1, 3.2, 4.1) e para cards fora do quadro.
@@ -684,7 +765,7 @@ export function avisosDaReplicacao(r: ResultadoReplicacao): string[] {
   if (r.total === 0) return ["PBI sem Assesment filho: a Data Comitê não foi replicada."];
   if (!r.falhas.length) return [];
   const lista = r.falhas.map((f) => `#${f.id} (${f.erro})`).join(", ");
-  return [`A Data Comitê não foi replicada em ${r.falhas.length} de ${r.total} Assesment(s): ${lista}. O PBI já foi movido.`];
+  return [`A Data Comitê não foi replicada em ${r.falhas.length} de ${r.total} Assesment(s): ${lista}. O PBI já foi gravado.`];
 }
 
 const CHAVES_ENTRADA =["areaPath", "classificacao", "cliente", "dataAberturaProduto", "dataComite"] as const;
@@ -699,7 +780,7 @@ export function lerEntradaMovimento(bruto: unknown): { entrada: EntradaMovimento
   const entrada: EntradaMovimento = {};
   for (const [chave, valor] of Object.entries(bruto as Record<string, unknown>)) {
     if (valor === undefined) continue;
-    if (!(CHAVES_ENTRADA as readonly string[]).includes(chave)) return { entrada: {}, erro: `Campo "${chave}" não pode ser informado no movimento.` };
+    if (!(CHAVES_ENTRADA as readonly string[]).includes(chave)) return { entrada: {}, erro: `Campo "${chave}" não pode ser informado aqui.` };
     if (typeof valor !== "string") return { entrada: {}, erro: `O valor de "${chave}" precisa ser texto.` };
     entrada[chave as (typeof CHAVES_ENTRADA)[number]] = valor.trim();
   }

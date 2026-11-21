@@ -5,6 +5,7 @@ import {
   adicionarTag,
   agingEmAlerta,
   agingEmDias,
+  avaliarEdicao,
   avaliarMovimento,
   comentarioDeTransicao,
   comiteAtrasado,
@@ -29,6 +30,7 @@ import {
   replicarDataComite,
   resumirFalta,
   traduzirErroAzure,
+  valorLegivelDaAlteracao,
   type PbiFluxo,
 } from "./fluxo-po";
 
@@ -554,4 +556,65 @@ test("permissão: o resultado concorda com podeMovimentar em todos os casos", ()
   for (const papel of ["PM", "PO e CS", "Tech Lead", "", null, "product ops", "Compo"]) {
     for (const tipo of ["user", "adm", undefined]) assert.equal(permissaoDoFluxo(papel, tipo).pode, podeMovimentar(papel, tipo));
   }
+});
+
+// ---------------------------------------------------------------- edição das informações (T16)
+
+test("avaliarEdicao: grava só o que mudou; datas normalizadas; vazio limpa o campo", () => {
+  const base = pbi12({ cliente: "MARONI", classificacao: "EDI", dataAberturaProduto: "2026-11-01T13:00:00.000Z", dataComite: "2026-12-10T03:00:00Z" });
+  const r = avaliarEdicao(base, { cliente: "MARONI", classificacao: "Débito Técnico", dataAberturaProduto: "2026-11-01", dataComite: "2026-12-20" });
+  assert.equal(r.permitido, true);
+  assert.deepEqual(r.alteracoes.map((a) => [a.campo, a.de, a.para]), [
+    ["Custom.67a95862-58a3-47f7-8f7c-285ec4d13106", "EDI", "Débito Técnico"],
+    ["Custom.443622e0-6ab8-4ae5-9371-612b44a8fb1d", "2026-12-10T03:00:00Z", "2026-12-20T03:00:00Z"],
+  ]);
+  assert.equal(r.replicarDataComiteAssesments, true);
+  const limpa = avaliarEdicao(base, { classificacao: "", cliente: "" });
+  assert.deepEqual(limpa.alteracoes.map((a) => a.para), [null, null]);
+});
+
+test("avaliarEdicao: nada informado ou igual ao atual não gera alteração", () => {
+  assert.deepEqual(avaliarEdicao(pbi12(), {}).alteracoes, []);
+  const r = avaliarEdicao(pbi12(), { cliente: "MARONI", classificacao: "EDI", areaPath: "KMM5\\TMS - Dedicada Maroni" });
+  assert.equal(r.permitido, true);
+  assert.deepEqual(r.alteracoes, []);
+  assert.equal(r.replicarDataComiteAssesments, false);
+});
+
+test("avaliarEdicao: valores inválidos bloqueiam tudo (Area Path vazio/fora do KMM5, datas inexistentes)", () => {
+  for (const entrada of [{ areaPath: "" }, { areaPath: "KMM4\\TMS - Rangers" }, { dataComite: "2026-02-31" }, { dataAberturaProduto: "31/12/2026" }]) {
+    const r = avaliarEdicao(pbi12(), { cliente: "OUTRO", ...entrada });
+    assert.equal(r.permitido, false, JSON.stringify(entrada));
+    assert.ok(r.faltas.length > 0);
+    assert.deepEqual(r.alteracoes, [], "inválido não grava nem o que estava certo");
+    assert.equal(r.replicarDataComiteAssesments, false);
+  }
+});
+
+test("avaliarEdicao: Area Path que troca o card de coluna avisa; Data Comitê limpa avisa e não replica", () => {
+  const trocaEsteira = avaliarEdicao(pbi(), { areaPath: "KMM5\\TMS - Melhorias" });
+  assert.equal(trocaEsteira.permitido, true);
+  assert.match(trocaEsteira.avisos.join(" "), /passa a aparecer em 1\.2/);
+  const voltaRaiz = avaliarEdicao(pbi12(), { areaPath: "KMM5" });
+  assert.match(voltaRaiz.avisos.join(" "), /passa a aparecer em 1\.1/);
+  const mesmaColuna = avaliarEdicao(pbi12(), { areaPath: "KMM5\\TMS - Melhorias" });
+  assert.deepEqual(mesmaColuna.avisos, []);
+
+  const limpa = avaliarEdicao(pbi21(), { dataComite: "" });
+  assert.equal(limpa.replicarDataComiteAssesments, false);
+  assert.match(limpa.avisos.join(" "), /Assesments filhos mantêm/);
+  assert.match(limpa.avisos.join(" "), /inconsistente/);
+  assert.deepEqual(limpa.alteracoes.map((a) => a.para), [null]);
+});
+
+test("valorLegivelDaAlteracao: datas em dd/mm/aaaa (Brasília), vazio, Area Path sem prefixo e demais valores intactos", () => {
+  const dataComite = "Custom.443622e0-6ab8-4ae5-9371-612b44a8fb1d";
+  assert.equal(valorLegivelDaAlteracao(dataComite, "2031-12-31T03:00:00Z"), "31/12/2031");
+  assert.equal(valorLegivelDaAlteracao("Custom.DataAberturaProduto", "2026-10-02T20:21:07.053Z"), "02/10/2026");
+  assert.equal(valorLegivelDaAlteracao(dataComite, null), "vazio");
+  assert.equal(valorLegivelDaAlteracao("Custom.Cliente", ""), "vazio");
+  assert.equal(valorLegivelDaAlteracao("System.AreaPath", "KMM5\\TMS - Melhorias"), "TMS - Melhorias");
+  assert.equal(valorLegivelDaAlteracao("System.AreaPath", "KMM5"), "KMM5 (sem esteira)");
+  assert.equal(valorLegivelDaAlteracao("Custom.Etapa", "Comitê"), "Comitê");
+  assert.equal(valorLegivelDaAlteracao(dataComite, "lixo"), "lixo");
 });

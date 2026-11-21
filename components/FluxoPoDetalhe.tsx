@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertCircle, AlertTriangle, ArrowLeft, CalendarDays, CheckCircle2, Check, Clock, ExternalLink, Eye, Loader2, Lock, MoveRight, X } from "lucide-react";
+import { AlertCircle, AlertTriangle, ArrowLeft, CalendarDays, CheckCircle2, Check, Clock, ExternalLink, Eye, Loader2, Lock, MoveRight, RefreshCw, X } from "lucide-react";
 import FluxoPoDetalheBlocos from "@/components/FluxoPoDetalheBlocos";
 import FluxoPoMoverDialog from "@/components/FluxoPoMoverDialog";
 import MultiSelectFiltro from "@/components/MultiSelectFiltro";
@@ -100,6 +100,10 @@ export default function FluxoPoDetalhe({ id }: { id: string }) {
   const [aviso, setAviso] = useState<{ tipo: "ok" | "erro"; titulo: string; linhas: string[] } | null>(null);
   const [movendo, setMovendo] = useState(false);
   const [hoje] = useState(() => new Date());
+  // T19: revisão do PBI que esta tela mostra, o aviso de "mudou no Azure enquanto você editava" e o conflito de um salvar recusado.
+  const [revBase, setRevBase] = useState<number | undefined>(undefined);
+  const [mudouNoAzure, setMudouNoAzure] = useState<{ rev: number; por: string | null; em: string | null } | null>(null);
+  const [conflito, setConflito] = useState<{ mensagem: string; faltas: string[] } | null>(null);
 
   useEffect(() => {
     let cancelado = false;
@@ -115,6 +119,9 @@ export default function FluxoPoDetalhe({ id }: { id: string }) {
         }
         setInfo(j as Info);
         setRascunho(rascunhoDe((j as Info).pbi));
+        setRevBase((j as Info).pbi.rev);
+        setMudouNoAzure(null);
+        setConflito(null);
       })
       .catch(() => !cancelado && setErro("Não foi possível carregar o PBI."))
       .finally(() => !cancelado && setCarregando(false));
@@ -122,6 +129,49 @@ export default function FluxoPoDetalhe({ id }: { id: string }) {
       cancelado = true;
     };
   }, [id, recarga]);
+
+  // T19: enquanto a tela está aberta, confere de tempos em tempos (e ao voltar para a janela) se o PBI mudou no Azure DevOps.
+  const temInfo = !!info;
+  useEffect(() => {
+    if (!temInfo || revBase === undefined) return;
+    let ativo = true;
+    const checar = async () => {
+      if (document.visibilityState !== "visible") return;
+      try {
+        const res = await fetch(`/api/fluxo-po/pbi/${encodeURIComponent(id)}/revisao`, { cache: "no-store" });
+        if (!res.ok) return;
+        const j = await res.json();
+        if (ativo && typeof j.rev === "number" && j.rev !== revBase) setMudouNoAzure({ rev: j.rev, por: j.alteradoPor ?? null, em: j.alteradoEm ?? null });
+      } catch {
+        /* sem rede agora: tenta na próxima */
+      }
+    };
+    const timer = setInterval(checar, 45_000);
+    const aoVoltar = () => document.visibilityState === "visible" && void checar();
+    document.addEventListener("visibilitychange", aoVoltar);
+    window.addEventListener("focus", aoVoltar);
+    return () => {
+      ativo = false;
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", aoVoltar);
+      window.removeEventListener("focus", aoVoltar);
+    };
+  }, [id, temInfo, revBase]);
+
+  /** Ação NOSSA que também sobe a revisão no Azure (ex.: comentário publicado): reajusta a referência para não nos acusarmos. */
+  async function reajustarRevisao() {
+    try {
+      const res = await fetch(`/api/fluxo-po/pbi/${encodeURIComponent(id)}/revisao`, { cache: "no-store" });
+      if (!res.ok) return;
+      const j = await res.json();
+      if (typeof j.rev === "number") {
+        setRevBase(j.rev);
+        setMudouNoAzure(null);
+      }
+    } catch {
+      /* a próxima checagem corrige */
+    }
+  }
 
   const card = info?.card ?? null;
   const pbi = info?.pbi ?? null;
@@ -148,21 +198,30 @@ export default function FluxoPoDetalhe({ id }: { id: string }) {
     if (!alterado || !previa?.permitido) return;
     setSalvando(true);
     setErroSalvar(null);
+    setConflito(null);
     setAviso(null);
     try {
+      // `base` = o que a tela mostrava dos campos editados: se outra pessoa já mudou algum deles no Azure, o servidor recusa (409).
+      const baseDosCampos: EntradaMovimento = {};
+      (Object.keys(mudancas) as Campo[]).forEach((k) => {
+        baseDosCampos[k] = base?.[k] ?? "";
+      });
       const res = await fetch(`/api/fluxo-po/pbi/${encodeURIComponent(id)}/informacoes`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(mudancas),
+        body: JSON.stringify({ entrada: mudancas, base: baseDosCampos }),
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setErroSalvar({ mensagem: j.erro ?? "Não foi possível salvar.", faltas: j.faltas ?? [] });
-        if (res.status === 409) setRecarga((n) => n + 1);
+        // 409: o rascunho do usuário é mantido (ele escolhe entre atualizar e descartar ou continuar editando).
+        if (res.status === 409) setConflito({ mensagem: j.erro ?? "O PBI foi alterado por outra pessoa.", faltas: j.faltas ?? [] });
+        else setErroSalvar({ mensagem: j.erro ?? "Não foi possível salvar.", faltas: j.faltas ?? [] });
         return;
       }
       setInfo((atual) => (atual ? { ...atual, pbi: j.pbi, card: j.card } : atual));
       setRascunho(rascunhoDe(j.pbi));
+      setRevBase(j.pbi.rev);
+      setMudouNoAzure(null);
       const resumo: string[] = (j.alteracoes as Alteracao[]).map((a) => `${a.rotulo}: ${valorLegivelDaAlteracao(a.campo, a.de)} → ${valorLegivelDaAlteracao(a.campo, a.para)}`);
       const copiados = j.assesments ? j.assesments.atualizados.length + j.assesments.jaIguais.length : 0;
       if (copiados > 0) resumo.push(`Data Comitê copiada para ${copiados} Assesment(s) filho(s).`);
@@ -277,6 +336,46 @@ export default function FluxoPoDetalhe({ id }: { id: string }) {
       {/* Faixa de prontidão (da etapa atual do card) */}
       <FaixaDeProntidao card={card} etapaAtual={etapaAtual} pode={pode} aoMover={() => setMovendo(true)} temDestino={!!proximo || (etapaAtual ? destinosPossiveis(etapaAtual).length > 0 : false)} />
 
+      {/* T19: o PBI mudou no Azure DevOps enquanto a tela estava aberta */}
+      {mudouNoAzure && !conflito && (
+        <div role="alert" style={{ margin: "12px 0", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", background: PASTEL.amber.bg, border: "1px solid #F6DDB5", color: "#8a5a00", borderRadius: 12, padding: "11px 16px", fontSize: 13 }}>
+          <AlertTriangle size={16} style={{ flexShrink: 0 }} />
+          <div style={{ flex: 1, minWidth: 220 }}>
+            <strong>Este PBI foi alterado no Azure DevOps</strong>
+            {mudouNoAzure.por ? ` por ${mudouNoAzure.por}` : ""}
+            {mudouNoAzure.em ? ` às ${new Date(mudouNoAzure.em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}` : ""}, depois que você abriu a tela.
+            {alterado && " Você tem alterações não salvas: atualizar as descarta."}
+          </div>
+          <button type="button" className="kmm-btn" onClick={() => setRecarga((n) => n + 1)} style={{ display: "inline-flex", alignItems: "center", gap: 6, color: C.text }}>
+            <RefreshCw size={14} /> {alterado ? "Atualizar e descartar minhas alterações" : "Atualizar agora"}
+          </button>
+          <button type="button" className="kmm-btn" onClick={() => { setRevBase(mudouNoAzure.rev); setMudouNoAzure(null); }} style={{ color: C.text }}>
+            Ignorar
+          </button>
+        </div>
+      )}
+      {conflito && (
+        <div role="alert" style={{ margin: "12px 0", background: "#FDF1F0", border: "1px solid #F3C9C4", color: C.red, borderRadius: 12, padding: "12px 16px", fontSize: 13 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 600 }}>
+            <AlertTriangle size={16} /> Não salvei: o PBI mudou no Azure DevOps
+          </div>
+          <div style={{ marginTop: 4, color: C.text }}>{conflito.mensagem}</div>
+          <ul style={{ margin: "6px 0 0", paddingLeft: 18, color: C.text }}>
+            {conflito.faltas.map((f) => (
+              <li key={f}>{f}</li>
+            ))}
+          </ul>
+          <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+            <button type="button" className="kmm-btn" onClick={() => setRecarga((n) => n + 1)} style={{ display: "inline-flex", alignItems: "center", gap: 6, color: C.text }}>
+              <RefreshCw size={14} /> Atualizar e descartar minhas alterações
+            </button>
+            <button type="button" className="kmm-btn" onClick={() => setConflito(null)} style={{ color: C.text }}>
+              Continuar editando
+            </button>
+          </div>
+        </div>
+      )}
+
       {aviso && (
         <div role="status" className="kmm-card" style={{ margin: "12px 0", fontSize: 13, display: "flex", alignItems: "flex-start", gap: 10, background: aviso.tipo === "ok" ? PASTEL.green.bg : "#FDF1F0", borderColor: aviso.tipo === "ok" ? "#CFE9D8" : "#F3C9C4" }}>
           {aviso.tipo === "ok" ? <CheckCircle2 size={16} color={PASTEL.green.dot} style={{ flexShrink: 0, marginTop: 1 }} /> : <AlertTriangle size={16} color={C.red} style={{ flexShrink: 0, marginTop: 1 }} />}
@@ -364,7 +463,7 @@ export default function FluxoPoDetalhe({ id }: { id: string }) {
       </div>
 
       {/* Checklist, descrição, comentários, anexos, histórico e os quadros "Quando avança" / "Ao avançar" (T17) */}
-      <FluxoPoDetalheBlocos id={pbi.id} aba={abaAtiva} pode={pode} motivoSemPermissao={info.permissao.motivo} versao={pbi.rev} />
+      <FluxoPoDetalheBlocos id={pbi.id} aba={abaAtiva} pode={pode} motivoSemPermissao={info.permissao.motivo} versao={pbi.rev} aoPublicarComentario={reajustarRevisao} />
 
       {movendo && card && proximo && (
         <FluxoPoMoverDialog

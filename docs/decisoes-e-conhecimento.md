@@ -2602,3 +2602,21 @@ O botão **"Agente de Classificação"** aparece **só na aba 1.1**, no cabeçal
 "Em breve: o agente que ajuda a classificar a demanda chega em uma fase seguinte". **Não executa nenhuma ação** (Fase 2 do roadmap, `docs/fluxo-po-decisoes.md` §6 e §12): é um `<button type="button">` sem
 `onClick`, sem navegação e sem chamada ao servidor. Nas abas 1.2 e 2.1 ele não existe.
 **Conferido no navegador:** presente na 1.1 e ausente na 1.2 e na 2.1; ao clicar, não abre diálogo, a URL não muda e nenhuma requisição nova é feita; `type="button"` (não envia formulário).
+
+## 2026-11-20 — Fluxo do PO · T19: atualização do quadro e conflitos
+
+**Quadro (`components/FluxoPoUpstream.tsx`):** botão **"Atualizar"** no topo (gira e vira "Atualizando…" durante a busca) e texto "Atualizado às HH:MM". Atualizar **não esconde o quadro** (só a primeira
+carga mostra "Carregando…"). Se a atualização falhar e já havia cards, o quadro **não é esvaziado**: continua com os da última atualização e mostra o aviso. **Ao voltar para a tela** (aba do navegador visível de novo ou janela
+em foco) com dados de mais de 30 s, o quadro se atualiza sozinho — menos com a confirmação de movimento aberta ou um card sendo arrastado. Voltar antes de 30 s não busca de novo. (Chegar à tela vindo do detalhe já carrega do zero.)
+**Detalhe (`components/FluxoPoDetalhe.tsx`) — aviso de que o PBI mudou:** enquanto a tela está aberta, ela consulta a revisão do PBI (`GET /api/fluxo-po/pbi/<id>/revisao`, leitura leve: revisão, quando e por quem) a cada 45 s e ao voltar
+para a janela. Se a revisão for outra, mostra "**Este PBI foi alterado no Azure DevOps por <quem> às <hora>, depois que você abriu a tela**", com **Atualizar** (se houver alterações não salvas, o botão avisa que elas serão descartadas) ou **Ignorar**.
+Salvar ou mover reajustam a referência sozinhos.
+**Conflito por campo ao salvar (`detectarConflitoDeEdicao`):** o `PATCH .../informacoes` agora aceita `{ entrada, base }` — `base` são os valores que a tela mostrava dos campos editados. Se, no Azure de agora, algum desses campos já não tem o valor visto
+(outra pessoa o mudou), o servidor recusa com **409 e a lista** ("Classificação: agora está "Fast Track" (você viu "EDI")") e **nada é gravado**; a tela mantém o rascunho e oferece "Atualizar e descartar minhas alterações" ou "Continuar editando".
+Mudança em OUTRO campo do PBI não é conflito (o salvar passa e a tela já mostra o valor novo). Datas comparam pelo dia; o corpo antigo (só os campos) continua aceito, sem a checagem. A tentativa recusada entra no log como "conflito".
+Mover cards já era seguro (T15): o servidor reavalia com o PBI atual e usa a revisão lida na hora do PATCH.
+**Achados nos dados reais:** (1) **publicar um comentário ALTERA a revisão** do PBI no Azure (81 → 82), e **apagar um comentário também**: por isso, depois de um comentário publicado pela própria tela, ela reajusta a referência (senão se acusaria
+sozinha), e scripts de teste que restauram o PBI precisam ler a revisão DEPOIS de apagar comentários (um script de limpeza falhou por isso no teste e foi refeito). (2) Um comentário de outra pessoa no Azure também aparece como "PBI alterado" (é uma revisão nova).
+**Conferido (servidor local, dados reais, PBI de teste 46766, restaurado):** `scripts/azure-testar-editar.mjs` agora com 33 verificações (revisão leve, 409 com base desatualizada e lista, base inválida 422, base certa grava, base de campo não editado ignorada, comentário e a revisão).
+No navegador: Atualizar com quadro visível (172 cards durante a busca), falha de atualização mantendo os 172, foco/visibilidade antes de 30 s sem busca e depois de 30 s com 1 busca; no detalhe, rascunho + mudança de outro campo no Azure → aviso com "alterações não salvas" e salvar passa sem
+falso conflito; mudança do MESMO campo → 409 com a lista, rascunho mantido, Azure intocado, "Atualizar e descartar" traz o valor novo; comentário próprio não dispara o aviso. Login e usuário simulados só no servidor de teste (revertido). `npm run test:fluxo-po`: 93 testes.

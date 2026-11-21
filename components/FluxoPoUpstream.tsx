@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { AlertCircle, AlertTriangle, Building2, CalendarDays, CheckCircle2, Clock, Eye, FileText, GitBranch, MoveRight, X } from "lucide-react";
+import { AlertCircle, AlertTriangle, Building2, CalendarDays, CheckCircle2, Clock, Eye, FileText, GitBranch, MoveRight, RefreshCw, X } from "lucide-react";
 import { useProduto } from "@/components/ProdutoContext";
 import FluxoPoMoverDialog, { type RespostaMover } from "@/components/FluxoPoMoverDialog";
 import { C, PASTEL, infoPrioridade } from "@/lib/kmm-theme";
@@ -46,6 +46,7 @@ const ESTILO_LOCAL = `
 .fp-card{ transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease; }
 .fp-card:hover{ transform: translateY(-1px); box-shadow: 0 6px 18px rgba(30,27,24,.07); border-color:#DDD6CC; }
 .fp-id:hover{ color:#FC4C02 !important; }
+@keyframes fp-giro{ to{ transform:rotate(360deg); } }
 .fp-scroll::-webkit-scrollbar{ width:6px; height:8px; }
 .fp-scroll::-webkit-scrollbar-thumb{ background:#DAD5CD; border-radius:6px; }
 `;
@@ -61,6 +62,11 @@ export default function FluxoPoUpstream() {
   const [somenteBloqueados, setSomenteBloqueados] = useState(false);
   const [hoje] = useState(() => new Date());
   const [recarga, setRecarga] = useState(0);
+  // Atualização (T19): atualizar sem esconder o quadro, hora da última carga e controle do "voltar para a tela".
+  const [atualizando, setAtualizando] = useState(false);
+  const [atualizadoEm, setAtualizadoEm] = useState<Date | null>(null);
+  const temDados = useRef(false);
+  const ultimaCarga = useRef(0);
   // Mover cards (T15): card sendo arrastado, pedido aberto na confirmação e o aviso do último resultado.
   const [arrastando, setArrastando] = useState<CardFluxo | null>(null);
   const [pedido, setPedido] = useState<{ card: CardFluxo; destino: EtapaFluxo } | null>(null);
@@ -75,21 +81,57 @@ export default function FluxoPoUpstream() {
       return;
     }
     let cancelado = false;
-    setCarregando(true);
+    // Primeira carga mostra "Carregando…"; as seguintes (botão Atualizar, voltar para a tela) mantêm o quadro visível.
+    if (!temDados.current) setCarregando(true);
+    setAtualizando(true);
     setErro(null);
+    ultimaCarga.current = Date.now();
     fetch("/api/fluxo-po/upstream", { cache: "no-store" })
       .then((res) => res.json())
       .then((j: Resposta) => {
         if (cancelado) return;
-        if (j.erro) setErro(j.erro);
+        if (j.erro) {
+          // Falhou: se já havia dados, NÃO troca o quadro por um vazio — avisa e mantém os da última atualização.
+          if (temDados.current) {
+            setErro(`${j.erro} Os cards mostrados são os da última atualização.`);
+            return;
+          }
+          setErro(j.erro);
+        } else {
+          temDados.current = true;
+          setAtualizadoEm(new Date());
+        }
         setDados(j);
       })
-      .catch(() => !cancelado && setErro("Não foi possível carregar o quadro do Azure DevOps."))
-      .finally(() => !cancelado && setCarregando(false));
+      .catch(() => {
+        if (cancelado) return;
+        setErro(temDados.current ? "Não foi possível atualizar o quadro. Os cards mostrados são os da última atualização." : "Não foi possível carregar o quadro do Azure DevOps.");
+      })
+      .finally(() => {
+        if (cancelado) return;
+        setCarregando(false);
+        setAtualizando(false);
+      });
     return () => {
       cancelado = true;
     };
   }, [semFluxo, recarga]);
+
+  // Ao voltar para a tela (aba do navegador ou janela em foco) com dados de mais de 30 s, atualiza sozinho — menos no meio de um
+  // movimento (confirmação aberta ou card sendo arrastado), para não trocar o quadro debaixo do usuário.
+  useEffect(() => {
+    if (semFluxo) return;
+    const aoVoltar = () => {
+      if (document.visibilityState !== "visible" || pedido || arrastando) return;
+      if (Date.now() - ultimaCarga.current > 30_000) setRecarga((n) => n + 1);
+    };
+    document.addEventListener("visibilitychange", aoVoltar);
+    window.addEventListener("focus", aoVoltar);
+    return () => {
+      document.removeEventListener("visibilitychange", aoVoltar);
+      window.removeEventListener("focus", aoVoltar);
+    };
+  }, [semFluxo, pedido, arrastando]);
 
   const cards = dados?.cards ?? [];
   const podeMover = !!dados?.podeMovimentar;
@@ -214,11 +256,28 @@ export default function FluxoPoUpstream() {
         >
           Somente bloqueados{dados ? ` (${totalBloqueados})` : ""}
         </button>
+        <button
+          type="button"
+          className="kmm-btn"
+          onClick={() => setRecarga((n) => n + 1)}
+          disabled={atualizando}
+          title="Buscar agora os dados mais recentes do Azure DevOps"
+          aria-label="Atualizar o quadro"
+          style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+        >
+          <RefreshCw size={14} style={atualizando ? { animation: "fp-giro 1s linear infinite" } : undefined} />
+          {atualizando ? "Atualizando…" : "Atualizar"}
+        </button>
         {!carregando && !erro && (
           <span style={{ fontSize: 12, color: C.muted }}>
             {exibidos.length} {exibidos.length === 1 ? "demanda" : "demandas"}
             {esteiraSel ? ` em ${esteiras(dados, esteiraSel)} (mais os cards sem esteira)` : ""}
             {meusItens ? " suas" : ""}
+          </span>
+        )}
+        {atualizadoEm && (
+          <span title="O quadro também se atualiza sozinho ao voltar para esta tela" style={{ fontSize: 12, color: C.faint }}>
+            Atualizado às {atualizadoEm.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
           </span>
         )}
         {dados && !carregando && (

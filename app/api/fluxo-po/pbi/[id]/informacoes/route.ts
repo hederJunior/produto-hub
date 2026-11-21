@@ -28,21 +28,24 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 }
 
 /**
- * Edita as informações do PBI (corpo: só os campos que mudam — cliente, classificacao, areaPath, dataAberturaProduto,
- * dataComite; texto vazio limpa o campo). Só quem pode movimentar o fluxo; tudo é revalidado no servidor.
+ * Edita as informações do PBI. Corpo `{ entrada, base? }`: `entrada` = só os campos que mudam (cliente, classificacao, areaPath,
+ * dataAberturaProduto, dataComite; texto vazio limpa o campo); `base` = os valores que a tela mostrava desses campos ao abrir —
+ * se algum já mudou no Azure, 409 com a lista (nada é gravado). (Corpo antigo, só com os campos, ainda é aceito, sem checagem de base.)
+ * Só quem pode movimentar o fluxo; tudo é revalidado no servidor.
  * 200 { alteracoes, pbi, card, assesments, avisos, semMudancas } · 403 · 404 · 409 · 422 (com `faltas`) · 502.
  */
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const usuario = await getUsuarioAtual();
   if (!usuario) return NextResponse.json({ erro: "Não autenticado." }, { status: 401 });
-  let corpo: unknown;
+  let corpo: { entrada?: unknown; base?: unknown } & Record<string, unknown>;
   try {
     corpo = await req.json();
   } catch {
     return NextResponse.json({ erro: "Corpo da requisição inválido." }, { status: 400 });
   }
   try {
-    return NextResponse.json(await editarInformacoesPbi({ id: params.id, entrada: corpo, usuario }));
+    const novoFormato = corpo !== null && typeof corpo === "object" && "entrada" in corpo;
+    return NextResponse.json(await editarInformacoesPbi({ id: params.id, entrada: novoFormato ? corpo.entrada : corpo, base: novoFormato ? corpo.base : undefined, usuario }));
   } catch (err) {
     return resposta(err, "PATCH");
   }

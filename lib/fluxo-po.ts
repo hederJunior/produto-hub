@@ -496,6 +496,37 @@ export function avaliarEdicao(pbi: PbiFluxo, entrada: EntradaMovimento): Resulta
   return { permitido: faltas.length === 0, faltas, avisos, alteracoes: faltas.length ? [] : alteracoes, replicarDataComiteAssesments: !faltas.length && replicar };
 }
 
+export type ConflitoDeEdicao = { campo: string; rotulo: string; visto: string; atual: string };
+
+const ROTULO_DO_CAMPO_EDITAVEL: Record<keyof EntradaMovimento, string> = {
+  areaPath: "Area Path",
+  classificacao: "Classificação",
+  cliente: "Cliente",
+  dataAberturaProduto: "Data Abertura Produto",
+  dataComite: "Data Comitê",
+};
+
+/**
+ * Conflito de edição (T19): campos que o usuário está EDITANDO e que, no Azure DevOps de agora, já não têm o valor que ele viu ao
+ * abrir a tela (outra pessoa os alterou no meio do caminho). `base` = os valores que a tela mostrava; só os campos presentes em
+ * `entrada` e em `base` são comparados (datas pelo dia). Alteração de OUTROS campos do PBI não é conflito. Vazio = pode gravar.
+ */
+export function detectarConflitoDeEdicao(pbi: PbiFluxo, entrada: EntradaMovimento, base: EntradaMovimento | undefined): ConflitoDeEdicao[] {
+  const conflitos: ConflitoDeEdicao[] = [];
+  if (!base) return conflitos;
+  for (const campo of Object.keys(entrada) as (keyof EntradaMovimento)[]) {
+    if (base[campo] === undefined) continue;
+    const ehData = campo === "dataAberturaProduto" || campo === "dataComite";
+    const visto = String(base[campo] ?? "").trim();
+    const atual = String(pbi[campo] ?? "").trim();
+    const igual = ehData ? (chaveDia(visto) ?? "") === (chaveDia(atual) ?? "") : visto === atual;
+    if (igual) continue;
+    const ref = CAMPOS_PBI[campo];
+    conflitos.push({ campo: ROTULO_DO_CAMPO_EDITAVEL[campo], rotulo: ROTULO_DO_CAMPO_EDITAVEL[campo], visto: valorLegivelDaAlteracao(ref, visto || null), atual: valorLegivelDaAlteracao(ref, atual || null) });
+  }
+  return conflitos;
+}
+
 /**
  * Prontidão do card no quadro: "Pronto para mover" ou a lista do que falta para avançar, usando só os campos do PBI
  * (sem entrada do usuário). null para etapas sem movimento na Fase 1 (3.1, 3.2, 4.1) e para cards fora do quadro.

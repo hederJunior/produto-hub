@@ -14,6 +14,7 @@ import {
   avaliarMovimento,
   avisosDaReplicacao,
   comentarioDeTransicao,
+  detectarConflitoDeEdicao,
   derivarEtapa,
   idsFilhosDeRelacoes,
   lerEntradaMovimento,
@@ -375,6 +376,8 @@ export type ResultadoEdicaoPbi = {
 type ParamsEdicao = {
   id: unknown;
   entrada: unknown;
+  /** Valores que a tela mostrava ao abrir (dos campos editados): se mudaram no Azure, a edição é recusada com 409 (T19). */
+  base?: unknown;
   usuario: UsuarioFluxoPo;
   /** Só para testes. */
   gravadorAssesment?: (id: number, dataComite: string) => Promise<void>;
@@ -435,6 +438,19 @@ async function executarEdicao(params: ParamsEdicao, ctx: ContextoLog): Promise<R
   ctx.origem = derivarEtapa(pbi).etapa;
   ctx.destino = ctx.origem ?? "-";
   if (!ctx.origem) throw new ErroFluxoPo(422, "fora_do_escopo", "Este PBI não está em nenhuma etapa do Fluxo do PO; as informações dele não são editadas por aqui.");
+
+  // T19: outra pessoa mexeu, no Azure, num campo que este usuário está editando? Não sobrescreve em silêncio.
+  const lidaBase = params.base === undefined || params.base === null ? { entrada: undefined, erro: undefined } : lerEntradaMovimento(params.base);
+  if (lidaBase.erro) throw new ErroFluxoPo(422, "entrada_invalida", lidaBase.erro);
+  const conflitos = detectarConflitoDeEdicao(pbi, lida.entrada, lidaBase.entrada);
+  if (conflitos.length) {
+    throw new ErroFluxoPo(
+      409,
+      "conflito",
+      "Outra pessoa alterou, no Azure DevOps, campo(s) que você está editando. Nada foi gravado. Atualize a tela e confira os valores atuais.",
+      conflitos.map((c) => `${c.rotulo}: agora está "${c.atual}" (você viu "${c.visto}")`),
+    );
+  }
 
   const av = avaliarEdicao(pbi, lida.entrada);
   if (!av.permitido) throw new ErroFluxoPo(422, "regra", "Há valores inválidos; nada foi gravado.", av.faltas);

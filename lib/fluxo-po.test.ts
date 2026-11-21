@@ -16,6 +16,7 @@ import {
   agruparPorEtapa,
   contarPorEtapa,
   derivarEtapa,
+  detectarConflitoDeEdicao,
   destinosPossiveis,
   paraJsonPatch,
   avisosDaReplicacao,
@@ -654,4 +655,39 @@ test("comentarioDoUsuario: nome, data (Brasília) e 'via Produto Hub'; texto esc
   assert.match(html, /via Produto Hub/);
   assert.match(html, /Linha 1<br>&lt;script&gt;alert\(1\)&lt;\/script&gt; &amp; fim/);
   assert.doesNotMatch(html, /<script/);
+});
+
+// ---------------------------------------------------------------- conflito de edição (T19)
+
+test("detectarConflitoDeEdicao: só os campos EDITADOS cujo valor no Azure já não é o que o usuário viu", () => {
+  const agora = pbi12({ cliente: "NOVO CLIENTE", classificacao: "EDI", dataComite: "2026-12-20T03:00:00Z" });
+  // viu "MARONI"; outra pessoa trocou para "NOVO CLIENTE" e ele também está editando o Cliente → conflito
+  const c = detectarConflitoDeEdicao(agora, { cliente: "OUTRO" }, { cliente: "MARONI" });
+  assert.equal(c.length, 1);
+  assert.equal(c[0].rotulo, "Cliente");
+  assert.equal(c[0].visto, "MARONI");
+  assert.equal(c[0].atual, "NOVO CLIENTE");
+  // a Data Comitê também mudou, mas ele NÃO a edita → sem conflito
+  assert.deepEqual(detectarConflitoDeEdicao(agora, { classificacao: "Débito Técnico" }, { classificacao: "EDI", dataComite: "2026-12-10" }), []);
+});
+
+test("detectarConflitoDeEdicao: datas pelo dia (formato do Azure não conta), vazio = vazio, sem base não há checagem", () => {
+  const agora = pbi12({ dataComite: "2026-12-10T03:00:00Z", dataAberturaProduto: null });
+  assert.deepEqual(detectarConflitoDeEdicao(agora, { dataComite: "2026-12-11" }, { dataComite: "2026-12-10" }), []); // mesmo dia
+  const outroDia = detectarConflitoDeEdicao(agora, { dataComite: "2026-12-11" }, { dataComite: "2026-12-05" });
+  assert.equal(outroDia.length, 1);
+  assert.equal(outroDia[0].visto, "05/12/2026");
+  assert.equal(outroDia[0].atual, "10/12/2026");
+  assert.deepEqual(detectarConflitoDeEdicao(agora, { dataAberturaProduto: "2026-11-01" }, { dataAberturaProduto: "" }), []); // vazio = vazio
+  const virouVazio = detectarConflitoDeEdicao(pbi12({ dataComite: null }), { dataComite: "2026-12-11" }, { dataComite: "2026-12-10" });
+  assert.equal(virouVazio[0].atual, "vazio");
+  assert.deepEqual(detectarConflitoDeEdicao(agora, { cliente: "X" }, undefined), []);
+  assert.deepEqual(detectarConflitoDeEdicao(agora, { cliente: "X" }, {}), []);
+});
+
+test("detectarConflitoDeEdicao: várias divergências são todas listadas", () => {
+  const agora = pbi12({ cliente: "A", classificacao: "EDI", areaPath: "KMM5\\TMS - Melhorias" });
+  const c = detectarConflitoDeEdicao(agora, { cliente: "B", classificacao: "Fast Track", areaPath: "KMM5" }, { cliente: "Z", classificacao: "EDI", areaPath: "KMM5\\TMS - SWAT" });
+  assert.deepEqual(c.map((x) => x.rotulo).sort(), ["Area Path", "Cliente"]);
+  assert.equal(c.find((x) => x.rotulo === "Area Path")!.atual, "TMS - Melhorias");
 });

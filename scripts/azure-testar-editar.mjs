@@ -1,12 +1,14 @@
 // T16 do Fluxo do PO — valida a edição das informações do PBI (editarInformacoesPbi) e as listas de valores no PBI DE TESTE.
 // Roda as MESMAS funções da rota PATCH/GET /api/fluxo-po/pbi/{id}/informacoes (sem a camada de login). Ao final devolve o PBI e o
 // Assesment filho ao estado original e apaga as linhas de log do teste, mesmo se um passo falhar.
-// Passos sem gravar: 403, sem campo, Area Path vazio/fora do KMM5, data inválida, valor fora da lista do Azure, sem mudanças.
+// Passos sem gravar: 403, sem campo, Area Path vazio/fora do KMM5, data inválida, valor fora da lista do Azure, sem mudanças,
+// leitura leve da revisão (T19) e conflito de edição por campo (base desatualizada → 409).
 // Passos gravando: Classificação e Cliente, Area Path (troca o card de coluna), Data Comitê (copiada para o Assesment) e limpar a data.
 //
 // O PBI precisa estar em 1.2 ou 2.1 (no quadro). Só aceita o PBI de teste 46766 (e o Assesment filho dele, 46767).
 // Uso: node --use-system-ca --env-file=.env --import ./scripts/registrar-ts.mjs scripts/azure-testar-editar.mjs 46766
-import { ErroFluxoPo, aplicarPatchPbi, editarInformacoesPbi, lerInformacoesPbi, lerPbiFluxoPoAtual, listarAssesmentsFilhos } from "../lib/fluxo-po-servidor.ts";
+import { ErroFluxoPo, aplicarPatchPbi, apagarComentarioPbi, editarInformacoesPbi, lerInformacoesPbi, lerPbiFluxoPoAtual, listarAssesmentsFilhos, publicarComentarioPbi } from "../lib/fluxo-po-servidor.ts";
+import { lerRevisaoPbi } from "../lib/fluxo-po-detalhe-servidor.ts";
 import { chaveDia } from "../lib/fluxo-po.ts";
 import { CAMPOS_ASSESMENT, CAMPOS_PBI } from "../lib/fluxo-po-campos.ts";
 import { getServiceClient } from "../lib/supabase.ts";
@@ -84,11 +86,22 @@ async function main() {
     const apos = await lerPbiFluxoPoAtual(id);
     registrar("Nenhum passo recusado nem o 'sem mudanças' alterou o PBI", apos.rev === inicial.rev, `rev ${inicial.rev} → ${apos.rev}`);
 
+    // ---- T19: leitura leve da revisão e conflito de edição por campo ----
+    const rev0 = await lerRevisaoPbi(id);
+    registrar("Revisão leve = revisão do PBI, com quando e por quem foi alterado", rev0.rev === apos.rev && !!rev0.alteradoEm && !!rev0.alteradoPor, JSON.stringify(rev0));
+    await esperarErro("Revisão de item que não é PBI do KMM5 (Assesment 24008) → 422", 422, () => lerRevisaoPbi(24008));
+    await esperarErro("Edição com base desatualizada (outra pessoa mudou o Cliente) → 409 com a lista", 409, () => editar({ cliente: clienteOutro }, admin, { base: { cliente: "CLIENTE QUE NAO E O ATUAL" } }), (e) => e.faltas.length === 1 && e.faltas[0].includes("Cliente") && e.faltas[0].includes(inicial.cliente));
+    await esperarErro("Base com valor inválido (não texto) → 422", 422, () => editar({ cliente: clienteOutro }, admin, { base: { cliente: 5 } }));
+    registrar("Conflito e base inválida não gravaram nada", (await lerPbiFluxoPoAtual(id)).rev === inicial.rev);
+
     // ---- gravando ----
     precisaRestaurar = true;
-    const r1 = await editar({ classificacao: classOutra, cliente: clienteOutro });
+    const r1 = await editar({ classificacao: classOutra, cliente: clienteOutro }, admin, { base: { classificacao: inicial.classificacao, cliente: inicial.cliente } });
     registrar("Editar Classificação e Cliente (lista do Azure)", !r1.semMudancas && r1.pbi.classificacao === classOutra && r1.pbi.cliente === clienteOutro, `${inicial.classificacao}→${classOutra}; ${inicial.cliente}→${clienteOutro}`);
     registrar("...e só esses dois campos foram gravados", r1.alteracoes.map((a) => a.rotulo).sort().join(",") === "Classificação,Cliente");
+    registrar("Base correta (o que a tela viu) permite gravar; a revisão avança", (await lerRevisaoPbi(id)).rev > rev0.rev);
+    const rBaseOutro = await editar({ classificacao: inicial.classificacao }, admin, { base: { classificacao: classOutra, cliente: "VALOR QUE NAO IMPORTA" } });
+    registrar("Base de campo que NÃO está sendo editado é ignorada (sem falso conflito)", rBaseOutro.pbi.classificacao === inicial.classificacao);
 
     const r2 = await editar({ areaPath: "KMM5" });
     registrar("Area Path para a raiz KMM5: o card vai para a 1.1 e avisa", r2.card?.etapa === "1.1" && r2.avisos.some((a) => a.includes("1.1")), `${r2.card?.etapa} | ${r2.avisos.join(" | ")}`);
@@ -111,6 +124,13 @@ async function main() {
     const r6 = await editar({ dataComite: "2031-12-30" }, admin, { gravadorAssesment: gravadorQueFalha });
     registrar("Falha ao gravar o Assesment NÃO desfaz a edição do PBI (aviso com a falha)", r6.pbi.dataComite === "2031-12-30T03:00:00Z" && (filhosIniciais.length === 0 || (r6.assesments?.falhas.length === filhosIniciais.length && r6.avisos.some((a) => a.includes("não foi replicada")))), r6.avisos.join(" | "));
 
+    // ---- o comentário no PBI mexe na revisão? (a tela decide se precisa reajustar o aviso de "PBI mudou") ----
+    const revAntesComentario = (await lerRevisaoPbi(id)).rev;
+    const comentario = await publicarComentarioPbi(id, "<p>Teste automático da T19 — apagado em seguida.</p>");
+    const revDepoisComentario = (await lerRevisaoPbi(id)).rev;
+    await apagarComentarioPbi(id, comentario.id);
+    registrar("Comentário no PBI: revisão antes/depois (informativo)", true, `${revAntesComentario} → ${revDepoisComentario} (${revDepoisComentario === revAntesComentario ? "NÃO altera a revisão" : "ALTERA a revisão"})`);
+
     // ---- log (T09): toda tentativa, edições e recusas ----
     const { data: linhas, error: erroLog } = await getServiceClient().from("FluxoPoMovimento").select("resultado, direcao, usuario, motivo").in("usuario", USUARIOS).eq("workItemId", id).gte("criadoEm", INICIO);
     if (erroLog) console.log(`AVISO  Log indisponível (${erroLog.message})`);
@@ -119,7 +139,7 @@ async function main() {
       for (const l of linhas) por[l.resultado] = (por[l.resultado] ?? 0) + 1;
       // O "sem mudanças" não gera linha (nada foi alterado): todas as demais tentativas entram.
       registrar("Log registrou todas as tentativas (menos o 'sem mudanças')", linhas.length === tentativas - 1, `${linhas.length} linhas para ${tentativas} tentativas: ${JSON.stringify(por)}`);
-      registrar("Log: edições com direção 'edicao', e recusas (sem permissão, bloqueado) registradas", linhas.every((l) => l.direcao === "edicao") && ["sucesso", "parcial", "bloqueado", "sem_permissao"].every((r) => por[r] > 0));
+      registrar("Log: edições com direção 'edicao', e recusas (sem permissão, bloqueado, conflito) registradas", linhas.every((l) => l.direcao === "edicao") && ["sucesso", "parcial", "bloqueado", "sem_permissao", "conflito"].every((r) => por[r] > 0));
     }
   } finally {
     if (precisaRestaurar) {

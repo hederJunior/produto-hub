@@ -137,6 +137,30 @@ export async function lerHistoricoPbi(idBruto: unknown): Promise<HistoricoPbi> {
   return { entradas: montarHistorico(updates), truncado };
 }
 
+export type RevisaoPbi = { rev: number; alteradoEm: string | null; alteradoPor: string | null };
+
+/**
+ * Revisão atual do PBI no Azure (leitura LEVE, para a tela perceber que o PBI mudou enquanto estava aberta — T19): número da
+ * revisão, quando e por quem foi alterado por último. Qualquer usuário logado.
+ */
+export async function lerRevisaoPbi(idBruto: unknown): Promise<RevisaoPbi> {
+  const id = validarId(idBruto);
+  const { org } = getConfig();
+  const item = await azureGet<{ rev?: number; fields: Record<string, unknown> }>(
+    `${baseProjeto(org)}/workitems/${id}?fields=${CAMPOS_ESCOPO},System.ChangedDate,System.ChangedBy&api-version=${API_VERSION}`,
+  );
+  if (String(item.fields["System.WorkItemType"] ?? "") !== TIPO_PBI || !projetoSuportado(String(item.fields["System.TeamProject"] ?? ""))) {
+    throw new ErroFluxoPo(422, "fora_do_escopo", `O item ${id} não é um Product Backlog Item do ${PROJETO_FLUXO_PO}.`);
+  }
+  if (typeof item.rev !== "number") throw new ErroFluxoPo(502, "sem_revisao", "O Azure DevOps não informou a revisão do PBI.");
+  const por = item.fields["System.ChangedBy"];
+  return {
+    rev: item.rev,
+    alteradoEm: typeof item.fields["System.ChangedDate"] === "string" ? (item.fields["System.ChangedDate"] as string) : null,
+    alteradoPor: por && typeof por === "object" ? String((por as { displayName?: string }).displayName ?? "") || null : null,
+  };
+}
+
 export type MovimentosPbi = { movimentos: MovimentoPbi[]; truncado: boolean };
 const MAX_MOVIMENTOS = 100;
 

@@ -86,7 +86,7 @@ const ESTILO_HTML = `
  * anexos, histórico do PBI e dos movimentos, e os quadros "Quando avança" e "Ao avançar, grava no PBI". Cada um lê sua parte
  * do servidor (T08/T10) sozinho. Escrever (checklist, comentário) exige poder movimentar; o servidor confere.
  */
-export default function FluxoPoDetalheBlocos({ id, aba, pode, motivoSemPermissao, versao }: { id: number; aba: AbaEtapa; pode: boolean; motivoSemPermissao: string | null; versao: number | undefined }) {
+export default function FluxoPoDetalheBlocos({ id, aba, pode, motivoSemPermissao, versao, aoPublicarComentario }: { id: number; aba: AbaEtapa; pode: boolean; motivoSemPermissao: string | null; versao: number | undefined; aoPublicarComentario?: () => void }) {
   return (
     <div style={{ marginTop: 14 }}>
       <style>{ESTILO_HTML}</style>
@@ -94,7 +94,7 @@ export default function FluxoPoDetalheBlocos({ id, aba, pode, motivoSemPermissao
         <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
           <Checklist id={id} aba={aba} pode={pode} motivoSemPermissao={motivoSemPermissao} />
           <Descricao id={id} aba={aba} />
-          <Comentarios id={id} pode={pode} motivoSemPermissao={motivoSemPermissao} />
+          <Comentarios id={id} pode={pode} motivoSemPermissao={motivoSemPermissao} aoPublicar={aoPublicarComentario} />
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
           <QuandoAvanca aba={aba} />
@@ -220,7 +220,7 @@ function Descricao({ id, aba }: { id: number; aba: AbaEtapa }) {
 
 // ---------------------------------------------------------------------------------------------------------------
 
-function Comentarios({ id, pode, motivoSemPermissao }: { id: number; pode: boolean; motivoSemPermissao: string | null }) {
+function Comentarios({ id, pode, motivoSemPermissao, aoPublicar }: { id: number; pode: boolean; motivoSemPermissao: string | null; aoPublicar?: () => void }) {
   const { dados, erro, carregando, recarregar } = useCarga<{ total: number; comentarios: Comentario[]; truncado: boolean }>(`/api/fluxo-po/pbi/${id}/comentarios`);
   const [texto, setTexto] = useState("");
   const [enviando, setEnviando] = useState(false);
@@ -244,6 +244,7 @@ function Comentarios({ id, pode, motivoSemPermissao }: { id: number; pode: boole
       setTexto("");
       setPublicado(true);
       recarregar();
+      aoPublicar?.(); // comentar sobe a revisão do PBI no Azure: a tela reajusta a referência para não se acusar
     } catch {
       setFalha("Não foi possível falar com o servidor. O comentário não foi publicado.");
     } finally {

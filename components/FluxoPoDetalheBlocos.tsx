@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { AlertCircle, AlertTriangle, Ban, Check, ExternalLink, Loader2, Paperclip, Send, Sparkles } from "lucide-react";
+import { AlertCircle, AlertTriangle, Ban, Check, ExternalLink, Loader2, Paperclip, Send, Sparkles, X } from "lucide-react";
 import { C, PASTEL } from "@/lib/kmm-theme";
 import { AO_AVANCAR, LIMITE_COMENTARIO, MOTIVOS_CANCELAMENTO, QUANDO_AVANCA, motivoDeCancelamento, rotuloDaEtapa, valorLegivelDaAlteracao, type EtapaFluxo, type MotivoCancelamento } from "@/lib/fluxo-po";
 import type { ChecklistPbi, ItemChecklistEstado } from "@/lib/fluxo-po-checklist";
@@ -269,6 +269,14 @@ function Cancelamento({ id, pode, motivoSemPermissao, etapaAtual, aoCancelar }: 
     setFalha(null);
   }
 
+  /** "Não cancelar demanda": descarta o motivo, o texto (editado ou não) e qualquer erro, e volta ao estado de antes do primeiro clique. */
+  function naoCancelar() {
+    if (enviando) return;
+    setMotivoId(null);
+    setTexto("");
+    setFalha(null);
+  }
+
   async function confirmar() {
     if (!podeConfirmar || !motivo) return;
     setEnviando(true);
@@ -352,15 +360,26 @@ function Cancelamento({ id, pode, motivoSemPermissao, etapaAtual, aoCancelar }: 
             </div>
           )}
 
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
           <button
             type="button"
             onClick={confirmar}
             disabled={!podeConfirmar}
-            style={{ marginTop: 12, display: "inline-flex", alignItems: "center", gap: 7, fontFamily: "inherit", fontSize: 13, fontWeight: 600, padding: "9px 16px", borderRadius: 10, border: `1px solid ${podeConfirmar ? C.red : C.border}`, background: podeConfirmar ? C.red : C.soft, color: podeConfirmar ? "#fff" : C.faint, cursor: podeConfirmar ? "pointer" : "not-allowed" }}
+            style={{ display: "inline-flex", alignItems: "center", gap: 7, fontFamily: "inherit", fontSize: 13, fontWeight: 600, padding: "9px 16px", borderRadius: 10, border: `1px solid ${podeConfirmar ? C.red : C.border}`, background: podeConfirmar ? C.red : C.soft, color: podeConfirmar ? "#fff" : C.faint, cursor: podeConfirmar ? "pointer" : "not-allowed" }}
           >
             {enviando ? <Loader2 size={15} style={{ animation: "kmm-giro 1s linear infinite" }} /> : <Ban size={15} />}
             {enviando ? "Publicando e cancelando…" : "Publicar comentário e cancelar demanda"}
           </button>
+          <button
+            type="button"
+            onClick={naoCancelar}
+            disabled={enviando}
+            style={{ display: "inline-flex", alignItems: "center", gap: 7, fontFamily: "inherit", fontSize: 13, fontWeight: 600, padding: "9px 16px", borderRadius: 10, border: `1px solid ${C.border}`, background: "#fff", color: C.text, cursor: enviando ? "not-allowed" : "pointer", opacity: enviando ? 0.6 : 1 }}
+          >
+            <X size={15} />
+            Não cancelar demanda
+          </button>
+          </div>
         </div>
       )}
       <style>{"@keyframes kmm-giro{to{transform:rotate(360deg)}}"}</style>

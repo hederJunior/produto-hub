@@ -2702,3 +2702,8 @@ Isso aconteceu no PBI de teste 46766 nas execuções do meu teste (comentários 
 
 Pedido do Heder: ordenar a coluna pela Data Comitê, **do mais antigo para o mais novo, com os cards sem Data Comitê no topo**. Antes: data mais próxima primeiro e **sem data por último** (agora invertido para o topo, porque o card sem data é o que precisa de ação). Implementado em `ordenarCardsDoComite` (`lib/fluxo-po.ts`, função pura testada) e usado no quadro (`FluxoPoUpstream`).
 Empate (mesma data, ou vários sem data): ordem geral do quadro (prioridade → mais antigo → ID). Só a coluna 2.1 muda; as demais seguem a ordem anterior. Os cards sem data são os "inconsistentes" (Etapa Comitê sem Data Comitê) e continuam em vermelho. Teste unitário novo (111 no total).
+
+## 2026-11-22 — Fluxo do PO · botão "Não cancelar demanda"
+
+Pedido do Heder: quem clica num motivo de cancelamento (aba 1.1) precisa poder desistir. Ao lado de "Publicar comentário e cancelar demanda" há agora **"Não cancelar demanda"**: descarta o motivo escolhido, o texto (editado ou não) e qualquer erro, e o bloco volta ao estado de antes do primeiro clique (só os 5 motivos, sem caixa de texto). Sem confirmação extra, de propósito
+(o clique já é a desistência); fica desabilitado enquanto a publicação está em andamento. Nada é gravado no PBI. Conferido no navegador (escolher TNS → texto aparece → "Não cancelar" → 0 motivos marcados, sem caixa de texto nem botões).

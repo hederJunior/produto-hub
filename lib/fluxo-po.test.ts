@@ -31,6 +31,7 @@ import {
   lerEntradaMovimento,
   motivoDeCancelamento,
   montarCards,
+  ordenarCardsDoComite,
   nomesCompativeis,
   normalizarDataAzure,
   permissaoDoFluxo,
@@ -853,4 +854,19 @@ test("comentarioDeCancelamento: assinatura, motivo e texto escapado com quebras 
   assert.match(html, /<b>Ana &lt;i&gt;<\/b> · 22\/11\/2026.*12:30 <i>\(via Produto Hub\)<\/i> — <b>Cancelamento de demanda<\/b>: Torre de Controle/);
   assert.match(html, /Linha 1<br>&lt;b&gt;x&lt;\/b&gt; &amp; fim/);
   assert.doesNotMatch(html, /<b>x<\/b>/);
+});
+
+test("ordenarCardsDoComite: sem data no topo, depois da Data Comitê mais antiga para a mais nova; empate pela ordem do quadro", () => {
+  const cards = montarCards([
+    pbi21({ id: 5, dataComite: "2026-12-20T03:00:00Z" }),
+    pbi21({ id: 4, dataComite: "2026-12-01T03:00:00Z" }),
+    pbi21({ id: 3, dataComite: null }),
+    pbi21({ id: 2, dataComite: "2026-12-20T03:00:00Z" }),
+    pbi21({ id: 1, dataComite: null }),
+    pbi21({ id: 6, dataComite: "2027-01-05T03:00:00Z" }),
+  ]);
+  const antes = cards.map((c) => c.pbi.id);
+  const ordem = ordenarCardsDoComite(cards).map((c) => c.pbi.id);
+  assert.deepEqual(ordem, [1, 3, 4, 2, 5, 6]);
+  assert.deepEqual(cards.map((c) => c.pbi.id), antes); // não altera a lista recebida
 });

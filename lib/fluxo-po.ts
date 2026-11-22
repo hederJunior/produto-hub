@@ -687,6 +687,23 @@ export function agruparPorEtapa(cards: CardFluxo[]): Record<EtapaFluxo, CardFlux
   return out;
 }
 
+/**
+ * Ordem da coluna 2.1 (Comitê / Proposta de solução): cards SEM Data Comitê no topo; depois a Data Comitê do mais antigo para o mais
+ * novo. Empate (mesma data, ou ambos sem data): a ordem geral do quadro (prioridade → mais antigo → ID). Não altera a lista recebida.
+ */
+export function ordenarCardsDoComite(cards: CardFluxo[]): CardFluxo[] {
+  return [...cards].sort((a, b) => {
+    const da = chaveDia(a.pbi.dataComite);
+    const db = chaveDia(b.pbi.dataComite);
+    if (da !== db) {
+      if (da === null) return -1;
+      if (db === null) return 1;
+      return da < db ? -1 : 1;
+    }
+    return compararCards(a, b);
+  });
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // Permissão (a verificação REAL é no servidor, em toda gravação)
 // ---------------------------------------------------------------------------------------------------------------

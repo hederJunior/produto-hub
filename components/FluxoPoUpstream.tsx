@@ -14,6 +14,7 @@ import {
   agingEmAlerta,
   agingEmDias,
   agruparPorEtapa,
+  ordenarCardsDoComite,
   chaveDia,
   contarPorEtapa,
   comiteAtrasado,
@@ -244,8 +245,8 @@ export default function FluxoPoUpstream() {
 
   const porEtapa = useMemo(() => {
     const por = agruparPorEtapa(exibidos);
-    // Comitê: a Data Comitê mais próxima (ou já vencida) primeiro; sem data por último.
-    por["2.1"] = [...por["2.1"]].sort((a, b) => (chaveDia(a.pbi.dataComite) ?? "9999").localeCompare(chaveDia(b.pbi.dataComite) ?? "9999") || a.pbi.id - b.pbi.id);
+    // Comitê: sem Data Comitê no topo; depois da Data Comitê mais antiga para a mais nova.
+    por["2.1"] = ordenarCardsDoComite(por["2.1"]);
     return por;
   }, [exibidos]);
 

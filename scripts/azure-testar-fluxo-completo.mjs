@@ -2,6 +2,7 @@
 // Roda as MESMAS funções da rota POST /api/fluxo-po/mover (sem a camada de login) e cobre os TRÊS movimentos, o Assesment e o comentário:
 //   volta 1.2 → 1.1 (proposta) · 1.1 → 1.2 · 1.2 → 2.1 (+ Data Comitê copiada para o Assesment) · 2.1 → 3.1 e 2.1 → 3.2
 //   bloqueios com motivo (nada gravado) · sem permissão (403) · movimentos que não existem (3.x não volta)
+//   Cliente obrigatório em QUALQUER movimento (avanço e volta) e campos preenchidos na confirmação (entrada) gravados junto com o movimento
 //   corrida: dois movimentos ao mesmo tempo no mesmo PBI (só um passa; o outro recebe 409 ou 422, sem comentário nem escrita dele)
 //   comentário de transição (texto com origem, destino e usuário) e log de TODAS as tentativas.
 // Ao final devolve o PBI, o Assesment e os comentários ao estado original (mesmo se um passo falhar) e apaga as linhas de log do teste.
@@ -30,7 +31,8 @@ const auth = { Authorization: "Basic " + Buffer.from(`:${process.env.AZURE_DEVOP
 const admin = { email: "script-teste@local", nome: "Script de teste (T20)", tipo: "adm", papel: null };
 const semPermissao = { email: "visitante@local", nome: "Visitante", tipo: "user", papel: "CS" };
 const USUARIOS = ["script-teste@local", "visitante@local"];
-const INICIO = new Date().toISOString();
+// Folga de 30 s: o relógio desta máquina pode adiantar em relação ao do banco (criadoEm vem do banco), e as primeiras linhas do teste ficariam de fora.
+const INICIO = new Date(Date.now() - 30_000).toISOString();
 const DATA = "2031-12-31";
 const DATA_AZURE = `${DATA}T03:00:00Z`;
 const comentarios = [];
@@ -103,6 +105,23 @@ async function main() {
     const t1 = m1.comentario.id ? await textoDoComentario(m1.comentario.id) : "";
     registrar("...comentário traz origem, destino e usuário", t1.includes("1.1 Classificar") && t1.includes("1.2 Priorizar") && t1.includes("Script de teste (T20)"), t1.slice(0, 150));
 
+    // ---- CLIENTE em qualquer movimento + campos preenchidos na confirmação (entrada) ----
+    const limpar = async (ref) => {
+      const a = await lerPbiFluxoPoAtual(id);
+      await aplicarPatchPbi(id, [{ op: "test", path: "/rev", value: a.rev }, { op: "remove", path: `/fields/${ref}` }]);
+    };
+    await limpar(CAMPOS_PBI.cliente);
+    await esperarErro("Sem Cliente: 1.2 → 2.1 é barrado mesmo com Data Comitê → 422", 422, () => mover("2.1", { dataComite: DATA }), (e) => e.faltas.includes("Preencher o Cliente."));
+    await esperarErro("Sem Cliente: a volta 1.2 → 1.1 também é barrada → 422", 422, () => mover("1.1"), (e) => e.faltas.includes("Preencher o Cliente."));
+    await esperarErro("Cliente fora da lista do Azure informado na confirmação → 422", 422, () => mover("1.1", { cliente: "CLIENTE QUE NAO EXISTE NO AZURE" }), (e) => e.faltas.some((f) => f.includes("não existe na lista do Azure")));
+    const vc = await mover("1.1", { cliente: inicial.cliente });
+    registrar("Volta 1.2 → 1.1 com o Cliente informado na confirmação: grava o Cliente junto e move", vc.card?.etapa === "1.1" && vc.card?.pbi.cliente === inicial.cliente && vc.alteracoes.some((a) => a.rotulo === "Cliente"), `card em ${vc.card?.etapa}; cliente "${vc.card?.pbi.cliente}"`);
+    await limpar(CAMPOS_PBI.classificacao);
+    await esperarErro("1.1 → 1.2 sem Classificação (esteira informada) → 422 com o motivo", 422, () => mover("1.2", { areaPath: inicial.areaPath }), (e) => e.faltas.includes("Preencher a Classificação."));
+    await esperarErro("Classificação fora da lista do Azure informada na confirmação → 422", 422, () => mover("1.2", { areaPath: inicial.areaPath, classificacao: "Classificação Inventada" }), (e) => e.faltas.some((f) => f.includes("não existe na lista do Azure")));
+    const mc = await mover("1.2", { areaPath: inicial.areaPath, classificacao: inicial.classificacao });
+    registrar("1.1 → 1.2 com esteira e Classificação informadas na confirmação: grava os dois junto e move", mc.card?.etapa === "1.2" && mc.card?.pbi.classificacao === inicial.classificacao && mc.card?.pbi.areaPath === inicial.areaPath && ["Area Path", "Classificação"].every((r) => mc.alteracoes.some((a) => a.rotulo === r)), `card em ${mc.card?.etapa}; gravou ${mc.alteracoes.map((a) => a.rotulo).join(", ")}`);
+
     // ---- MOVIMENTO 2: 1.2 → 2.1 (+ Assesment) ----
     const revNa12 = (await lerPbiFluxoPoAtual(id)).rev;
     await esperarErro("1.2 → 2.1 sem Data Comitê → 422", 422, () => mover("2.1"), (e) => e.faltas.some((f) => f.includes("Data Comitê")));
@@ -154,8 +173,8 @@ async function main() {
       registrar("Log registrou TODAS as tentativas (sucessos, bloqueios, permissão, corrida)", linhas.length === tentativas, `${linhas.length} linhas para ${tentativas} tentativas: ${JSON.stringify(por)}`);
       registrar("Log: avanços, volta, bloqueios e perfil sem permissão", ["sucesso", "bloqueado", "sem_permissao"].every((r) => por[r] > 0) && linhas.some((l) => l.direcao === "volta") && linhas.some((l) => l.direcao === "avanco"));
     }
-    // Comentários de transição esperados: volta, 1.1→1.2, 1.2→2.1, vencedor da corrida (4) e depois o outro destino (5). O perdedor da corrida NÃO comenta.
-    registrar("Só os movimentos que passaram publicaram comentário (o perdedor da corrida não publicou)", comentariosDaCorrida === 4 && comentarios.length === 5, `${comentariosDaCorrida} após a corrida, ${comentarios.length} no fim`);
+    // Comentários de transição esperados: volta, 1.1→1.2, volta com Cliente, 1.1→1.2 com Classificação, 1.2→2.1, vencedor da corrida (6) e depois o outro destino (7). O perdedor da corrida NÃO comenta.
+    registrar("Só os movimentos que passaram publicaram comentário (o perdedor da corrida não publicou)", comentariosDaCorrida === 6 && comentarios.length === 7, `${comentariosDaCorrida} após a corrida, ${comentarios.length} no fim`);
   } finally {
     // ---- restauração: comentários primeiro (apagar comentário sobe a revisão), depois PBI e Assesment ----
     for (const cid of comentarios) {
@@ -176,7 +195,7 @@ async function main() {
       }
       const atual = await lerPbiFluxoPoAtual(id); // revisão lida DEPOIS de apagar os comentários
       const ops = [{ op: "test", path: "/rev", value: atual.rev }];
-      for (const [k, ref] of [["etapa", CAMPOS_PBI.etapa], ["areaPath", CAMPOS_PBI.areaPath], ["tags", CAMPOS_PBI.tags], ["dataComite", CAMPOS_PBI.dataComite]]) {
+      for (const [k, ref] of [["etapa", CAMPOS_PBI.etapa], ["areaPath", CAMPOS_PBI.areaPath], ["tags", CAMPOS_PBI.tags], ["dataComite", CAMPOS_PBI.dataComite], ["cliente", CAMPOS_PBI.cliente], ["classificacao", CAMPOS_PBI.classificacao]]) {
         if ((atual[k] ?? "") !== (inicial[k] ?? "")) ops.push(inicial[k] ? { op: "add", path: `/fields/${ref}`, value: inicial[k] } : { op: "remove", path: `/fields/${ref}` });
       }
       if (ops.length > 1) {

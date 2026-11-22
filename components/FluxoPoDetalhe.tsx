@@ -4,8 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { AlertCircle, AlertTriangle, ArrowLeft, CalendarDays, CheckCircle2, Check, Clock, ExternalLink, Eye, Loader2, Lock, MoveRight, RefreshCw, X } from "lucide-react";
 import FluxoPoDetalheBlocos from "@/components/FluxoPoDetalheBlocos";
+import { CampoInformacao, type Campo, type Listas } from "@/components/FluxoPoCampo";
 import FluxoPoMoverDialog from "@/components/FluxoPoMoverDialog";
-import MultiSelectFiltro from "@/components/MultiSelectFiltro";
 import { C, PASTEL, infoPrioridade } from "@/lib/kmm-theme";
 import { formatarChaveDia } from "@/lib/datas";
 import { urlPbiAzure } from "@/lib/fluxo-po-campos";
@@ -28,9 +28,7 @@ import {
   type PbiFluxo,
 } from "@/lib/fluxo-po";
 
-type Listas = { classificacoes: string[]; clientes: string[]; esteiras: { valor: string; rotulo: string }[]; aviso: string | null };
 type Info = { pbi: PbiFluxo; card: CardFluxo | null; listas: Listas; podeMovimentar: boolean; permissao: { pode: boolean; motivo: string | null } };
-type Campo = "cliente" | "classificacao" | "areaPath" | "dataAberturaProduto" | "dataComite";
 type Rascunho = Record<Campo, string>;
 type AbaEtapa = "1.1" | "1.2" | "2.1";
 
@@ -55,14 +53,6 @@ const ABAS: { etapa: AbaEtapa; titulo: string; campos: Campo[]; dica: string }[]
   },
 ];
 const ORDEM: EtapaFluxo[] = ["1.1", "1.2", "2.1", "3.1", "3.2", "4.1"];
-
-const ROTULO_CAMPO: Record<Campo, string> = {
-  cliente: "Cliente",
-  classificacao: "Classificação",
-  areaPath: "Area Path (esteira)",
-  dataAberturaProduto: "Data Abertura Produto",
-  dataComite: "Data Comitê",
-};
 
 const COR_DA_ETAPA: Record<EtapaFluxo, { bg: string; dot: string }> = {
   "1.1": PASTEL.sky,
@@ -539,83 +529,6 @@ function FaixaDeProntidao({ card, etapaAtual, pode, aoMover, temDestino }: { car
           <MoveRight size={14} /> Mover card…
         </button>
       )}
-    </div>
-  );
-}
-
-/** Um campo do quadro: lista do Azure (Cliente com busca, Classificação, esteiras), data ou texto; somente leitura se não puder editar. */
-function CampoInformacao({
-  campo,
-  valor,
-  original,
-  editavel,
-  listas,
-  aoMudar,
-}: {
-  campo: Campo;
-  valor: string;
-  original: string;
-  editavel: boolean;
-  listas: Listas;
-  aoMudar: (v: string) => void;
-}) {
-  const alterado = valor !== original;
-  const rotulo = ROTULO_CAMPO[campo];
-  const ehData = campo === "dataAberturaProduto" || campo === "dataComite";
-
-  let leitura = valor || "—";
-  if (ehData && valor) leitura = formatarChaveDia(valor);
-  if (campo === "areaPath") leitura = rotuloDaArea(valor);
-
-  let controle: React.ReactNode;
-  if (!editavel) {
-    controle = <div style={{ fontSize: 14, color: valor ? C.text : C.faint, padding: "8px 0" }}>{leitura}</div>;
-  } else if (campo === "cliente") {
-    // Valor atual fora da lista do Azure (legado) continua selecionável, para não sumir do campo.
-    const opcoes = valor && !listas.clientes.includes(valor) ? [valor, ...listas.clientes] : listas.clientes;
-    controle = (
-      <div>
-        <MultiSelectFiltro rotuloTodos="Selecione o cliente" opcoes={opcoes} selecionados={valor ? [valor] : []} onChange={(v) => aoMudar(v[0] ?? "")} pesquisavel unico placeholderBusca="Digite o nome do cliente…" />
-        {valor && (
-          <button type="button" onClick={() => aoMudar("")} style={{ marginTop: 4, border: "none", background: "transparent", color: C.muted, fontSize: 11.5, cursor: "pointer", padding: 0, textDecoration: "underline" }}>
-            Limpar cliente
-          </button>
-        )}
-      </div>
-    );
-  } else if (campo === "classificacao") {
-    const opcoes = valor && !listas.classificacoes.includes(valor) ? [valor, ...listas.classificacoes] : listas.classificacoes;
-    controle = (
-      <select className="kmm-input" value={valor} onChange={(e) => aoMudar(e.target.value)}>
-        <option value="">— sem classificação —</option>
-        {opcoes.map((o) => (
-          <option key={o} value={o}>{o}</option>
-        ))}
-      </select>
-    );
-  } else if (campo === "areaPath") {
-    const raiz = { valor: "KMM5", rotulo: "KMM5 (sem esteira)" };
-    const opcoes = [raiz, ...listas.esteiras];
-    const conhecida = opcoes.some((o) => o.valor === valor);
-    controle = (
-      <select className="kmm-input" value={valor} onChange={(e) => aoMudar(e.target.value)}>
-        {!conhecida && <option value={valor}>{valor}</option>}
-        {opcoes.map((o) => (
-          <option key={o.valor} value={o.valor}>{o.rotulo}</option>
-        ))}
-      </select>
-    );
-  } else {
-    controle = <input className="kmm-input" type="date" value={valor} onChange={(e) => aoMudar(e.target.value)} />;
-  }
-
-  return (
-    <div>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
-        <span style={{ fontSize: 12, fontWeight: 600, color: C.muted, textTransform: "uppercase", letterSpacing: ".03em" }}>{rotulo}</span>
-        {alterado && <span style={{ fontSize: 10.5, fontWeight: 600, color: C.orange, background: "#FFF1EA", borderRadius: 999, padding: "0 7px" }}>alterado</span>}
-      </div>
-      {controle}
     </div>
   );
 }

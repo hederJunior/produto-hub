@@ -38,12 +38,10 @@ const item = async (etapa, itemId) => (await lerChecklistPbi(id))[etapa].find((i
 
 async function main() {
   const supabase = getServiceClient();
-  const { count: antes } = await supabase.from("FluxoPoChecklist").select("*", { count: "exact", head: true }).eq("workItemId", id);
-  console.log(`PBI de teste: ${id} | linhas de checklist existentes: ${antes}\n`);
-  if (antes) {
-    registrar("Pré-condição: PBI de teste sem checklist gravado", false, "há linhas anteriores; limpe-as antes para não misturar com o teste");
-    return;
-  }
+  // Marcações que já existam no PBI de teste (ex.: de um teste manual na tela) são GUARDADAS, o teste roda limpo e elas VOLTAM no fim.
+  const { data: previas } = await supabase.from("FluxoPoChecklist").select("*").eq("workItemId", id);
+  console.log(`PBI de teste: ${id} | linhas de checklist já existentes: ${previas?.length ?? 0}${previas?.length ? " (guardadas; voltam ao final)" : ""}\n`);
+  if (previas?.length) await supabase.from("FluxoPoChecklist").delete().eq("workItemId", id);
 
   // Leitura inicial: todas as etapas, tudo desmarcado
   const c0 = await lerChecklistPbi(id);
@@ -90,8 +88,12 @@ async function main() {
     registrar("Marcações simultâneas do mesmo item: ambas concluem e há 1 linha", a.status === "fulfilled" && b.status === "fulfilled" && linhasCorrida === 1, `${a.status}/${b.status}, ${linhasCorrida} linha(s)${a.status === "rejected" ? ` | ${a.reason?.message}` : ""}${b.status === "rejected" ? ` | ${b.reason?.message}` : ""}`);
   } finally {
     const { error } = await supabase.from("FluxoPoChecklist").delete().eq("workItemId", id);
+    if (previas?.length) {
+      const { error: erroVolta } = await supabase.from("FluxoPoChecklist").insert(previas);
+      registrar("Marcações que já existiam foram devolvidas", !erroVolta, erroVolta?.message ?? `${previas.length} linha(s)`);
+    }
     const { count: resto } = await supabase.from("FluxoPoChecklist").select("*", { count: "exact", head: true }).eq("workItemId", id);
-    registrar("Linhas de teste removidas", !error && resto === 0, error?.message ?? "");
+    registrar("Linhas de teste removidas (sobram só as que já existiam)", !error && resto === (previas?.length ?? 0), error?.message ?? `${resto} linha(s) no PBI de teste`);
   }
 }
 

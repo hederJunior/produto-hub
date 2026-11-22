@@ -37,7 +37,8 @@ if (id !== PBI_DE_TESTE && process.env.FLUXO_PO_PERMITIR_OUTRO_ID !== "1") {
 const ORG = process.env.AZURE_DEVOPS_ORG;
 const auth = { Authorization: "Basic " + Buffer.from(`:${process.env.AZURE_DEVOPS_PAT}`).toString("base64") };
 const comentariosCriados = [];
-const INICIO = new Date().toISOString();
+// Folga de 30 s: o relógio desta máquina pode adiantar em relação ao do banco (criadoEm vem do banco), e as primeiras linhas do teste ficariam de fora.
+const INICIO = new Date(Date.now() - 30_000).toISOString();
 let tentativas = 0;
 /** Toda tentativa de movimento passa por aqui (para conferir depois que o log registrou todas). */
 const mover = (params) => {

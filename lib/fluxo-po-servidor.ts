@@ -281,7 +281,10 @@ async function executarMovimento(params: ParamsMover, ctx: ContextoLog): Promise
   if (pbi.rev === undefined) throw new ErroFluxoPo(502, "sem_revisao", "O Azure DevOps não informou a revisão do PBI; nada foi gravado.");
   ctx.revisaoAntes = pbi.rev;
 
-  const avaliacao = avaliarMovimento(pbi, destino, lida.entrada);
+  // Valores informados na confirmação (Classificação, Cliente) são conferidos pelas listas do Azure de agora (cache de 5 min).
+  const usaListas = lida.entrada.classificacao !== undefined || lida.entrada.cliente !== undefined;
+  const listas = usaListas ? await lerListasDeValores() : undefined;
+  const avaliacao = avaliarMovimento(pbi, destino, lida.entrada, listas ? { classificacoes: listas.classificacoes, clientes: listas.clientes } : {});
   ctx.origem = avaliacao.origem;
   ctx.direcao = avaliacao.direcao;
   ctx.proposta = avaliacao.proposta;

@@ -11,6 +11,7 @@ import {
   agingEmDias,
   avaliarEdicao,
   avaliarMovimento,
+  camposParaMover,
   comentarioDeTransicao,
   comentarioDoUsuario,
   comiteAtrasado,
@@ -745,4 +746,64 @@ test("nomes em ordem inversa de tamanho, PO igual ao e-mail e link do PBI no Azu
 test("montarCards: sem Data Abertura nem Created Date vai para o fim da prioridade e desempata por ID", () => {
   const cards = montarCards([pbi12({ id: 30, dataAberturaProduto: null, criadoEm: null }), pbi12({ id: 20, dataAberturaProduto: null, criadoEm: null }), pbi12({ id: 10, dataAberturaProduto: "2026-11-01T13:00:00Z" })]);
   assert.deepEqual(cards.map((c) => c.pbi.id), [10, 20, 30]);
+});
+
+// ---------------------------------------------------------------- Cliente em qualquer movimento e campos a preencher (2026-11-22)
+
+test("sem Cliente nenhum movimento passa: avanços e voltas, em todas as etapas", () => {
+  const casos: [PbiFluxo, "1.1" | "1.2" | "2.1" | "3.1" | "3.2"][] = [
+    [pbi12({ cliente: "", dataComite: "2026-12-10T03:00:00Z" }), "2.1"], // 1.2 → 2.1
+    [pbi21({ cliente: "" }), "3.1"], // 2.1 → 3.1
+    [pbi21({ cliente: "" }), "3.2"], // 2.1 → 3.2
+    [pbi21({ cliente: "" }), "1.2"], // volta 2.1 → 1.2
+    [pbi12({ cliente: "" }), "1.1"], // volta 1.2 → 1.1
+  ];
+  for (const [p, destino] of casos) {
+    const r = avaliarMovimento(p, destino);
+    assert.equal(r.permitido, false, `${r.origem} → ${destino}`);
+    assert.ok(r.faltas.includes("Preencher o Cliente."), `${r.origem} → ${destino}: ${r.faltas.join(" | ")}`);
+    assert.deepEqual(r.alteracoes, []);
+  }
+  // 1.1 → 1.2: continua exigindo o Cliente, na mesma posição de antes (depois da Classificação)
+  assert.deepEqual(avaliarMovimento(pbi(), "1.2").faltas.map(resumirFalta), ["Esteira (Area Path)", "Classificação", "Cliente", "Data Abertura Produto"]);
+});
+
+test("Cliente informado na confirmação libera o movimento e é gravado junto (em qualquer etapa)", () => {
+  const r = avaliarMovimento(pbi12({ cliente: "", dataComite: "2026-12-10T03:00:00Z" }), "2.1", { cliente: "MARONI" });
+  assert.equal(r.permitido, true);
+  assert.deepEqual(r.alteracoes.map((a) => [a.campo, a.para]), [["Custom.Cliente", "MARONI"], ["Custom.Etapa", "Comitê"]]);
+  const volta = avaliarMovimento(pbi21({ cliente: "" }), "1.2", { cliente: "MARONI" });
+  assert.equal(volta.permitido, true);
+  assert.deepEqual(volta.alteracoes.map((a) => a.campo), ["Custom.Cliente", "Custom.Etapa"]);
+  const analise = avaliarMovimento(pbi21({ cliente: "", dataComite: null }), "3.1", { cliente: "MARONI", dataComite: "2026-12-10" });
+  assert.equal(analise.permitido, true);
+  assert.deepEqual(analise.alteracoes.map((a) => a.campo), ["Custom.Cliente", "Custom.443622e0-6ab8-4ae5-9371-612b44a8fb1d", "Custom.Etapa", "System.Tags"]);
+});
+
+test("listas do Azure: Classificação e Cliente informados são conferidos pela lista recebida (não pela fixa do código)", () => {
+  const entrada = { areaPath: "KMM5\\TMS - Melhorias", classificacao: "Classe Nova do Azure", cliente: "CLIENTE NOVO", dataAberturaProduto: "2026-11-01" };
+  // sem as listas: a Classificação fora da lista fixa do código é recusada
+  assert.ok(avaliarMovimento(pbi(), "1.2", entrada).faltas.some((f) => f.includes("não existe na lista")));
+  // com as listas do Azure (que já têm o valor novo): passa
+  const r = avaliarMovimento(pbi(), "1.2", entrada, { classificacoes: ["EDI", "Classe Nova do Azure"], clientes: ["MARONI", "CLIENTE NOVO"] });
+  assert.equal(r.permitido, true, r.faltas.join(" | "));
+  // Cliente fora da lista do Azure é recusado, mas um Cliente que JÁ está no PBI (legado) não é reconferido
+  const fora = avaliarMovimento(pbi(), "1.2", { ...entrada, cliente: "INVENTADO" }, { classificacoes: ["Classe Nova do Azure"], clientes: ["MARONI"] });
+  assert.deepEqual(fora.faltas, ['Cliente "INVENTADO" não existe na lista do Azure.']);
+  const legado = avaliarMovimento(pbi12({ cliente: "CLIENTE ANTIGO FORA DA LISTA", dataComite: "2026-12-10T03:00:00Z" }), "2.1", {}, { clientes: ["MARONI"] });
+  assert.equal(legado.permitido, true);
+});
+
+test("camposParaMover: o que a confirmação pede para cada movimento, na ordem da tela", () => {
+  assert.deepEqual(camposParaMover(pbi(), "1.2"), ["areaPath", "classificacao", "cliente", "dataAberturaProduto"]);
+  assert.deepEqual(camposParaMover(pbi({ cliente: "X", classificacao: "EDI", dataAberturaProduto: "2026-11-01T13:00:00Z" }), "1.2"), ["areaPath"]);
+  assert.deepEqual(camposParaMover(pbi12(), "2.1"), ["dataComite"]);
+  assert.deepEqual(camposParaMover(pbi12({ cliente: "" }), "2.1"), ["cliente", "dataComite"]);
+  assert.deepEqual(camposParaMover(pbi12({ dataComite: "2026-12-10T03:00:00Z" }), "2.1"), []);
+  assert.deepEqual(camposParaMover(pbi21({ cliente: "" }), "3.1"), ["cliente"]);
+  assert.deepEqual(camposParaMover(pbi21({ cliente: "", dataComite: null }), "3.2"), ["cliente", "dataComite"]);
+  assert.deepEqual(camposParaMover(pbi21({ cliente: "" }), "1.2"), ["cliente"]); // volta: só o Cliente
+  assert.deepEqual(camposParaMover(pbi12(), "1.1"), []); // volta com Cliente: nada a preencher
+  assert.deepEqual(camposParaMover(pbi(), "2.1"), []); // movimento que não existe
+  assert.deepEqual(camposParaMover(pbi12({ status: "Execução", etapa: "Execução" }), "2.1"), []); // fora do quadro
 });

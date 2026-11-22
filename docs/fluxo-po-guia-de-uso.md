@@ -41,14 +41,16 @@ As etapas **3.1, 3.2 e 4.1 são só de exibição** nesta fase (não dá para mo
 2. Abre a **confirmação**. Ela mostra o que será gravado no PBI ("Ao avançar, grava no PBI"). Na 2.1 você escolhe **3.1** ou **3.2**.
 3. **Confirmar e gravar.** O card muda de coluna, o sistema publica um comentário no PBI e registra o movimento.
 
-**Se a regra não é cumprida**, a confirmação mostra o motivo, o botão fica desabilitado e **nada é gravado** — o card continua onde estava. Complete o que falta (no detalhe do card ou no Azure) e atualize.
+**O Cliente é obrigatório em qualquer movimento** (avançar ou voltar).
+
+**Se falta algum campo, você preenche na própria confirmação:** ela mostra "Falta preencher para mover" com só os campos que o card ainda não tem (esteira, Classificação, Cliente, Data Abertura Produto ou Data Comitê, conforme o movimento), com as listas do Azure. Os valores são gravados no PBI **junto com o movimento**, e o quadro "Ao avançar, grava no PBI" mostra tudo antes de você confirmar. Enquanto algo estiver faltando ou inválido, o botão fica desabilitado e **nada é gravado** — o card continua onde estava.
 
 | Movimento | O que precisa estar preenchido | O que é gravado |
 | --- | --- | --- |
 | **1.1 → 1.2** | Esteira definida (Area Path diferente de KMM5), Classificação, Cliente, Data Abertura Produto | Area Path, Classificação, Cliente e Data Abertura Produto como informados; Status e Etapa seguem Backlog |
-| **1.2 → 2.1** | Data Comitê | Etapa Backlog → Comitê (Status segue Backlog), Data Comitê, e **a Data Comitê é copiada para todos os Assesments filhos** (sem filho, o sistema avisa e segue) |
-| **2.1 → 3.1** | Data Comitê | Etapa Análise + tag "Pronto para refinamento tech" |
-| **2.1 → 3.2** | Data Comitê | Etapa Análise, sem a tag |
+| **1.2 → 2.1** | Cliente e Data Comitê | Etapa Backlog → Comitê (Status segue Backlog), Data Comitê, e **a Data Comitê é copiada para todos os Assesments filhos** (sem filho, o sistema avisa e segue) |
+| **2.1 → 3.1** | Cliente e Data Comitê | Etapa Análise + tag "Pronto para refinamento tech" |
+| **2.1 → 3.2** | Cliente e Data Comitê | Etapa Análise, sem a tag |
 
 **Voltar uma etapa** é permitido a quem movimenta, como **proposta** (a tela mostra o aviso): 2.1 → 1.2 volta a Etapa para Backlog e mantém a Data Comitê; 1.2 → 1.1 volta o Area Path para KMM5.
 

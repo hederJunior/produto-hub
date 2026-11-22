@@ -29,7 +29,8 @@ const auth = { Authorization: "Basic " + Buffer.from(`:${process.env.AZURE_DEVOP
 const admin = { email: "script-teste@local", nome: "Script de teste (T16)", tipo: "adm", papel: null };
 const cs = { email: "visitante@local", nome: "Visitante", tipo: "user", papel: "CS" };
 const USUARIOS = ["script-teste@local", "visitante@local"];
-const INICIO = new Date().toISOString();
+// Folga de 30 s: o relógio desta máquina pode adiantar em relação ao do banco (criadoEm vem do banco), e as primeiras linhas do teste ficariam de fora.
+const INICIO = new Date(Date.now() - 30_000).toISOString();
 const resultados = [];
 let tentativas = 0;
 const registrar = (passo, ok, detalhe = "") => {

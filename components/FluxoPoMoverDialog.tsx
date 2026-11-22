@@ -2,10 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowRight, CheckCircle2, ExternalLink, Loader2, X } from "lucide-react";
+import { CampoInformacao, type Campo, type Listas } from "@/components/FluxoPoCampo";
 import { C, PASTEL } from "@/lib/kmm-theme";
 import { urlPbiAzure } from "@/lib/fluxo-po-campos";
 import {
   avaliarMovimento,
+  camposParaMover,
   destinosPossiveis,
   resumirFalta,
   rotuloDaEtapa,
@@ -53,9 +55,36 @@ export default function FluxoPoMoverDialog({
   const [destino, setDestino] = useState<EtapaFluxo>(destinoInicial);
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<ErroMover | null>(null);
+  // Campos que o card ainda não tem e o movimento exige: o usuário preenche aqui mesmo (o servidor grava junto com o movimento).
+  const [preenchidos, setPreenchidos] = useState<Partial<Record<Campo, string>>>({});
+  const [listas, setListas] = useState<Listas | null>(null);
+  const [erroListas, setErroListas] = useState(false);
 
   const opcoes = useMemo(() => destinosPossiveis(card.etapa), [card.etapa]);
-  const av = useMemo(() => avaliarMovimento(card.pbi, destino), [card.pbi, destino]);
+  const campos = useMemo(() => camposParaMover(card.pbi, destino) as Campo[], [card.pbi, destino]);
+  // Só vai ao servidor o que foi realmente preenchido; as listas do Azure conferem Classificação e Cliente aqui e lá.
+  const entrada = useMemo(() => {
+    const e: Partial<Record<Campo, string>> = {};
+    for (const c of campos) if ((preenchidos[c] ?? "").trim() !== "") e[c] = (preenchidos[c] ?? "").trim();
+    return e;
+  }, [campos, preenchidos]);
+  const av = useMemo(
+    () => avaliarMovimento(card.pbi, destino, entrada, listas ? { classificacoes: listas.classificacoes, clientes: listas.clientes } : {}),
+    [card.pbi, destino, entrada, listas],
+  );
+
+  // As listas do Azure só são buscadas quando há o que preencher (e uma vez só).
+  useEffect(() => {
+    if (!campos.length || listas || erroListas) return;
+    let cancelado = false;
+    fetch("/api/fluxo-po/listas", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : Promise.reject()))
+      .then((j: Listas) => !cancelado && setListas(j))
+      .catch(() => !cancelado && setErroListas(true));
+    return () => {
+      cancelado = true;
+    };
+  }, [campos.length, listas, erroListas]);
   const volta = av.direcao === "volta";
 
   useEffect(() => {
@@ -71,7 +100,7 @@ export default function FluxoPoMoverDialog({
       const res = await fetch("/api/fluxo-po/mover", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: card.pbi.id, destino }),
+        body: JSON.stringify({ id: card.pbi.id, destino, ...(Object.keys(entrada).length ? { entrada } : {}) }),
       });
       const j = await res.json().catch(() => ({}));
       if (res.ok) {
@@ -96,7 +125,7 @@ export default function FluxoPoMoverDialog({
         role="dialog"
         aria-modal="true"
         aria-label="Confirmar movimento do card"
-        style={{ background: "#fff", borderRadius: 16, width: "min(580px, 100%)", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(30,27,24,.28)", padding: "20px 22px" }}
+        style={{ background: "#fff", borderRadius: 16, width: "min(580px, 100%)", maxHeight: "90vh", overflowY: "auto", overflowX: "hidden", boxShadow: "0 20px 60px rgba(30,27,24,.28)", padding: "20px 22px" }}
       >
         <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
           <div style={{ minWidth: 0 }}>
@@ -140,6 +169,38 @@ export default function FluxoPoMoverDialog({
           })}
         </div>
 
+        {campos.length > 0 && (
+          <div style={{ marginTop: 16, border: `1px solid ${C.border}`, borderRadius: 12, padding: "12px 14px", background: "#FCFBF9" }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Falta preencher para mover</div>
+            <div style={{ fontSize: 12, color: C.muted, margin: "2px 0 10px" }}>
+              Preencha aqui: os valores são gravados no PBI junto com o movimento (listas do Azure DevOps).
+            </div>
+            {erroListas && <div style={{ fontSize: 12.5, color: C.red, marginBottom: 8 }}>Não foi possível carregar as listas do Azure DevOps. Feche e tente de novo.</div>}
+            {!listas && !erroListas ? (
+              <div style={{ fontSize: 12.5, color: C.muted }}>Carregando as listas do Azure DevOps…</div>
+            ) : listas ? (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 12 }}>
+                {campos.map((c) => (
+                  <CampoInformacao
+                    key={c}
+                    campo={c}
+                    valor={preenchidos[c] ?? ""}
+                    original=""
+                    editavel={!enviando}
+                    listas={listas}
+                    semRaiz
+                    marcarAlterado={false}
+                    aoMudar={(v) => {
+                      setPreenchidos((p) => ({ ...p, [c]: v }));
+                      setErro(null);
+                    }}
+                  />
+                ))}
+              </div>
+            ) : null}
+          </div>
+        )}
+
         {av.permitido ? (
           <div style={{ marginTop: 16 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 600, color: PASTEL.green.dot }}>
@@ -180,11 +241,18 @@ export default function FluxoPoMoverDialog({
               ))}
             </ul>
             <div style={{ marginTop: 10, fontSize: 12.5, color: C.muted }}>
-              Nada foi gravado e o card continua em {rotuloDaEtapa(card.etapa)}. Complete{av.faltas.length > 1 ? " os campos" : " o campo"} ({av.faltas.map(resumirFalta).join(", ")}) no PBI{" "}
-              <a href={urlPbiAzure(card.pbi.id)} target="_blank" rel="noopener noreferrer" style={{ color: C.orange, fontWeight: 600 }}>
-                no Azure DevOps <ExternalLink size={11} style={{ verticalAlign: -1 }} />
-              </a>{" "}
-              e atualize o quadro.
+              Nada foi gravado e o card continua em {rotuloDaEtapa(card.etapa)}.{" "}
+              {campos.length > 0 ? (
+                <>Preencha o que falta acima para poder mover.</>
+              ) : (
+                <>
+                  Complete{av.faltas.length > 1 ? " os campos" : " o campo"} ({av.faltas.map(resumirFalta).join(", ")}) no PBI{" "}
+                  <a href={urlPbiAzure(card.pbi.id)} target="_blank" rel="noopener noreferrer" style={{ color: C.orange, fontWeight: 600 }}>
+                    no Azure DevOps <ExternalLink size={11} style={{ verticalAlign: -1 }} />
+                  </a>{" "}
+                  e atualize o quadro.
+                </>
+              )}
             </div>
           </div>
         )}

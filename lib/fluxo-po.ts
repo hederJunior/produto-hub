@@ -359,7 +359,33 @@ function diferencaData(campo: string, rotulo: string, de: string | null, para: s
  * Avalia mover o PBI para `destino`: diz se pode, o que falta e o que seria gravado. Pura: o servidor chama esta
  * mesma função com o PBI recém-lido do Azure antes de qualquer gravação (a tela não é confiável).
  */
-export function avaliarMovimento(pbi: PbiFluxo, destino: EtapaFluxo, entrada: EntradaMovimento = {}): AvaliacaoMovimento {
+export type OpcoesDeValidacao = {
+  /** Valores permitidos de Classificação (lista do Azure em tempo real); sem ela, vale a lista fixa do código. */
+  classificacoes?: readonly string[];
+  /** Valores permitidos de Cliente (lista do Azure); sem ela, o valor informado não é conferido aqui (o Azure confere). */
+  clientes?: readonly string[];
+};
+
+/**
+ * Campos que o card precisa ter preenchidos para o movimento e que hoje estão vazios (ou, no Area Path da 1.1, ainda na raiz KMM5):
+ * é o que a confirmação de mover pede ao usuário (`entrada`). Na ordem da tela. Vazio = nada a preencher (ou movimento impossível).
+ * Cliente vale para QUALQUER movimento (avanço ou volta).
+ */
+export function camposParaMover(pbi: PbiFluxo, destino: EtapaFluxo): (keyof EntradaMovimento)[] {
+  const { etapa: origem } = derivarEtapa(pbi);
+  const rota = destinosPossiveis(origem).find((d) => d.destino === destino);
+  if (!origem || !rota) return [];
+  const avanco = rota.direcao === "avanco";
+  const campos: (keyof EntradaMovimento)[] = [];
+  if (avanco && origem === "1.1" && (!preenchido(pbi.areaPath) || estaNaAreaRaiz(pbi.areaPath))) campos.push("areaPath");
+  if (avanco && origem === "1.1" && !preenchido(pbi.classificacao)) campos.push("classificacao");
+  if (!preenchido(pbi.cliente)) campos.push("cliente");
+  if (avanco && origem === "1.1" && !preenchido(pbi.dataAberturaProduto)) campos.push("dataAberturaProduto");
+  if (avanco && (origem === "1.2" || origem === "2.1") && !preenchido(pbi.dataComite)) campos.push("dataComite");
+  return campos;
+}
+
+export function avaliarMovimento(pbi: PbiFluxo, destino: EtapaFluxo, entrada: EntradaMovimento = {}, opcoes: OpcoesDeValidacao = {}): AvaliacaoMovimento {
   const { etapa: origem } = derivarEtapa(pbi);
   const rota = destinosPossiveis(origem).find((d) => d.destino === destino);
   const base: AvaliacaoMovimento = {
@@ -383,6 +409,17 @@ export function avaliarMovimento(pbi: PbiFluxo, destino: EtapaFluxo, entrada: En
   const alteracoes: Alteracao[] = [];
   let replicar = false;
   const ef = sobrepor(pbi, entrada);
+  const classificacoesValidas = opcoes.classificacoes ?? CLASSIFICACOES_AZURE;
+
+  // Cliente é obrigatório em QUALQUER movimento (avanço ou volta) — pedido do Heder em 2026-11-22. O valor informado na tela só é
+  // conferido contra a lista do Azure quando ela é fornecida (o Azure também recusa valor fora da lista).
+  const verificarCliente = () => {
+    if (!preenchido(ef.cliente)) faltas.push("Preencher o Cliente.");
+    else if (entrada.cliente !== undefined && opcoes.clientes?.length && !opcoes.clientes.some((c) => c === ef.cliente)) {
+      faltas.push(`Cliente "${ef.cliente}" não existe na lista do Azure.`);
+    }
+  };
+  const alterarCliente = () => diferenca(CAMPOS_PBI.cliente, "Cliente", pbi.cliente, ef.cliente);
 
   if (rota.direcao === "avanco") {
     if (origem === "1.1") {
@@ -391,43 +428,50 @@ export function avaliarMovimento(pbi: PbiFluxo, destino: EtapaFluxo, entrada: En
       else if (estaNaAreaRaiz(ef.areaPath)) faltas.push("Definir a esteira: o Area Path ainda é a raiz KMM5.");
       else if (!areaDoKmm5(ef.areaPath)) faltas.push("O Area Path precisa ser uma esteira do KMM5.");
       if (!preenchido(ef.classificacao)) faltas.push("Preencher a Classificação.");
-      else if (!CLASSIFICACOES_AZURE.some((c) => norm(c) === norm(ef.classificacao))) {
+      else if (!classificacoesValidas.some((c) => norm(c) === norm(ef.classificacao))) {
         faltas.push(`Classificação "${ef.classificacao}" não existe na lista do Azure.`);
       }
-      if (!preenchido(ef.cliente)) faltas.push("Preencher o Cliente.");
+      verificarCliente();
       if (!preenchido(ef.dataAberturaProduto)) faltas.push("Preencher a Data Abertura Produto.");
       else if (!dataValida(ef.dataAberturaProduto)) faltas.push("Data Abertura Produto inválida.");
       // Status Backlog e Etapa Backlog não mudam; grava o que foi informado.
       alteracoes.push(
         ...diferenca(CAMPOS_PBI.areaPath, "Area Path", pbi.areaPath, ef.areaPath),
         ...diferenca(CAMPOS_PBI.classificacao, "Classificação", pbi.classificacao, ef.classificacao),
-        ...diferenca(CAMPOS_PBI.cliente, "Cliente", pbi.cliente, ef.cliente),
+        ...alterarCliente(),
         ...diferencaData(CAMPOS_PBI.dataAberturaProduto, "Data Abertura Produto", pbi.dataAberturaProduto, ef.dataAberturaProduto),
       );
     } else if (origem === "1.2") {
-      // 1.2 → 2.1: Data Comitê preenchida; Etapa Backlog → Comitê (Status continua Backlog).
+      // 1.2 → 2.1: Cliente e Data Comitê preenchidos; Etapa Backlog → Comitê (Status continua Backlog).
+      verificarCliente();
       if (!preenchido(ef.dataComite)) faltas.push("Preencher a Data Comitê.");
       else if (!dataValida(ef.dataComite)) faltas.push("Data Comitê inválida.");
       alteracoes.push(
+        ...alterarCliente(),
         ...diferenca(CAMPOS_PBI.etapa, "Etapa", pbi.etapa, ETAPA.comite),
         ...diferencaData(CAMPOS_PBI.dataComite, "Data Comitê", pbi.dataComite, ef.dataComite),
       );
       replicar = true;
     } else if (origem === "2.1") {
-      // 2.1 → 3.1 / 3.2: Data Comitê preenchida e Status Backlog (garantido pela derivação).
+      // 2.1 → 3.1 / 3.2: Cliente e Data Comitê preenchidos e Status Backlog (garantido pela derivação).
+      verificarCliente();
       if (!preenchido(ef.dataComite)) faltas.push("Preencher a Data Comitê.");
+      else if (!dataValida(ef.dataComite)) faltas.push("Data Comitê inválida.");
       if (norm(pbi.status) !== norm(STATUS.backlog)) faltas.push("O Status precisa continuar Backlog.");
+      alteracoes.push(...alterarCliente(), ...diferencaData(CAMPOS_PBI.dataComite, "Data Comitê", pbi.dataComite, ef.dataComite));
       alteracoes.push(...diferenca(CAMPOS_PBI.etapa, "Etapa", pbi.etapa, ETAPA.analise));
       const novaTags = destino === "3.1" ? adicionarTag(pbi.tags, TAG_PRONTO_REFINAMENTO_TECH) : removerTag(pbi.tags, TAG_PRONTO_REFINAMENTO_TECH);
       alteracoes.push(...diferenca(CAMPOS_PBI.tags, "Tags", pbi.tags, novaTags));
     }
   } else if (origem === "2.1") {
     // PROPOSTA — 2.1 → 1.2: Etapa Comitê volta para Backlog; a Data Comitê é mantida.
-    alteracoes.push(...diferenca(CAMPOS_PBI.etapa, "Etapa", pbi.etapa, ETAPA.backlog));
+    verificarCliente();
+    alteracoes.push(...alterarCliente(), ...diferenca(CAMPOS_PBI.etapa, "Etapa", pbi.etapa, ETAPA.backlog));
     base.avisos.push("Proposta de volta: a Etapa volta para Backlog e a Data Comitê é mantida (a validar com o Heder).");
   } else if (origem === "1.2") {
     // PROPOSTA — 1.2 → 1.1: o Area Path volta para a raiz KMM5.
-    alteracoes.push(...diferenca(CAMPOS_PBI.areaPath, "Area Path", pbi.areaPath, AREA_RAIZ_KMM5));
+    verificarCliente();
+    alteracoes.push(...alterarCliente(), ...diferenca(CAMPOS_PBI.areaPath, "Area Path", pbi.areaPath, AREA_RAIZ_KMM5));
     base.avisos.push("Proposta de volta: o Area Path volta para KMM5 (a validar com o Heder).");
   }
 

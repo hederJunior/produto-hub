@@ -1898,6 +1898,8 @@ function acharAreasKanban(no: { name: string; children?: any[] }, prefixo: strin
 }
 
 /**
+ * NÃO ESTÁ MAIS EM USO (2026-11-22): o Kanban do Upstream foi ocultado a pedido do Heder (a aba Upstream não tem mais o botão "Kanban"). Esta função continua ativa, mas nenhuma tela a usa, para o caso de voltar.
+ *
  * PBIs do Kanban do Upstream: State Backlog ou Orçamento nas áreas de AREAS_KANBAN do projeto, já
  * classificados por coluna (colunaDoPbi — Etapa/Tag filtradas no código, sem valor de Etapa na WIQL,
  * porque a Etapa do Orçamento não tem grafia confirmada). As áreas são descobertas na árvore de áreas

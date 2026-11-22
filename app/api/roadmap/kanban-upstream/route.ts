@@ -1,3 +1,5 @@
+// NÃO ESTÁ MAIS EM USO (2026-11-22): o Kanban do Upstream foi ocultado a pedido do Heder (a aba Upstream não tem mais o botão "Kanban"). O código foi mantido como comentário, para o caso de voltar.
+// Nenhuma tela chama este endpoint hoje; ele foi mantido ativo (sem custo) junto com getKanbanUpstream em lib/devops-client.ts.
 import { NextResponse } from "next/server";
 import { getKanbanUpstream } from "@/lib/devops-client";
 

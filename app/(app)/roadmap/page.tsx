@@ -9,7 +9,8 @@ import { C, COR_BARRA_EPIC, COR_BARRA_FEATURE, corDaArea, corDeAreaTabela, corDe
 import { chaveDia, diasEntreChaves, formatarChaveDia } from "@/lib/datas";
 import BacklogEsteirasClientes, { type OrdemBacklog } from "@/components/BacklogEsteirasClientes";
 import PriorizacaoGut from "@/components/PriorizacaoGut";
-import KanbanUpstream from "@/components/KanbanUpstream";
+// Kanban do Upstream — NÃO ESTÁ MAIS EM USO (2026-11-22): o Kanban do Upstream foi ocultado a pedido do Heder (a aba Upstream não tem mais o botão "Kanban"). O código foi mantido como comentário, para o caso de voltar.
+// import KanbanUpstream from "@/components/KanbanUpstream";
 import KanbanDownstream from "@/components/KanbanDownstream";
 import AgDeploy from "@/components/AgDeploy";
 import PrevisaoEntregas from "@/components/PrevisaoEntregas";
@@ -238,7 +239,11 @@ export default function RoadmapPage() {
   const [visaoBacklog, setVisaoBacklog] = useState<"esteiras" | "gut" | "comites" | "refinamento">("esteiras");
   // Kanban do Upstream (pedido por Heder em 2026-11-03): modo de visualização acionado por botão no topo da seção
   // Upstream, visível em todas as sub-abas. Clicar em uma sub-aba sai do Kanban.
-  const [kanbanUpstream, setKanbanUpstream] = useState(false);
+  // NÃO ESTÁ MAIS EM USO (2026-11-22): o Kanban do Upstream foi ocultado a pedido do Heder (a aba Upstream não tem mais o botão "Kanban"). O código foi mantido como comentário, para o caso de voltar.
+  // O estado original (mantido como comentário) era:
+  //   const [kanbanUpstream, setKanbanUpstream] = useState(false);
+  // Agora é uma constante sempre falsa, só para as condições `!kanbanUpstream && ...` abaixo continuarem valendo sem alteração.
+  const kanbanUpstream = false;
   // Kanban do Downstream (pedido por Heder em 2026-11-05): mesmo modelo — botão "Kanban" na seção Downstream;
   // escolher um dos modos (Alocação por sprint / Demandas / Lista por sprint) sai do Kanban.
   const [kanbanDownstream, setKanbanDownstream] = useState(false);
@@ -258,7 +263,7 @@ export default function RoadmapPage() {
   const telaEspecialDownstream = kanbanDownstream || agDeploy || previsao;
   const abrirSubVisao = (v: "esteiras" | "gut" | "comites" | "refinamento") => {
     setVisaoBacklog(v);
-    setKanbanUpstream(false);
+    // setKanbanUpstream(false); // Kanban do Upstream desativado (ver nota no estado kanbanUpstream)
   };
   // Backlog > Refinamento Tech (pedido por Heder em 2026-11-02): carregado só quando a sub-aba é aberta.
   const [refinamentoItens, setRefinamentoItens] = useState<ItemRefinamento[]>([]);
@@ -751,6 +756,7 @@ export default function RoadmapPage() {
                   {o.label}
                 </button>
               ))}
+              {/* Botão "Kanban" do Upstream — NÃO ESTÁ MAIS EM USO (2026-11-22): o Kanban do Upstream foi ocultado a pedido do Heder (a aba Upstream não tem mais o botão "Kanban"). O código foi mantido como comentário, para o caso de voltar.
               <button
                 className="kmm-btn"
                 aria-pressed={kanbanUpstream}
@@ -761,6 +767,7 @@ export default function RoadmapPage() {
                 <Columns3 size={13} style={{ marginRight: 6, verticalAlign: "-2px" }} />
                 Kanban
               </button>
+              */}
             </div>
           </>
         )}
@@ -948,9 +955,10 @@ export default function RoadmapPage() {
       </div>
 
       <div>
-        {visao === "backlog" && kanbanUpstream ? (
-          <KanbanUpstream refreshKey={refreshKey} />
-        ) : visao === "backlog" && visaoBacklog === "comites" ? (
+        {/* Kanban do Upstream — NÃO ESTÁ MAIS EM USO (2026-11-22): o Kanban do Upstream foi ocultado a pedido do Heder (a aba Upstream não tem mais o botão "Kanban"). O código foi mantido como comentário, para o caso de voltar.
+            Ramo original, antes da condição de "comites" abaixo:
+              visao === "backlog" && kanbanUpstream ? ( <KanbanUpstream refreshKey={refreshKey} /> ) : */}
+        {visao === "backlog" && visaoBacklog === "comites" ? (
           <>
             <div style={{ marginBottom: 16 }}>
               <div style={{ fontFamily: "Sora,sans-serif", fontWeight: 800, fontSize: 20, color: C.text }}>

@@ -17,8 +17,8 @@ A coluna do card é **sempre calculada pelos campos do PBI**. Mover o card grava
 
 | Etapa | Nome | O PBI está assim no Azure |
 | --- | --- | --- |
-| **1.1** | Classificação | Status Backlog · Etapa Backlog · Area Path **KMM5** (sem esteira) |
-| **1.2** | Priorizar e propor solução | Status Backlog · Etapa Backlog · Area Path de uma **esteira** |
+| **1.1** | Classificar | Status Backlog · Etapa Backlog · Area Path **KMM5** (sem esteira) |
+| **1.2** | Priorizar - Backlog da Esteira | Status Backlog · Etapa Backlog · Area Path de uma **esteira** |
 | **2.1** | Comitê / Proposta de solução | Status Backlog · Etapa **Comitê** · Data Comitê preenchida |
 | 3.1 | Análise de engenharia | Status Backlog · Etapa **Análise** · tag "Pronto para refinamento tech" |
 | 3.2 | Consolidação da proposta | Status Backlog · Etapa **Análise** · sem a tag |

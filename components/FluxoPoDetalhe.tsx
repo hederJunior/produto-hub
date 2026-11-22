@@ -37,13 +37,13 @@ type AbaEtapa = "1.1" | "1.2" | "2.1";
 const ABAS: { etapa: AbaEtapa; titulo: string; campos: Campo[]; dica: string }[] = [
   {
     etapa: "1.1",
-    titulo: "1.1 - Classificação",
+    titulo: "1.1 - Classificar",
     campos: ["cliente", "classificacao", "areaPath", "dataAberturaProduto"],
     dica: "Para o card ir para a 1.2: esteira definida (Area Path diferente de KMM5), Classificação, Cliente e Data Abertura Produto preenchidos.",
   },
   {
     etapa: "1.2",
-    titulo: "1.2 - Priorizar e propor solução",
+    titulo: "1.2 - Priorizar - Backlog da Esteira",
     campos: ["cliente", "classificacao", "dataComite"],
     dica: "Para o card ir para o Comitê (2.1): Data Comitê preenchida. Ao salvar uma Data Comitê, ela é copiada para os Assesments filhos do PBI.",
   },

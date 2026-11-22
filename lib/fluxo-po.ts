@@ -25,8 +25,8 @@ import {
 export type EtapaFluxo = "1.1" | "1.2" | "2.1" | "3.1" | "3.2" | "4.1";
 
 export const ETAPAS_FLUXO: readonly { codigo: EtapaFluxo; nome: string; movimenta: boolean }[] = [
-  { codigo: "1.1", nome: "Classificação", movimenta: true },
-  { codigo: "1.2", nome: "Priorizar e propor solução", movimenta: true },
+  { codigo: "1.1", nome: "Classificar", movimenta: true },
+  { codigo: "1.2", nome: "Priorizar - Backlog da Esteira", movimenta: true },
   { codigo: "2.1", nome: "Comitê / Proposta de solução", movimenta: true },
   // Fase 1: só exibição (sem regras de movimento).
   { codigo: "3.1", nome: "Análise de engenharia", movimenta: false },
@@ -38,7 +38,7 @@ export function nomeDaEtapa(codigo: EtapaFluxo): string {
   return ETAPAS_FLUXO.find((e) => e.codigo === codigo)?.nome ?? codigo;
 }
 
-/** "1.2 Priorizar e propor solução" — usado nos comentários e nas mensagens. */
+/** "1.2 Priorizar - Backlog da Esteira" — usado nos comentários e nas mensagens. */
 export function rotuloDaEtapa(codigo: EtapaFluxo): string {
   return `${codigo} ${nomeDaEtapa(codigo)}`;
 }
@@ -586,8 +586,8 @@ export const CHECKLIST_POR_ETAPA: Partial<Record<EtapaFluxo, readonly ItemCheckl
     { id: "distribuicao-esteiras", rotulo: "Distribuição em esteiras" },
   ],
   "1.2": [
-    { id: "avaliar-backlog", rotulo: "Avaliar backlog" },
-    { id: "priorizar-comites", rotulo: "Priorizar próximos comitês" },
+    { id: "avaliar-solicitacao-cliente", rotulo: "Avaliar Solicitação de cliente" },
+    { id: "programar-analise-comite", rotulo: "Programar análise para comitê" },
   ],
   "2.1": [
     { id: "construir-proposta", rotulo: "Construir proposta de solução" },
@@ -825,7 +825,7 @@ export function lerEntradaMovimento(bruto: unknown): { entrada: EntradaMovimento
 /** Quadro "Quando avança" de cada aba (docs/fluxo-po-decisoes.md §6). */
 export const QUANDO_AVANCA: Record<"1.1" | "1.2" | "2.1", string> = {
   "1.1": "Demanda classificada, com a esteira definida.",
-  "1.2": "Proposta de solução pronta para ser apresentada em Comitê de Produto.",
+  "1.2": "Pós validação de requisição pelo PO e alocação para comitê/Análise",
   "2.1": "Pós aprovação de proposta de solução em Comitê de Produto.",
 };
 

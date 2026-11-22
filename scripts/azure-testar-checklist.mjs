@@ -84,9 +84,9 @@ async function main() {
     registrar("Desmarcar mantém uma linha só (atualiza, não apaga nem duplica)", ((await supabase.from("FluxoPoChecklist").select("*", { count: "exact", head: true }).eq("workItemId", id)).count) === 2);
 
     // Duas marcações simultâneas do mesmo item (corrida no índice único): as duas dão certo e fica 1 linha
-    const outro = { id, etapa: "1.2", itemId: "avaliar-backlog", marcado: true };
+    const outro = { id, etapa: "1.2", itemId: "avaliar-solicitacao-cliente", marcado: true };
     const [a, b] = await Promise.allSettled([marcarItemChecklist({ ...outro, usuario: admin }), marcarItemChecklist({ ...outro, usuario: po })]);
-    const { count: linhasCorrida } = await supabase.from("FluxoPoChecklist").select("*", { count: "exact", head: true }).eq("workItemId", id).eq("etapa", "1.2").eq("itemId", "avaliar-backlog");
+    const { count: linhasCorrida } = await supabase.from("FluxoPoChecklist").select("*", { count: "exact", head: true }).eq("workItemId", id).eq("etapa", "1.2").eq("itemId", "avaliar-solicitacao-cliente");
     registrar("Marcações simultâneas do mesmo item: ambas concluem e há 1 linha", a.status === "fulfilled" && b.status === "fulfilled" && linhasCorrida === 1, `${a.status}/${b.status}, ${linhasCorrida} linha(s)${a.status === "rejected" ? ` | ${a.reason?.message}` : ""}${b.status === "rejected" ? ` | ${b.reason?.message}` : ""}`);
   } finally {
     const { error } = await supabase.from("FluxoPoChecklist").delete().eq("workItemId", id);

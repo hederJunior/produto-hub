@@ -26,8 +26,8 @@ A etapa de Triagem (feita pelo Time de Atendimento em outra ferramenta) **não e
 
 | Etapa | Nome | Responsável | Estado do PBI no Azure DevOps |
 | --- | --- | --- | --- |
-| 1.1 | Classificação | PM ou PO | Status Backlog, Etapa Backlog, Area KMM5 |
-| 1.2 | Priorizar e propor solução (Backlog Esteira) | PM ou PO | Status Backlog, Etapa Backlog, Area diferente de KMM5 |
+| 1.1 | Classificar | PM ou PO | Status Backlog, Etapa Backlog, Area KMM5 |
+| 1.2 | Priorizar - Backlog da Esteira | PM ou PO | Status Backlog, Etapa Backlog, Area diferente de KMM5 |
 | 2.1 | Comitê de produto / Proposta de solução | PM ou PO, com Tech Lead e QA Leader | Status Backlog, Etapa Comitê, Data Comitê preenchida |
 | 3.1 | Análise de engenharia | Tech Lead, QA Leader | Status Backlog, Etapa Análise, tag "Pronto para refinamento tech" |
 | 3.2 | Consolidação da proposta | PO | Status Backlog, Etapa Análise (sem a tag) |
@@ -73,7 +73,7 @@ Toda volta também grava comentário no PBI e entra no log.
 
 | Coluna | Campos |
 | --- | --- |
-| 1.1 Classificação | Número do card (link para o Azure DevOps), título, aging, cliente |
+| 1.1 Classificar | Número do card (link para o Azure DevOps), título, aging, cliente |
 | 1.2 Priorizar | Número (link), título, Area Path, aging, cliente, prioridade |
 | 2.1 Comitê | Número (link), título, Area Path, Data Comitê (com indicativo de atraso), cliente, prioridade |
 | 3.1, 3.2, 4.1 | Só exibição: número, título, Area Path, cliente, prioridade |
@@ -86,15 +86,15 @@ Cada aba tem: checklist, quadro de informações da etapa, descrição da solici
 
 | Aba | Checklist | Informações da etapa |
 | --- | --- | --- |
-| 1.1 - Classificação | Fazer o entendimento da dor do cliente (preencher a classificação); Análise de aderência com a estratégia do produto; Distribuição em esteiras | Cliente, Classificação, Area Path, Data Abertura Produto |
-| 1.2 - Priorizar e propor solução | Avaliar backlog; Priorizar próximos comitês | Cliente, Classificação, Data Comitê |
+| 1.1 - Classificar | Fazer o entendimento da dor do cliente (preencher a classificação); Análise de aderência com a estratégia do produto; Distribuição em esteiras | Cliente, Classificação, Area Path, Data Abertura Produto |
+| 1.2 - Priorizar - Backlog da Esteira | Avaliar Solicitação de cliente; Programar análise para comitê | Cliente, Classificação, Data Comitê |
 | 2.1 - Comitê / Proposta de solução | Construir proposta de solução; Apresentação em comitê; Estimativa Tech; Estimativa QA; Definição de Delivery | Cliente, Classificação, Data Comitê |
 
 Na aba 1.1, junto à descrição, há um botão **"Agente de Classificação"** sem funcionalidade nesta fase.
 
 "Quando avança":
 - 1.1: demanda classificada, com a esteira definida.
-- 1.2: proposta de solução pronta para ser apresentada em Comitê de Produto.
+- 1.2: pós validação de requisição pelo PO e alocação para comitê/Análise.
 - 2.1: pós aprovação de proposta de solução em Comitê de Produto.
 
 ## 7. Checklist, comentários e auditoria

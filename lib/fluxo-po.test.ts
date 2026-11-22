@@ -362,7 +362,7 @@ test("paraJsonPatch: começa com test /rev, usa add e remove", () => {
 test("comentarioDeTransicao: origem, destino, usuário e data (fuso de Brasília); escapa HTML", () => {
   const txt = comentarioDeTransicao({ origem: "1.2", destino: "2.1", usuario: "Ana <script>", quando: new Date("2026-11-20T15:30:00Z") });
   assert.match(txt, /avançou/);
-  assert.match(txt, /1\.2 Priorizar e propor solução/);
+  assert.match(txt, /1\.2 Priorizar - Backlog da Esteira/);
   assert.match(txt, /2\.1 Comitê/);
   assert.match(txt, /Ana &lt;script&gt;/);
   assert.match(txt, /20\/11\/2026.*12:30/);

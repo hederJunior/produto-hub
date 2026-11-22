@@ -2657,3 +2657,10 @@ Entregues (em `docs/`): **`fluxo-po-guia-de-uso.md`** (guia para PM e PO: quem p
 fazer o **`git push`** (T10 a T22 estão só commitadas localmente) e o **teste com login real** depois do deploy (roteiro de 6 passos com o PBI 46766). Rollback: promover o deploy anterior na Vercel; a migration só acrescenta tabelas.
 **Achado do relatório de acessos (dados reais, sem mexer):** 17 usuários cadastrados, **só 2 movimentam** (as duas administradoras; uma sem nome e a outra com nome de uma palavra só, que não casa no "Meus itens"), 15 só visualizam, 16 sem nome. Dois e-mails parecidos
 (`catrini.olkowski`/`catrini.olkwoski`) merecem conferência. Papel e nome são dado de acesso e decisão do Heder: **não alterei o cadastro**; deixei o comando pronto.
+
+## 2026-11-22 — Fluxo do PO · ajustes pós-publicação, grupo 1: nomes das etapas, checklist e "Quando avança"
+
+Pedido do Heder: etapa **1.1** passa a se chamar **"Classificar"** e a **1.2** **"Priorizar - Backlog da Esteira"** (`ETAPAS_FLUXO`; vale para as colunas, abas, avisos, confirmação e o texto dos comentários de transição no PBI — comentários já publicados mantêm o nome antigo);
+checklist da 1.2 vira **"Avaliar Solicitação de cliente"** e **"Programar análise para comitê"**; "Quando avança" da 1.2 vira **"Pós validação de requisição pelo PO e alocação para comitê/Análise"**. Os **identificadores internos** dos dois itens do checklist da 1.2 também mudaram
+(`avaliar-solicitacao-cliente`, `programar-analise-comite`) para que marcações dos itens antigos (se houvesse) não ganhassem outro significado; o piloto ainda não tinha marcações. Docs vivos (`fluxo-po-decisoes.md`, `fluxo-po-guia-de-uso.md`) atualizados;
+este histórico mantém os nomes antigos nas entradas anteriores. Testes unitários e o teste de integração do checklist ajustados e passando.

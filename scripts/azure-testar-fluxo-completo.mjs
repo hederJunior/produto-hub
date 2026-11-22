@@ -101,7 +101,7 @@ async function main() {
     registrar("MOVIMENTO 1.1 → 1.2: o card vai para a 1.2 com a esteira informada", m1.card?.etapa === "1.2" && m1.direcao === "avanco" && m1.card?.pbi.areaPath === inicial.areaPath, `card em ${m1.card?.etapa}; gravou ${m1.alteracoes.map((a) => a.rotulo).join(", ")}`);
     registrar("...só o Area Path foi gravado (os demais campos já estavam preenchidos) e Status/Etapa seguem Backlog", m1.alteracoes.length === 1 && m1.card?.pbi.status === "Backlog" && m1.card?.pbi.etapa === "Backlog");
     const t1 = m1.comentario.id ? await textoDoComentario(m1.comentario.id) : "";
-    registrar("...comentário traz origem, destino e usuário", t1.includes("1.1 Classificação") && t1.includes("1.2 Priorizar") && t1.includes("Script de teste (T20)"), t1.slice(0, 150));
+    registrar("...comentário traz origem, destino e usuário", t1.includes("1.1 Classificar") && t1.includes("1.2 Priorizar") && t1.includes("Script de teste (T20)"), t1.slice(0, 150));
 
     // ---- MOVIMENTO 2: 1.2 → 2.1 (+ Assesment) ----
     const revNa12 = (await lerPbiFluxoPoAtual(id)).rev;

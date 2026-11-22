@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { AlertCircle, AlertTriangle, Building2, CalendarDays, CheckCircle2, Clock, Eye, FileText, GitBranch, MoveRight, RefreshCw, X } from "lucide-react";
+import { AlertCircle, AlertTriangle, Building2, CalendarDays, CheckCircle2, Clock, Eye, FileText, GitBranch, MoveRight, RefreshCw, UserRound, X } from "lucide-react";
 import { useProduto } from "@/components/ProdutoContext";
+import MultiSelectFiltro from "@/components/MultiSelectFiltro";
 import FluxoPoMoverDialog, { type RespostaMover } from "@/components/FluxoPoMoverDialog";
 import { C, PASTEL, infoPrioridade } from "@/lib/kmm-theme";
 import { formatarChaveDia } from "@/lib/datas";
@@ -26,6 +27,9 @@ import {
   type CardFluxo,
   type EtapaFluxo,
 } from "@/lib/fluxo-po";
+
+/** Onde o quadro guarda, na sessão do navegador, os filtros do usuário. */
+const CHAVE_FILTROS = "fluxo-po:filtros:v1";
 
 type Esteira = { valor: string; rotulo: string };
 type Eu = { email: string | null; nome: string | null };
@@ -57,9 +61,12 @@ export default function FluxoPoUpstream() {
   const [dados, setDados] = useState<Resposta | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(true);
-  const [esteiraSel, setEsteiraSel] = useState("");
+  // Filtros: esteiras (VÁRIAS, pelo Area Path), "Meus itens" e "Somente bloqueados". Ficam guardados na sessão do navegador
+  // (sessionStorage): quem abre o detalhe de um card e volta encontra o quadro com os mesmos filtros.
+  const [esteirasSel, setEsteirasSel] = useState<string[]>([]);
   const [meusItens, setMeusItens] = useState(false);
   const [somenteBloqueados, setSomenteBloqueados] = useState(false);
+  const [filtrosRestaurados, setFiltrosRestaurados] = useState(false);
   const [hoje] = useState(() => new Date());
   const [recarga, setRecarga] = useState(0);
   // Atualização (T19): atualizar sem esconder o quadro, hora da última carga e controle do "voltar para a tela".
@@ -133,6 +140,36 @@ export default function FluxoPoUpstream() {
     };
   }, [semFluxo, pedido, arrastando]);
 
+  // Restaura os filtros da sessão (uma vez, ao montar) e depois grava a cada mudança. Tudo em try/catch: o armazenamento pode estar
+  // bloqueado (aba anônima, política do navegador) e a tela precisa funcionar do mesmo jeito, só sem lembrar dos filtros.
+  useEffect(() => {
+    try {
+      const guardado = JSON.parse(window.sessionStorage.getItem(CHAVE_FILTROS) ?? "null") as { esteiras?: unknown; meusItens?: unknown; somenteBloqueados?: unknown } | null;
+      if (guardado && typeof guardado === "object") {
+        if (Array.isArray(guardado.esteiras)) setEsteirasSel(guardado.esteiras.filter((v): v is string => typeof v === "string"));
+        setMeusItens(guardado.meusItens === true);
+        setSomenteBloqueados(guardado.somenteBloqueados === true);
+      }
+    } catch {
+      /* sem armazenamento: segue sem lembrar */
+    }
+    setFiltrosRestaurados(true);
+  }, []);
+  useEffect(() => {
+    if (!filtrosRestaurados) return; // não sobrescreve o guardado com os valores iniciais antes de restaurar
+    try {
+      window.sessionStorage.setItem(CHAVE_FILTROS, JSON.stringify({ esteiras: esteirasSel, meusItens, somenteBloqueados }));
+    } catch {
+      /* idem */
+    }
+  }, [filtrosRestaurados, esteirasSel, meusItens, somenteBloqueados]);
+  // Esteira guardada que já não existe no Azure sai do filtro (senão o quadro ficaria só com os cards sem esteira).
+  useEffect(() => {
+    const existentes = dados?.esteiras ?? [];
+    if (!existentes.length) return;
+    setEsteirasSel((sel) => (sel.every((v) => existentes.some((e) => e.valor === v)) ? sel : sel.filter((v) => existentes.some((e) => e.valor === v))));
+  }, [dados?.esteiras]);
+
   const cards = dados?.cards ?? [];
   const podeMover = !!dados?.podeMovimentar;
 
@@ -185,16 +222,16 @@ export default function FluxoPoUpstream() {
   }
   const eu: Eu = dados?.eu ?? { email: null, nome: null };
 
-  // Esteira escolhida + os cards da raiz KMM5 (etapa 1.1, ainda sem esteira, são de quem vai classificar para qualquer uma).
+  // Esteiras escolhidas (uma ou mais) + os cards da raiz KMM5 (etapa 1.1, ainda sem esteira, são de quem vai classificar para qualquer uma).
   const visiveis = useMemo(
     () =>
       cards.filter((c) => {
         const area = c.pbi.areaPath;
-        if (esteiraSel && !(estaNaAreaRaiz(area) || area === esteiraSel || area.startsWith(`${esteiraSel}\\`))) return false;
+        if (esteirasSel.length && !(estaNaAreaRaiz(area) || esteirasSel.some((e) => area === e || area.startsWith(`${e}\\`)))) return false;
         if (meusItens && !ehMeuItem(c.pbi, eu)) return false;
         return true;
       }),
-    [cards, esteiraSel, meusItens, eu.email, eu.nome] // eslint-disable-line react-hooks/exhaustive-deps
+    [cards, esteirasSel, meusItens, eu.email, eu.nome] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   // Contadores por coluna (prontos e bloqueados): sobre os cards dos filtros de esteira e meus itens. O filtro
@@ -229,12 +266,14 @@ export default function FluxoPoUpstream() {
       <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>Esteira</span>
-          <select className="kmm-input" style={{ width: "auto", minWidth: 220 }} value={esteiraSel} onChange={(e) => setEsteiraSel(e.target.value)} disabled={!dados?.esteiras.length}>
-            <option value="">Todas as esteiras</option>
-            {(dados?.esteiras ?? []).map((e) => (
-              <option key={e.valor} value={e.valor}>{e.rotulo}</option>
-            ))}
-          </select>
+          <MultiSelectFiltro
+            rotuloTodos="Todas as esteiras"
+            opcoes={(dados?.esteiras ?? []).map((e) => e.rotulo)}
+            selecionados={esteirasSel.map((v) => rotuloDaEsteira(dados, v))}
+            onChange={(rotulos) => setEsteirasSel(rotulos.map((r) => dados?.esteiras.find((e) => e.rotulo === r)?.valor ?? r))}
+            pesquisavel
+            placeholderBusca="Digite o nome da esteira…"
+          />
         </div>
         <button
           type="button"
@@ -271,7 +310,7 @@ export default function FluxoPoUpstream() {
         {!carregando && !erro && (
           <span style={{ fontSize: 12, color: C.muted }}>
             {exibidos.length} {exibidos.length === 1 ? "demanda" : "demandas"}
-            {esteiraSel ? ` em ${esteiras(dados, esteiraSel)} (mais os cards sem esteira)` : ""}
+            {esteirasSel.length ? ` em ${esteirasSel.length === 1 ? rotuloDaEsteira(dados, esteirasSel[0]) : `${esteirasSel.length} esteiras`} (mais os cards sem esteira)` : ""}
             {meusItens ? " suas" : ""}
           </span>
         )}
@@ -408,7 +447,7 @@ export default function FluxoPoUpstream() {
   );
 }
 
-function esteiras(dados: Resposta | null, valor: string): string {
+function rotuloDaEsteira(dados: Resposta | null, valor: string): string {
   return dados?.esteiras.find((e) => e.valor === valor)?.rotulo ?? valor;
 }
 
@@ -503,6 +542,13 @@ function CardEsteira({
           </span>
         )}
       </div>
+
+      {etapa !== "1.1" && (
+        <div title={pbi.po ? `PO: ${pbi.po}` : "Sem PO no PBI"} style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, fontSize: 11.5, color: pbi.po ? C.muted : C.faint }}>
+          <UserRound size={12} style={{ flexShrink: 0 }} />
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>PO: {pbi.po || "sem PO"}</span>
+        </div>
+      )}
 
       {card.inconsistencia ? (
         <div role="alert" title={card.inconsistencia} style={{ display: "flex", alignItems: "flex-start", gap: 6, marginTop: 9, fontSize: 11.5, fontWeight: 600, color: C.red, background: "#FBE7E4", borderRadius: 8, padding: "5px 8px" }}>

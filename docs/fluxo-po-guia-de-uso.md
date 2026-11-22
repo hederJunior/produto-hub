@@ -28,10 +28,11 @@ As etapas **3.1, 3.2 e 4.1 são só de exibição** nesta fase (não dá para mo
 
 ## 3. O quadro
 
-- **Cards** mostram o número (clique abre o PBI no Azure), o título, o cliente e, conforme a coluna: esteira (Area Path), prioridade, **aging** (dias desde a Data Abertura Produto; **vermelho acima de 30**) e, na 2.1, a **Data Comitê** (vermelho com "Atrasada" quando já passou).
+- **Cards** mostram o número (clique abre o PBI no Azure), o título, o cliente, o **PO** (a partir da 1.2) e, conforme a coluna: esteira (Area Path), prioridade, **aging** (dias desde a Data Abertura Produto; **vermelho acima de 30**) e, na 2.1, a **Data Comitê** (vermelho com "Atrasada" quando já passou).
 - **Prontidão:** o card diz **"Pronto para mover"** ou **"Falta: …"** (por exemplo, "Falta: Data Comitê"). Cards em vermelho com "Inconsistente" têm um estado fora das regras (hoje: Etapa Comitê sem Data Comitê).
 - **Contadores** no topo de cada coluna: quantos cards estão prontos e quantos bloqueados.
-- **Filtros:** *Esteira* (mostra a esteira escolhida **e** os cards da raiz KMM5, que ainda não têm esteira), *Meus itens* (PBIs em que você é o PO ou o responsável; precisa do seu **nome** no cadastro) e *Somente bloqueados*.
+- **Filtros:** *Esteira* (escolha **uma ou mais**; mostra as esteiras escolhidas **e** os cards da raiz KMM5, que ainda não têm esteira), *Meus itens* (PBIs em que você é o PO ou o responsável; precisa do seu **nome** no cadastro) e *Somente bloqueados*.
+- Os filtros ficam **guardados na sessão do navegador**: ao abrir o detalhe de um card e voltar, o quadro mantém os mesmos filtros (e a aba Upstream/Downstream). Fechar a aba do navegador limpa tudo.
 - **Atualizar:** botão no topo. O quadro também se atualiza sozinho quando você volta para a tela depois de mais de 30 segundos.
 - **Detalhes:** botão em cada card, abre a tela do PBI.
 
@@ -58,7 +59,7 @@ Se outra pessoa mexer no PBI na hora em que você grava, o sistema recusa com a 
 
 ## 5. A tela de detalhe de um PBI
 
-Abra por **Detalhes** no card. No topo: número, título, etapa atual, cliente, esteira e aging. Há **uma aba por etapa** (1.1, 1.2, 2.1); a aba aberta é a da etapa atual. A **faixa de prontidão** diz se o card está pronto ou o que falta, e tem o botão **Mover card…**.
+Abra por **Detalhes** no card. No topo: número, título, etapa atual, cliente, **PO**, esteira e aging. Há **uma aba por etapa** (1.1, 1.2, 2.1); a aba aberta é a da etapa atual. A **faixa de prontidão** diz se o card está pronto ou o que falta, e tem o botão **Mover card…**.
 
 - **Informações da etapa** (editáveis para quem movimenta): Cliente, Classificação, Area Path (esteira), Data Abertura Produto e Data Comitê, com as **listas do próprio Azure**. Clique em **Salvar informações** para gravar no PBI. Ao salvar uma **Data Comitê**, ela é copiada para os Assesments filhos. Mudar o Area Path pode trocar o card de coluna (a tela avisa).
 - **Checklist da etapa:** marque os itens; fica registrado **quem marcou e quando**. É um apoio: **não bloqueia** o movimento.

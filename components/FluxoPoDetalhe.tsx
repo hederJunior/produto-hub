@@ -262,7 +262,10 @@ export default function FluxoPoDetalhe({ id }: { id: string }) {
             </div>
             <h1 style={{ fontFamily: "Sora,sans-serif", fontSize: 21, lineHeight: 1.3, margin: "8px 0 0", color: C.text }}>{pbi.titulo}</h1>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10, fontSize: 12.5, color: C.muted }}>
-              {pbi.cliente && <span style={{ background: PASTEL.sky.bg, borderRadius: 7, padding: "2px 9px", color: C.text }}>{pbi.cliente}</span>}
+              {pbi.cliente && <span title="Cliente" style={{ background: PASTEL.sky.bg, borderRadius: 7, padding: "2px 9px", color: C.text }}>{pbi.cliente}</span>}
+              <span title={pbi.po ? "Product Owner do PBI (campo PO)" : "O PBI não tem o campo PO preenchido"} style={{ background: C.soft, borderRadius: 7, padding: "2px 9px", color: pbi.po ? C.text : C.faint }}>
+                PO: {pbi.po || "sem PO"}
+              </span>
               <span style={{ background: C.soft, borderRadius: 7, padding: "2px 9px" }}>{rotuloDaArea(pbi.areaPath)}</span>
               {dias !== null && (
                 <span title="Hoje menos a Data Abertura Produto" style={{ display: "inline-flex", alignItems: "center", gap: 4, color: agingEmAlerta(dias) ? C.red : C.muted, fontWeight: agingEmAlerta(dias) ? 600 : 500 }}>

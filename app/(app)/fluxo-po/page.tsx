@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CalendarRange, ListTodo } from "lucide-react";
 import AbasVisao from "@/components/AbasVisao";
 import PageHeader from "@/components/PageHeader";
@@ -17,6 +17,23 @@ type Aba = "upstream" | "downstream";
 export default function FluxoPoPage() {
   const [aba, setAba] = useState<Aba>("upstream");
 
+  // A aba escolhida fica guardada na sessão (junto com os filtros do quadro): voltar do detalhe não joga o usuário de volta no Upstream.
+  useEffect(() => {
+    try {
+      if (window.sessionStorage.getItem("fluxo-po:aba:v1") === "downstream") setAba("downstream");
+    } catch {
+      /* sem armazenamento: segue no padrão */
+    }
+  }, []);
+  function escolher(a: Aba) {
+    setAba(a);
+    try {
+      window.sessionStorage.setItem("fluxo-po:aba:v1", a);
+    } catch {
+      /* idem */
+    }
+  }
+
   return (
     <div>
       <PageHeader
@@ -27,7 +44,7 @@ export default function FluxoPoPage() {
       <AbasVisao<Aba>
         rotulo="Fluxo"
         valor={aba}
-        onChange={setAba}
+        onChange={escolher}
         opcoes={[
           { valor: "upstream", label: "Upstream", icone: <ListTodo size={15} /> },
           { valor: "downstream", label: "Downstream", icone: <CalendarRange size={15} /> },

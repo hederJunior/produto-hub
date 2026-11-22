@@ -971,6 +971,16 @@ export const MOTIVOS_CANCELAMENTO: readonly MotivoCancelamento[] = [
     rotulo: "Obrigação Legal",
     texto: "Esta demanda já faz parte de escopo de evolução obrigatório de TMS. A demanda está sendo cancelada.",
   },
+  {
+    id: "excesso-de-demandas",
+    rotulo: "Excesso de demandas",
+    texto: "Devido à quantidade de demandas em aberto dentro do fluxo das esteiras de desenvolvimento, esta demanda está sendo cancelada e deve ser reaberta conforme priorização junto ao Key User e time de produtos.",
+  },
+  {
+    id: "usuario-nao-liberado",
+    rotulo: "Usuário não liberado para abertura de demanda",
+    texto: "Conforme alinhamento feito entre as equipes, esta demanda está sendo cancelada por não ter sido aberta pelo Key User da empresa. Procure ser key user para priorização e abertura de demanda conforme alinhamento prévio.",
+  },
 ];
 
 export function motivoDeCancelamento(id: unknown): MotivoCancelamento | undefined {

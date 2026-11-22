@@ -2707,3 +2707,8 @@ Empate (mesma data, ou vários sem data): ordem geral do quadro (prioridade → 
 
 Pedido do Heder: quem clica num motivo de cancelamento (aba 1.1) precisa poder desistir. Ao lado de "Publicar comentário e cancelar demanda" há agora **"Não cancelar demanda"**: descarta o motivo escolhido, o texto (editado ou não) e qualquer erro, e o bloco volta ao estado de antes do primeiro clique (só os 5 motivos, sem caixa de texto). Sem confirmação extra, de propósito
 (o clique já é a desistência); fica desabilitado enquanto a publicação está em andamento. Nada é gravado no PBI. Conferido no navegador (escolher TNS → texto aparece → "Não cancelar" → 0 motivos marcados, sem caixa de texto nem botões).
+
+## 2026-11-22 — Fluxo do PO · mais 2 motivos de cancelamento (agora 7)
+
+Pedido do Heder: na aba 1.1, dois motivos novos no Cancelamento de Demanda, no fim da lista: **"Excesso de demandas"** e **"Usuário não liberado para abertura de demanda"**, cada um com o texto padrão fornecido (editável antes de publicar, como os demais). Só corrigi ortografia evidente, como nos 5 primeiros: "Devido á"→"Devido à", "esta demanda esta sendo"→"está sendo",
+"Key user" → "Key User" no 1º texto e o ";" final do 1º texto trocado por ".". O resto do texto do 2º motivo foi mantido como enviado. Regras iguais às dos outros motivos (só na 1.1, muda o Status para Cancelado, comentário assinado, log). Atenção ao efeito do GLPI já registrado acima. Testes unitários atualizados (7 motivos, textos novos).

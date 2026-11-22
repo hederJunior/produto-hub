@@ -815,9 +815,9 @@ test("camposParaMover: o que a confirmação pede para cada movimento, na ordem 
 
 // ---------------------------------------------------------------- cancelamento de demanda (2026-11-22)
 
-test("MOTIVOS_CANCELAMENTO: os 5 motivos, com o texto padrão de cada um, dentro do limite de comentário", () => {
-  assert.deepEqual(MOTIVOS_CANCELAMENTO.map((m) => m.rotulo), ["Demanda fora de priorização do produto", "Torre de Controle", "ERP", "TNS", "Obrigação Legal"]);
-  assert.equal(new Set(MOTIVOS_CANCELAMENTO.map((m) => m.id)).size, 5);
+test("MOTIVOS_CANCELAMENTO: os 7 motivos, com o texto padrão de cada um, dentro do limite de comentário", () => {
+  assert.deepEqual(MOTIVOS_CANCELAMENTO.map((m) => m.rotulo), ["Demanda fora de priorização do produto", "Torre de Controle", "ERP", "TNS", "Obrigação Legal", "Excesso de demandas", "Usuário não liberado para abertura de demanda"]);
+  assert.equal(new Set(MOTIVOS_CANCELAMENTO.map((m) => m.id)).size, 7);
   for (const m of MOTIVOS_CANCELAMENTO) {
     assert.ok(m.texto.length > 40 && m.texto.length <= LIMITE_COMENTARIO, m.id);
     assert.equal(validarComentario(m.texto).erro, undefined, m.id);
@@ -831,6 +831,8 @@ test("MOTIVOS_CANCELAMENTO: os 5 motivos, com o texto padrão de cada um, dentro
   assert.match(MOTIVOS_CANCELAMENTO[2].texto, /road map de construção a partir de 2027/);
   assert.match(MOTIVOS_CANCELAMENTO[3].texto, /ecossistema NS Tech/);
   assert.match(MOTIVOS_CANCELAMENTO[4].texto, /^Esta demanda já faz parte de escopo de evolução obrigatório de TMS\./);
+  assert.match(MOTIVOS_CANCELAMENTO[5].texto, /^Devido à quantidade de demandas em aberto.*esta demanda está sendo cancelada e deve ser reaberta.*Key User e time de produtos\.$/);
+  assert.match(MOTIVOS_CANCELAMENTO[6].texto, /^Conforme alinhamento feito entre as equipes, esta demanda está sendo cancelada por não ter sido aberta pelo Key User da empresa\..*alinhamento prévio\.$/);
 });
 
 test("motivoDeCancelamento: acha pelo id, recusa o resto", () => {

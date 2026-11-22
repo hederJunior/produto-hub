@@ -244,7 +244,7 @@ function Descricao({ id, aba }: { id: number; aba: AbaEtapa }) {
 // ---------------------------------------------------------------------------------------------------------------
 
 /**
- * Cancelamento de Demanda (aba 1.1, entre a descrição e os comentários): o usuário escolhe um dos 5 motivos; o texto padrão do motivo
+ * Cancelamento de Demanda (aba 1.1, entre a descrição e os comentários): o usuário escolhe um dos 7 motivos; o texto padrão do motivo
  * aparece para ele REVISAR E EDITAR; só ao confirmar o texto é publicado como comentário no PBI e o Status do card muda para Cancelado
  * (o card sai do quadro). Só quem movimenta o fluxo, e só para card que está na 1.1; o servidor confere tudo de novo.
  */

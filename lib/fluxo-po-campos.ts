@@ -39,6 +39,8 @@ export const CAMPOS_ASSESMENT = {
 export const STATUS = {
   backlog: "Backlog",
   orcamento: "Orçamento",
+  /** Status do cancelamento de demanda (valor da lista de Status do Azure, conferido na T01). */
+  cancelado: "Cancelado",
 } as const;
 
 /** Valores da lista Etapa (Custom.Etapa) usados pelo fluxo. Lista completa do Azure: ETAPAS_AZURE. */

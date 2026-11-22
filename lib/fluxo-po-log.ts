@@ -11,8 +11,8 @@ export type LinhaLogMovimento = {
   workItemId: number;
   origem: EtapaFluxo | null;
   destino: string;
-  /** "edicao" = edição das informações do PBI na tela de detalhe (T16), não troca de etapa. */
-  direcao: "avanco" | "volta" | "edicao" | null;
+  /** "edicao" = edição das informações do PBI na tela de detalhe (T16); "cancelamento" = demanda cancelada pelo detalhe da 1.1. Nenhuma das duas é troca de etapa. */
+  direcao: "avanco" | "volta" | "edicao" | "cancelamento" | null;
   proposta: boolean;
   usuario: string;
   usuarioNome: string | null;
@@ -33,7 +33,7 @@ export type ContextoLog = {
   workItemId: number | null;
   origem: EtapaFluxo | null;
   destino: string;
-  direcao: "avanco" | "volta" | "edicao" | null;
+  direcao: "avanco" | "volta" | "edicao" | "cancelamento" | null;
   proposta: boolean;
   usuario: string;
   usuarioNome: string | null;
@@ -116,5 +116,23 @@ export function linhaDeEdicao(
     comentarioId: null,
     comentarioErro: null,
     assesments: r.assesments,
+  };
+}
+
+/** Demanda cancelada pelo detalhe da 1.1: Status → Cancelado. "parcial" se o comentário não foi publicado (o Status já mudou). */
+export function linhaDeCancelamento(
+  ctx: ContextoLog & { workItemId: number },
+  r: { alteracoes: Alteracao[]; avisos: string[]; comentario: { publicado: boolean; id?: number; erro?: string } },
+): LinhaLogMovimento {
+  return {
+    ...baseDaLinha({ ...ctx, direcao: "cancelamento", destino: "Cancelado" }),
+    resultado: r.comentario.publicado ? "sucesso" : "parcial",
+    motivo: null,
+    alteracoes: r.alteracoes,
+    avisos: r.avisos.length ? r.avisos : null,
+    comentarioPublicado: r.comentario.publicado,
+    comentarioId: r.comentario.id ?? null,
+    comentarioErro: r.comentario.erro ?? null,
+    assesments: null,
   };
 }

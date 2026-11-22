@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { AlertCircle, Check, ExternalLink, Loader2, Paperclip, Send, Sparkles } from "lucide-react";
+import { AlertCircle, AlertTriangle, Ban, Check, ExternalLink, Loader2, Paperclip, Send, Sparkles } from "lucide-react";
 import { C, PASTEL } from "@/lib/kmm-theme";
-import { AO_AVANCAR, LIMITE_COMENTARIO, QUANDO_AVANCA, rotuloDaEtapa, valorLegivelDaAlteracao, type EtapaFluxo } from "@/lib/fluxo-po";
+import { AO_AVANCAR, LIMITE_COMENTARIO, MOTIVOS_CANCELAMENTO, QUANDO_AVANCA, motivoDeCancelamento, rotuloDaEtapa, valorLegivelDaAlteracao, type EtapaFluxo, type MotivoCancelamento } from "@/lib/fluxo-po";
 import type { ChecklistPbi, ItemChecklistEstado } from "@/lib/fluxo-po-checklist";
 import type { AnexoPbi, EntradaHistorico, MovimentoPbi } from "@/lib/fluxo-po-detalhe";
 
@@ -86,7 +86,29 @@ const ESTILO_HTML = `
  * anexos, histórico do PBI e dos movimentos, e os quadros "Quando avança" e "Ao avançar, grava no PBI". Cada um lê sua parte
  * do servidor (T08/T10) sozinho. Escrever (checklist, comentário) exige poder movimentar; o servidor confere.
  */
-export default function FluxoPoDetalheBlocos({ id, aba, pode, motivoSemPermissao, versao, aoPublicarComentario }: { id: number; aba: AbaEtapa; pode: boolean; motivoSemPermissao: string | null; versao: number | undefined; aoPublicarComentario?: () => void }) {
+/** Resposta de `POST /api/fluxo-po/pbi/<id>/cancelamento` em caso de sucesso. */
+export type RespostaCancelamento = { comentario: { publicado: boolean; id?: number; erro?: string }; avisos: string[] };
+
+export default function FluxoPoDetalheBlocos({
+  id,
+  aba,
+  pode,
+  motivoSemPermissao,
+  versao,
+  etapaAtual,
+  aoPublicarComentario,
+  aoCancelarDemanda,
+}: {
+  id: number;
+  aba: AbaEtapa;
+  pode: boolean;
+  motivoSemPermissao: string | null;
+  versao: number | undefined;
+  /** Etapa em que o card está agora (o cancelamento só vale na 1.1). */
+  etapaAtual: EtapaFluxo | null;
+  aoPublicarComentario?: () => void;
+  aoCancelarDemanda?: (r: RespostaCancelamento) => void;
+}) {
   return (
     <div style={{ marginTop: 14 }}>
       <style>{ESTILO_HTML}</style>
@@ -94,6 +116,7 @@ export default function FluxoPoDetalheBlocos({ id, aba, pode, motivoSemPermissao
         <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
           <Checklist id={id} aba={aba} pode={pode} motivoSemPermissao={motivoSemPermissao} />
           <Descricao id={id} aba={aba} />
+          {aba === "1.1" && <Cancelamento id={id} pode={pode} motivoSemPermissao={motivoSemPermissao} etapaAtual={etapaAtual} aoCancelar={aoCancelarDemanda} />}
           <Comentarios id={id} pode={pode} motivoSemPermissao={motivoSemPermissao} aoPublicar={aoPublicarComentario} />
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
@@ -219,6 +242,131 @@ function Descricao({ id, aba }: { id: number; aba: AbaEtapa }) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+
+/**
+ * Cancelamento de Demanda (aba 1.1, entre a descrição e os comentários): o usuário escolhe um dos 5 motivos; o texto padrão do motivo
+ * aparece para ele REVISAR E EDITAR; só ao confirmar o texto é publicado como comentário no PBI e o Status do card muda para Cancelado
+ * (o card sai do quadro). Só quem movimenta o fluxo, e só para card que está na 1.1; o servidor confere tudo de novo.
+ */
+function Cancelamento({ id, pode, motivoSemPermissao, etapaAtual, aoCancelar }: { id: number; pode: boolean; motivoSemPermissao: string | null; etapaAtual: EtapaFluxo | null; aoCancelar?: (r: RespostaCancelamento) => void }) {
+  const [motivoId, setMotivoId] = useState<string | null>(null);
+  const [texto, setTexto] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const [falha, setFalha] = useState<{ mensagem: string; faltas: string[] } | null>(null);
+  const motivo = motivoDeCancelamento(motivoId);
+  const editado = !!motivo && texto !== motivo.texto;
+  const naEtapa = etapaAtual === "1.1";
+  const liberado = pode && naEtapa;
+  const vazio = texto.trim() === "";
+  const longo = texto.trim().length > LIMITE_COMENTARIO;
+  const podeConfirmar = liberado && !!motivo && !vazio && !longo && !enviando;
+
+  function escolher(m: MotivoCancelamento) {
+    if (m.id === motivoId) return;
+    if (editado && !window.confirm("Trocar o motivo substitui o texto que você editou pelo texto padrão do novo motivo. Continuar?")) return;
+    setMotivoId(m.id);
+    setTexto(m.texto);
+    setFalha(null);
+  }
+
+  async function confirmar() {
+    if (!podeConfirmar || !motivo) return;
+    setEnviando(true);
+    setFalha(null);
+    try {
+      const res = await fetch(`/api/fluxo-po/pbi/${id}/cancelamento`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ motivo: motivo.id, texto }) });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setFalha({ mensagem: j.erro ?? "Não foi possível cancelar a demanda.", faltas: j.faltas ?? [] });
+        return;
+      }
+      aoCancelar?.(j as RespostaCancelamento);
+    } catch {
+      setFalha({ mensagem: "Não foi possível falar com o servidor. Nada foi confirmado; tente de novo.", faltas: [] });
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <Bloco titulo="Cancelamento de Demanda">
+      <p style={{ margin: "0 0 10px", fontSize: 12.5, color: C.muted, lineHeight: 1.5 }}>
+        Escolha o motivo. O texto padrão aparece abaixo para você revisar e, se quiser, editar. Só quando você confirmar, ele é publicado como comentário no PBI e o Status do card muda para <strong>Cancelado</strong>.
+      </p>
+      {!pode && <p title={motivoSemPermissao ?? ""} style={{ margin: "0 0 10px", fontSize: 12, color: C.muted }}>Somente visualização: quem movimenta o fluxo cancela demandas.</p>}
+      {pode && !naEtapa && (
+        <p style={{ margin: "0 0 10px", fontSize: 12, color: "#8a5a00", background: "#fff6e0", borderRadius: 8, padding: "6px 10px" }}>
+          Este card não está na etapa 1.1 (Classificar): só dá para cancelar a demanda enquanto ela está nessa etapa.
+        </p>
+      )}
+
+      <div role="radiogroup" aria-label="Motivo do cancelamento" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        {MOTIVOS_CANCELAMENTO.map((m) => {
+          const marcado = m.id === motivoId;
+          return (
+            <button
+              key={m.id}
+              type="button"
+              role="radio"
+              aria-checked={marcado}
+              disabled={!liberado || enviando}
+              onClick={() => escolher(m)}
+              style={{ fontFamily: "inherit", fontSize: 12.5, fontWeight: marcado ? 700 : 500, padding: "7px 13px", borderRadius: 999, cursor: liberado && !enviando ? "pointer" : "not-allowed", border: `1.5px solid ${marcado ? C.red : C.border}`, background: marcado ? "#FDF1F0" : "#fff", color: marcado ? C.red : C.text, opacity: liberado ? 1 : 0.6 }}
+            >
+              {m.rotulo}
+            </button>
+          );
+        })}
+      </div>
+
+      {motivo && (
+        <div style={{ marginTop: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: C.muted, textTransform: "uppercase", letterSpacing: ".03em" }}>Comentário que será publicado no PBI</span>
+            {editado && (
+              <>
+                <span style={{ fontSize: 10.5, fontWeight: 600, color: C.orange, background: "#FFF1EA", borderRadius: 999, padding: "0 7px" }}>texto editado</span>
+                <button type="button" onClick={() => setTexto(motivo.texto)} disabled={enviando} style={{ border: "none", background: "transparent", color: C.muted, fontSize: 11.5, cursor: "pointer", padding: 0, textDecoration: "underline" }}>
+                  Restaurar texto padrão
+                </button>
+              </>
+            )}
+          </div>
+          <textarea className="kmm-input" aria-label="Texto do comentário de cancelamento" value={texto} onChange={(e) => setTexto(e.target.value)} rows={8} disabled={enviando} style={{ width: "100%", resize: "vertical", fontFamily: "inherit", lineHeight: 1.45 }} />
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginTop: 4, fontSize: 11.5, color: C.faint, flexWrap: "wrap" }}>
+            <span>O comentário vai assinado com o seu nome, a data e "via Produto Hub", com o motivo "{motivo.rotulo}".</span>
+            <span style={{ color: longo ? C.red : C.faint }}>{texto.trim().length}/{LIMITE_COMENTARIO}</span>
+          </div>
+
+          <div role="note" style={{ display: "flex", alignItems: "flex-start", gap: 8, marginTop: 12, background: "#FDF1F0", border: "1px solid #F3C9C4", borderRadius: 10, padding: "9px 12px", fontSize: 12.5, color: C.text }}>
+            <AlertTriangle size={15} color={C.red} style={{ flexShrink: 0, marginTop: 1 }} />
+            <span>Ao confirmar, o comentário é publicado no PBI e o <strong>Status passa para Cancelado</strong>: o card sai do quadro do Fluxo do PO. Para desfazer, é preciso alterar o Status no Azure DevOps.</span>
+          </div>
+
+          {falha && (
+            <div role="alert" style={{ marginTop: 10, fontSize: 13, color: C.red, background: "#FDF1F0", borderRadius: 8, padding: "9px 12px" }}>
+              <div style={{ fontWeight: 600 }}>{falha.mensagem}</div>
+              {falha.faltas.map((f) => (
+                <div key={f} style={{ marginTop: 3 }}>{f}</div>
+              ))}
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={confirmar}
+            disabled={!podeConfirmar}
+            style={{ marginTop: 12, display: "inline-flex", alignItems: "center", gap: 7, fontFamily: "inherit", fontSize: 13, fontWeight: 600, padding: "9px 16px", borderRadius: 10, border: `1px solid ${podeConfirmar ? C.red : C.border}`, background: podeConfirmar ? C.red : C.soft, color: podeConfirmar ? "#fff" : C.faint, cursor: podeConfirmar ? "pointer" : "not-allowed" }}
+          >
+            {enviando ? <Loader2 size={15} style={{ animation: "kmm-giro 1s linear infinite" }} /> : <Ban size={15} />}
+            {enviando ? "Publicando e cancelando…" : "Publicar comentário e cancelar demanda"}
+          </button>
+        </div>
+      )}
+      <style>{"@keyframes kmm-giro{to{transform:rotate(360deg)}}"}</style>
+    </Bloco>
+  );
+}
 
 function Comentarios({ id, pode, motivoSemPermissao, aoPublicar }: { id: number; pode: boolean; motivoSemPermissao: string | null; aoPublicar?: () => void }) {
   const { dados, erro, carregando, recarregar } = useCarga<{ total: number; comentarios: Comentario[]; truncado: boolean }>(`/api/fluxo-po/pbi/${id}/comentarios`);
@@ -447,7 +595,7 @@ function Historico({ id, versao }: { id: number; versao: number | undefined }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 420, overflowY: "auto" }}>
           {plataforma.dados.movimentos.map((m) => {
             const cor = COR_RESULTADO[m.resultado] ?? COR_RESULTADO.erro;
-            const oque = m.direcao === "edicao" ? "Edição das informações" : `${m.direcao === "volta" ? "Voltou" : "Avançou"}: ${m.origem ?? "—"} → ${m.destino}${m.proposta ? " (proposta)" : ""}`;
+            const oque = m.direcao === "cancelamento" ? "Cancelamento da demanda" : m.direcao === "edicao" ? "Edição das informações" : `${m.direcao === "volta" ? "Voltou" : "Avançou"}: ${m.origem ?? "—"} → ${m.destino}${m.proposta ? " (proposta)" : ""}`;
             return (
               <div key={m.id} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: "8px 11px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 12.5 }}>

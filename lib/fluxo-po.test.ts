@@ -4,14 +4,17 @@ import assert from "node:assert/strict";
 import { urlPbiAzure } from "./fluxo-po-campos";
 import {
   AO_AVANCAR,
+  MOTIVOS_CANCELAMENTO,
   LIMITE_COMENTARIO,
   QUANDO_AVANCA,
   adicionarTag,
   agingEmAlerta,
   agingEmDias,
+  avaliarCancelamento,
   avaliarEdicao,
   avaliarMovimento,
   camposParaMover,
+  comentarioDeCancelamento,
   comentarioDeTransicao,
   comentarioDoUsuario,
   comiteAtrasado,
@@ -26,6 +29,7 @@ import {
   ehMeuItem,
   idsFilhosDeRelacoes,
   lerEntradaMovimento,
+  motivoDeCancelamento,
   montarCards,
   nomesCompativeis,
   normalizarDataAzure,
@@ -806,4 +810,47 @@ test("camposParaMover: o que a confirmação pede para cada movimento, na ordem 
   assert.deepEqual(camposParaMover(pbi12(), "1.1"), []); // volta com Cliente: nada a preencher
   assert.deepEqual(camposParaMover(pbi(), "2.1"), []); // movimento que não existe
   assert.deepEqual(camposParaMover(pbi12({ status: "Execução", etapa: "Execução" }), "2.1"), []); // fora do quadro
+});
+
+// ---------------------------------------------------------------- cancelamento de demanda (2026-11-22)
+
+test("MOTIVOS_CANCELAMENTO: os 5 motivos, com o texto padrão de cada um, dentro do limite de comentário", () => {
+  assert.deepEqual(MOTIVOS_CANCELAMENTO.map((m) => m.rotulo), ["Demanda fora de priorização do produto", "Torre de Controle", "ERP", "TNS", "Obrigação Legal"]);
+  assert.equal(new Set(MOTIVOS_CANCELAMENTO.map((m) => m.id)).size, 5);
+  for (const m of MOTIVOS_CANCELAMENTO) {
+    assert.ok(m.texto.length > 40 && m.texto.length <= LIMITE_COMENTARIO, m.id);
+    assert.equal(validarComentario(m.texto).erro, undefined, m.id);
+    assert.doesNotMatch(m.texto, /\bÁ partir\b|\bá partir\b|esta sendo|TMS\.Devido|;$/, `${m.id}: ortografia`);
+  }
+  const fora = MOTIVOS_CANCELAMENTO[0].texto.split("\n");
+  assert.equal(fora.length, 5);
+  assert.equal(fora.filter((l) => l.startsWith("* ")).length, 3); // as 3 justificativas
+  assert.match(fora[0], /^Após análise técnica e alinhamento com a estratégia de produto/);
+  assert.match(MOTIVOS_CANCELAMENTO[1].texto, /nova torre de controle/);
+  assert.match(MOTIVOS_CANCELAMENTO[2].texto, /road map de construção a partir de 2027/);
+  assert.match(MOTIVOS_CANCELAMENTO[3].texto, /ecossistema NS Tech/);
+  assert.match(MOTIVOS_CANCELAMENTO[4].texto, /^Esta demanda já faz parte de escopo de evolução obrigatório de TMS\./);
+});
+
+test("motivoDeCancelamento: acha pelo id, recusa o resto", () => {
+  assert.equal(motivoDeCancelamento("erp")?.rotulo, "ERP");
+  for (const ruim of ["", "ERP", "outro", null, undefined, 5]) assert.equal(motivoDeCancelamento(ruim), undefined, String(ruim));
+});
+
+test("avaliarCancelamento: só na etapa 1.1 (mesmo sem Cliente); fora dela ou fora do quadro é recusado com o motivo", () => {
+  assert.deepEqual(avaliarCancelamento(pbi()), { permitido: true, faltas: [] });
+  assert.equal(avaliarCancelamento(pbi({ cliente: "" })).permitido, true); // cancelar não é movimentação: não exige Cliente
+  const na12 = avaliarCancelamento(pbi12());
+  assert.equal(na12.permitido, false);
+  assert.match(na12.faltas[0], /só pode ser cancelada na etapa 1\.1 \(Classificar\).*1\.2 Priorizar - Backlog da Esteira/);
+  assert.equal(avaliarCancelamento(pbi21()).permitido, false);
+  assert.equal(avaliarCancelamento(pbi12({ etapa: "Análise" })).permitido, false);
+  assert.deepEqual(avaliarCancelamento(pbi12({ status: "Execução", etapa: "Execução" })), { permitido: false, faltas: ["O PBI não está em nenhuma etapa do fluxo."] });
+});
+
+test("comentarioDeCancelamento: assinatura, motivo e texto escapado com quebras de linha", () => {
+  const html = comentarioDeCancelamento({ texto: "Linha 1\n<b>x</b> & fim", usuario: "Ana <i>", quando: new Date("2026-11-22T15:30:00Z"), motivo: "Torre de Controle" });
+  assert.match(html, /<b>Ana &lt;i&gt;<\/b> · 22\/11\/2026.*12:30 <i>\(via Produto Hub\)<\/i> — <b>Cancelamento de demanda<\/b>: Torre de Controle/);
+  assert.match(html, /Linha 1<br>&lt;b&gt;x&lt;\/b&gt; &amp; fim/);
+  assert.doesNotMatch(html, /<b>x<\/b>/);
 });

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { AlertCircle, AlertTriangle, ArrowLeft, CalendarDays, CheckCircle2, Check, Clock, ExternalLink, Eye, Loader2, Lock, MoveRight, RefreshCw, X } from "lucide-react";
-import FluxoPoDetalheBlocos from "@/components/FluxoPoDetalheBlocos";
+import FluxoPoDetalheBlocos, { type RespostaCancelamento } from "@/components/FluxoPoDetalheBlocos";
 import { CampoInformacao, type Campo, type Listas } from "@/components/FluxoPoCampo";
 import FluxoPoMoverDialog from "@/components/FluxoPoMoverDialog";
 import { C, PASTEL, infoPrioridade } from "@/lib/kmm-theme";
@@ -161,6 +161,17 @@ export default function FluxoPoDetalhe({ id }: { id: string }) {
     } catch {
       /* a próxima checagem corrige */
     }
+  }
+
+  /** Demanda cancelada (Status Cancelado): o card saiu do quadro; a tela recarrega e mostra o que aconteceu. */
+  function aoCancelarDemanda(r: RespostaCancelamento) {
+    setAviso({
+      tipo: "ok",
+      titulo: "Demanda cancelada: o Status do PBI agora é Cancelado",
+      linhas: [r.comentario.publicado ? "Comentário publicado no PBI." : "", ...r.avisos].filter(Boolean),
+    });
+    setAba(null);
+    setRecarga((n) => n + 1);
   }
 
   const card = info?.card ?? null;
@@ -456,7 +467,7 @@ export default function FluxoPoDetalhe({ id }: { id: string }) {
       </div>
 
       {/* Checklist, descrição, comentários, anexos, histórico e os quadros "Quando avança" / "Ao avançar" (T17) */}
-      <FluxoPoDetalheBlocos id={pbi.id} aba={abaAtiva} pode={pode} motivoSemPermissao={info.permissao.motivo} versao={pbi.rev} aoPublicarComentario={reajustarRevisao} />
+      <FluxoPoDetalheBlocos id={pbi.id} aba={abaAtiva} pode={pode} motivoSemPermissao={info.permissao.motivo} versao={pbi.rev} etapaAtual={etapaAtual} aoPublicarComentario={reajustarRevisao} aoCancelarDemanda={aoCancelarDemanda} />
 
       {movendo && card && proximo && (
         <FluxoPoMoverDialog

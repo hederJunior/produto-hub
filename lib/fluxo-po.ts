@@ -911,6 +911,77 @@ export const AO_AVANCAR: Record<"1.1" | "1.2" | "2.1", { destino: EtapaFluxo; gr
   ],
 };
 
+// ---------------------------------------------------------------------------------------------------------------
+// Cancelamento de demanda (detalhe da etapa 1.1)
+// ---------------------------------------------------------------------------------------------------------------
+
+export type MotivoCancelamento = { id: string; rotulo: string; texto: string };
+
+/**
+ * Motivos de cancelamento com o texto padrão do comentário (pedido do Heder, 2026-11-22). O texto aparece para o usuário, que pode
+ * editá-lo antes de publicar. Ajustei só a ortografia evidente dos textos recebidos ("Á partir" → "A partir", "esta sendo" → "está sendo",
+ * "á" → "à", "TMS.Devido" → "TMS. Devido") e troquei o ";" final por ".".
+ */
+export const MOTIVOS_CANCELAMENTO: readonly MotivoCancelamento[] = [
+  {
+    id: "fora-priorizacao",
+    rotulo: "Demanda fora de priorização do produto",
+    texto: [
+      "Após análise técnica e alinhamento com a estratégia de produto, informamos que não será possível atender a solicitação de customização/automação para estes módulos no momento.",
+      "Seguem as justificativas da negativa:",
+      "* Já temos um roadmap de evolução do produto definido, e as solicitações não se encaixam nas prioridades atuais.",
+      "* Os itens apontados são facilidades adicionais - não representam travamento nem risco operacional para a sua operação.",
+      "* A partir deste próximo trimestre nosso time está focado em atualizações legais e na segunda fase da reforma tributária, trabalhos que demandam alocação completa dos recursos de evolução do produto.",
+    ].join("\n"),
+  },
+  {
+    id: "torre-de-controle",
+    rotulo: "Torre de Controle",
+    texto: "Esta requisição faz parte de escopo funcional de nova torre de controle e não terá mais evoluções dentro de TMS. Devido a isso, está sendo cancelada a demanda com a negativa de continuidade.",
+  },
+  {
+    id: "erp",
+    rotulo: "ERP",
+    texto: "A requisição faz parte de um módulo direcionado junto à estratégia de novo ERP, ao qual, possui road map de construção a partir de 2027. Devido a isso, está sendo cancelada a demanda com a negativa de continuidade.",
+  },
+  {
+    id: "tns",
+    rotulo: "TNS",
+    texto: "A requisição é contemplada dentro de ecossistema NS Tech, sem a possibilidade de construção em TMS. Devido a isso, está sendo cancelada a demanda com a negativa de continuidade.",
+  },
+  {
+    id: "obrigacao-legal",
+    rotulo: "Obrigação Legal",
+    texto: "Esta demanda já faz parte de escopo de evolução obrigatório de TMS. A demanda está sendo cancelada.",
+  },
+];
+
+export function motivoDeCancelamento(id: unknown): MotivoCancelamento | undefined {
+  return MOTIVOS_CANCELAMENTO.find((m) => m.id === id);
+}
+
+/**
+ * Pode cancelar? A demanda só é cancelada pelo detalhe da etapa **1.1** (Classificar): o PBI precisa estar nessa etapa agora.
+ * Cancelar NÃO é uma "movimentação" entre etapas: não exige Cliente. Muda o Status do PBI para "Cancelado" (o card sai do quadro).
+ */
+export function avaliarCancelamento(pbi: Pick<PbiFluxo, "status" | "etapa" | "areaPath" | "tags" | "dataComite">): { permitido: boolean; faltas: string[] } {
+  const { etapa } = derivarEtapa(pbi);
+  if (etapa === "1.1") return { permitido: true, faltas: [] };
+  return {
+    permitido: false,
+    faltas: [etapa ? `A demanda só pode ser cancelada na etapa 1.1 (${nomeDaEtapa("1.1")}); este card está na ${rotuloDaEtapa(etapa)}.` : "O PBI não está em nenhuma etapa do fluxo."],
+  };
+}
+
+/** HTML do comentário de cancelamento: assinatura do usuário (como nos demais comentários), o motivo e o texto (escapado, editado ou não). */
+export function comentarioDeCancelamento(args: { texto: string; usuario: string; quando: Date; motivo: string }): string {
+  const data = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(args.quando);
+  return (
+    `<p><b>${escaparHtml(args.usuario)}</b> · ${data} <i>(via Produto Hub)</i> — <b>Cancelamento de demanda</b>: ${escaparHtml(args.motivo)}</p>` +
+    `<div>${escaparHtml(args.texto).replace(/\n/g, "<br>")}</div>`
+  );
+}
+
 /** Tamanho máximo de um comentário escrito na tela. */
 export const LIMITE_COMENTARIO = 4000;
 

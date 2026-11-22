@@ -1,7 +1,7 @@
 // Testes da montagem do log de movimentos e das definições de checklist. Rodar: npm run test:fluxo-po
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { linhaDeEdicao, linhaDeFalha, linhaDeSucesso, resultadoDoErro, type ContextoLog } from "./fluxo-po-log";
+import { linhaDeCancelamento, linhaDeEdicao, linhaDeFalha, linhaDeSucesso, resultadoDoErro, type ContextoLog } from "./fluxo-po-log";
 import { CHECKLIST_POR_ETAPA, ETAPAS_FLUXO, itemDeChecklistValido } from "./fluxo-po";
 
 const ctx: ContextoLog & { workItemId: number } = {
@@ -112,4 +112,14 @@ test("linhaDeEdicao: direção 'edicao', destino = etapa depois da edição, sem
   assert.deepEqual(semEtapa.avisos, ["x"]);
   const parcial = linhaDeEdicao(ctxEdicao, { alteracoes, avisos: [], assesments: { total: 1, atualizados: [], jaIguais: [], falhas: [{ id: 5, erro: "fechado" }] }, etapaDepois: "1.2" });
   assert.equal(parcial.resultado, "parcial");
+});
+
+test("linhaDeCancelamento: direção 'cancelamento', destino Cancelado, sucesso só com o comentário publicado", () => {
+  const ctxCanc = { ...ctx, origem: "1.1" as const, direcao: "cancelamento" as const, destino: "Cancelado" };
+  const alts = [{ campo: "System.State", rotulo: "Status", de: "Backlog", para: "Cancelado" }];
+  const ok = linhaDeCancelamento(ctxCanc, { alteracoes: alts, avisos: [], comentario: { publicado: true, id: 7 } });
+  assert.deepEqual([ok.direcao, ok.destino, ok.origem, ok.resultado, ok.comentarioPublicado, ok.comentarioId, ok.avisos], ["cancelamento", "Cancelado", "1.1", "sucesso", true, 7, null]);
+  assert.deepEqual(ok.alteracoes, alts);
+  const parcial = linhaDeCancelamento(ctxCanc, { alteracoes: alts, avisos: ["comentário não publicado"], comentario: { publicado: false, erro: "HTTP 503" } });
+  assert.deepEqual([parcial.resultado, parcial.comentarioPublicado, parcial.comentarioErro, parcial.avisos], ["parcial", false, "HTTP 503", ["comentário não publicado"]]);
 });

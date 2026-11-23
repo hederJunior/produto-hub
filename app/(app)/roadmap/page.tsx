@@ -2222,6 +2222,8 @@ function PainelAlocacaoPorSprint({
   // Filtro "Recurso" (modo Alocação por sprint) e "PBI" (modo Demandas; ids em texto), ao lado de "Expandir todos".
   const [recursosFiltro, setRecursosFiltro] = useState<string[]>([]);
   const [pbisFiltro, setPbisFiltro] = useState<string[]>([]);
+  // Filtro "Responsável" (modo Demandas, 2026-11-23): responsável da Task/Bug (nomes como no Azure; "Sem responsável" é uma opção).
+  const [responsaveisFiltro, setResponsaveisFiltro] = useState<string[]>([]);
   // Toggle "Execução / Teste aceite usuário / Aguardando deploy / Finalizado / Todos": filtra os cards pelo State da Task/Bug.
   const [visaoEstado, setVisaoEstado] = useState<VisaoEstadoTask>("todos");
   const [comprimidos, setComprimidos] = useState<Record<string, boolean>>({});
@@ -2267,7 +2269,9 @@ function PainelAlocacaoPorSprint({
   const cardEmExecucao = (t: TaskAlocada) =>
     !sinalDoCard(t) && (emExecucao(t.pbiPaiId != null ? pais[t.pbiPaiId]?.estado ?? "" : "") || (modo === "demandas" && emExecucao(t.state)));
 
-  const tarefasFiltradas = useMemo(
+  // Filtros de Área, Cliente e Estado. O de Responsável vem depois (só em Demandas) para que as opções dele
+  // reflitam os demais filtros.
+  const tarefasSemFiltroResponsavel = useMemo(
     () =>
       tarefas.filter(
         (t) =>
@@ -2277,6 +2281,13 @@ function PainelAlocacaoPorSprint({
       ),
     [tarefas, areasFiltro, clientesFiltro, pais, visaoEstado, modo]
   );
+  // Em Demandas, filtrar por responsável deixa só as Tasks/Bugs dele: as linhas (PBIs) são as que têm alguma Task dele
+  // nas sprints visíveis e as células mostram só as Tasks dele. Comparação pelo nome normalizado (variações de grafia).
+  const tarefasFiltradas = useMemo(() => {
+    if (modo !== "demandas" || !responsaveisFiltro.length) return tarefasSemFiltroResponsavel;
+    const escolhidos = new Set(responsaveisFiltro.map(normalizarNomePessoa));
+    return tarefasSemFiltroResponsavel.filter((t) => escolhidos.has(normalizarNomePessoa(t.responsavel?.nome ?? SEM_RESPONSAVEL)));
+  }, [tarefasSemFiltroResponsavel, responsaveisFiltro, modo]);
 
   // Colunas: todas as sprints com Task/Bug (mesmo com filtro de Área, pra grade não "pular").
   const sprintsOrdenadas = useMemo(
@@ -2385,6 +2396,22 @@ function PainelAlocacaoPorSprint({
     for (const t of tarefasFiltradas) if (t.pbiPaiId != null && sprintsVisiveis.includes(t.sprint)) ids.add(t.pbiPaiId);
     return Array.from(ids).sort((a, b) => a - b).map(String);
   }, [tarefasFiltradas, sprintsVisiveis]);
+  // Opções do filtro de Responsável: quem tem Task/Bug nas sprints visíveis (já com Área, Cliente e Estado); "Sem responsável" por último.
+  const opcoesResponsavel = useMemo(() => {
+    const porChave = new Map<string, string>();
+    for (const t of tarefasSemFiltroResponsavel) {
+      if (!sprintsVisiveis.includes(t.sprint)) continue;
+      const nome = t.responsavel?.nome ?? SEM_RESPONSAVEL;
+      const k = normalizarNomePessoa(nome);
+      if (!porChave.has(k)) porChave.set(k, nome);
+    }
+    const semResp = normalizarNomePessoa(SEM_RESPONSAVEL);
+    const nomes = Array.from(porChave.entries());
+    return [
+      ...nomes.filter(([k]) => k !== semResp).map(([, n]) => n).sort((a, b) => a.localeCompare(b, "pt-BR")),
+      ...nomes.filter(([k]) => k === semResp).map(([, n]) => n),
+    ];
+  }, [tarefasSemFiltroResponsavel, sprintsVisiveis]);
   const rotuloPbi = (v: string) => (pais[Number(v)]?.titulo ? `${v} · ${pais[Number(v)].titulo}` : v);
 
   const fmtCurta = (iso: string) => iso.slice(0, 10).split("-").reverse().slice(0, 2).join("/");
@@ -2448,6 +2475,15 @@ function PainelAlocacaoPorSprint({
                 opcoes={opcoesRecurso}
                 selecionados={recursosFiltro}
                 onChange={setRecursosFiltro}
+              />
+            )}
+            {modo === "demandas" && (
+              <MultiSelectFiltro
+                pesquisavel
+                rotuloTodos="Todos os responsáveis"
+                opcoes={opcoesResponsavel}
+                selecionados={responsaveisFiltro}
+                onChange={setResponsaveisFiltro}
               />
             )}
             {modo === "demandas" && (

@@ -1,6 +1,6 @@
 // Teste de INTEGRAÇÃO do cancelamento de demanda (lib/fluxo-po-cancelamento-servidor.ts) contra o Azure DevOps e o Supabase REAIS, só no
 // PBI DE TESTE. Roda as MESMAS funções da rota POST /api/fluxo-po/pbi/{id}/cancelamento (sem a camada de login).
-// Cobre: permissão (403), entrada inválida (motivo, texto vazio, texto longo), cancelar fora da 1.1 (422), cancelamento com o comentário
+// Cobre: permissão (403), entrada inválida (motivo, texto vazio, texto longo), cancelamento com o comentário
 // FALHANDO (o Status já mudou e o aviso diz isso), cancelamento real com texto EDITADO (comentário no PBI com assinatura, motivo e o
 // texto editado; Status "Cancelado"; o card sai do quadro; um segundo cancelamento é recusado) e o log de todas as tentativas.
 // Ao final devolve o Status e a etapa ao que estavam (Azure permite voltar de "Cancelado" para "Backlog"), apaga os comentários criados
@@ -9,7 +9,7 @@
 // O PBI precisa estar em 1.1 ou 1.2 (Status Backlog). Só aceita o PBI de teste 46766.
 // Uso: node --use-system-ca --env-file=.env --import ./scripts/registrar-ts.mjs scripts/azure-testar-cancelamento.mjs 46766
 
-import { ErroFluxoPo, aplicarPatchPbi, apagarComentarioPbi, lerPbiFluxoPoAtual, moverPbiFluxoPo } from "../lib/fluxo-po-servidor.ts";
+import { ErroFluxoPo, aplicarPatchPbi, apagarComentarioPbi, lerPbiFluxoPoAtual } from "../lib/fluxo-po-servidor.ts";
 import { cancelarDemandaPbi } from "../lib/fluxo-po-cancelamento-servidor.ts";
 import { getFluxoPoUpstream } from "../lib/devops-client.ts";
 import { LIMITE_COMENTARIO, MOTIVOS_CANCELAMENTO, derivarEtapa } from "../lib/fluxo-po.ts";
@@ -86,19 +86,10 @@ async function main() {
     await esperarErro("Motivo inexistente → 422", 422, () => cancelar("motivo-que-nao-existe", texto));
     await esperarErro("Texto vazio → 422", 422, () => cancelar("tns", "   "));
     await esperarErro(`Texto acima de ${LIMITE_COMENTARIO} caracteres → 422`, 422, () => cancelar("tns", "x".repeat(LIMITE_COMENTARIO + 1)));
-    if (etapaInicial === "1.2") {
-      await esperarErro("Cancelar um card que está na 1.2 → 422 (só na 1.1)", 422, () => cancelar("tns", texto), (e) => e.faltas.some((f) => f.includes("etapa 1.1")));
-    }
     registrar("Nenhuma recusa gravou nada", (await lerPbiFluxoPoAtual(id)).rev === inicial.rev, `rev ${inicial.rev}`);
 
-    // ---- leva o card à 1.1 (se estiver na 1.2) pela própria API de movimento ----
+    // (desde 2026-11-23 cancela-se tanto na 1.1 quanto na 1.2: não é preciso levar o card à 1.1)
     precisaRestaurar = true;
-    if (etapaInicial === "1.2") {
-      tentativas++;
-      const v = await moverPbiFluxoPo({ id, destino: "1.1", usuario: admin });
-      if (v.comentario?.id) comentarios.push(v.comentario.id);
-      registrar("(preparo) card levado à 1.1 pela volta", v.card?.etapa === "1.1");
-    }
 
     // ---- cancelamento com o comentário falhando: o Status já mudou, e o aviso diz isso ----
     const a = await cancelar("erp", MOTIVOS_CANCELAMENTO[2].texto, admin, { publicador: falhaDeComentario });
@@ -106,7 +97,7 @@ async function main() {
     registrar("...e o PBI saiu do fluxo (nenhuma etapa)", derivarEtapa(a.pbi).etapa === null);
     await voltarStatus("Backlog");
     const aposVolta = await lerPbiFluxoPoAtual(id);
-    registrar("O Azure aceita devolver o Status de Cancelado para Backlog (restauração) e o card volta à 1.1", aposVolta.status === "Backlog" && derivarEtapa(aposVolta).etapa === "1.1", `Status ${aposVolta.status}, etapa ${derivarEtapa(aposVolta).etapa}`);
+    registrar("O Azure aceita devolver o Status de Cancelado para Backlog (restauração) e o card volta à etapa de origem", aposVolta.status === "Backlog" && derivarEtapa(aposVolta).etapa === etapaInicial, `Status ${aposVolta.status}, etapa ${derivarEtapa(aposVolta).etapa}`);
 
     // ---- cancelamento real, com o texto EDITADO pelo usuário ----
     const editado = `${MOTIVOS_CANCELAMENTO[3].texto}\nObservação escrita pelo usuário no teste: texto editado antes de publicar.`;
@@ -116,7 +107,7 @@ async function main() {
     registrar("...comentário com assinatura, motivo e o TEXTO EDITADO (não o padrão puro)", t.includes("Script de teste (cancelamento)") && t.includes("Cancelamento de demanda") && t.includes("TNS") && t.includes("ecossistema NS Tech") && t.includes("texto editado antes de publicar"), t.slice(0, 220));
     const quadro = await getFluxoPoUpstream();
     registrar("...o card SAIU do quadro do Fluxo do PO", !quadro.cards.some((c) => c.pbi.id === id), `${quadro.cards.length} cards no quadro`);
-    await esperarErro("Segundo cancelamento do mesmo PBI → 422 (já não está na 1.1)", 422, () => cancelar("tns", texto));
+    await esperarErro("Segundo cancelamento do mesmo PBI → 422 (já não está no fluxo)", 422, () => cancelar("tns", texto));
 
     // ---- log (T09) ----
     const { data: linhas, error: erroLog } = await getServiceClient().from("FluxoPoMovimento").select("resultado, direcao, destino, usuario").in("usuario", USUARIOS).eq("workItemId", id).gte("criadoEm", INICIO);

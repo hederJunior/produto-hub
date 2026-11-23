@@ -988,15 +988,16 @@ export function motivoDeCancelamento(id: unknown): MotivoCancelamento | undefine
 }
 
 /**
- * Pode cancelar? A demanda só é cancelada pelo detalhe da etapa **1.1** (Classificar): o PBI precisa estar nessa etapa agora.
+ * Pode cancelar? A demanda só é cancelada pelo detalhe das etapas **1.1** (Classificar) e **1.2** (Priorizar - Backlog da Esteira; liberada
+ * em 2026-11-23): o PBI precisa estar em uma delas agora. Da 2.1 em diante (já em comitê/análise) não cancela por aqui.
  * Cancelar NÃO é uma "movimentação" entre etapas: não exige Cliente. Muda o Status do PBI para "Cancelado" (o card sai do quadro).
  */
 export function avaliarCancelamento(pbi: Pick<PbiFluxo, "status" | "etapa" | "areaPath" | "tags" | "dataComite">): { permitido: boolean; faltas: string[] } {
   const { etapa } = derivarEtapa(pbi);
-  if (etapa === "1.1") return { permitido: true, faltas: [] };
+  if (etapa === "1.1" || etapa === "1.2") return { permitido: true, faltas: [] };
   return {
     permitido: false,
-    faltas: [etapa ? `A demanda só pode ser cancelada na etapa 1.1 (${nomeDaEtapa("1.1")}); este card está na ${rotuloDaEtapa(etapa)}.` : "O PBI não está em nenhuma etapa do fluxo."],
+    faltas: [etapa ? `A demanda só pode ser cancelada nas etapas 1.1 (${nomeDaEtapa("1.1")}) e 1.2 (${nomeDaEtapa("1.2")}); este card está na ${rotuloDaEtapa(etapa)}.` : "O PBI não está em nenhuma etapa do fluxo."],
   };
 }
 

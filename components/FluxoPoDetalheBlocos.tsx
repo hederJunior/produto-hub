@@ -116,7 +116,7 @@ export default function FluxoPoDetalheBlocos({
         <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
           <Checklist id={id} aba={aba} pode={pode} motivoSemPermissao={motivoSemPermissao} />
           <Descricao id={id} aba={aba} />
-          {aba === "1.1" && <Cancelamento id={id} pode={pode} motivoSemPermissao={motivoSemPermissao} etapaAtual={etapaAtual} aoCancelar={aoCancelarDemanda} />}
+          {(aba === "1.1" || aba === "1.2") && <Cancelamento id={id} pode={pode} motivoSemPermissao={motivoSemPermissao} etapaAtual={etapaAtual} aoCancelar={aoCancelarDemanda} />}
           <Comentarios id={id} pode={pode} motivoSemPermissao={motivoSemPermissao} aoPublicar={aoPublicarComentario} />
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
@@ -244,9 +244,9 @@ function Descricao({ id, aba }: { id: number; aba: AbaEtapa }) {
 // ---------------------------------------------------------------------------------------------------------------
 
 /**
- * Cancelamento de Demanda (aba 1.1, entre a descrição e os comentários): o usuário escolhe um dos 7 motivos; o texto padrão do motivo
+ * Cancelamento de Demanda (abas 1.1 e 1.2, entre a descrição e os comentários): o usuário escolhe um dos 7 motivos; o texto padrão do motivo
  * aparece para ele REVISAR E EDITAR; só ao confirmar o texto é publicado como comentário no PBI e o Status do card muda para Cancelado
- * (o card sai do quadro). Só quem movimenta o fluxo, e só para card que está na 1.1; o servidor confere tudo de novo.
+ * (o card sai do quadro). Só quem movimenta o fluxo, e só para card que está na 1.1 ou na 1.2; o servidor confere tudo de novo.
  */
 function Cancelamento({ id, pode, motivoSemPermissao, etapaAtual, aoCancelar }: { id: number; pode: boolean; motivoSemPermissao: string | null; etapaAtual: EtapaFluxo | null; aoCancelar?: (r: RespostaCancelamento) => void }) {
   const [motivoId, setMotivoId] = useState<string | null>(null);
@@ -255,7 +255,7 @@ function Cancelamento({ id, pode, motivoSemPermissao, etapaAtual, aoCancelar }: 
   const [falha, setFalha] = useState<{ mensagem: string; faltas: string[] } | null>(null);
   const motivo = motivoDeCancelamento(motivoId);
   const editado = !!motivo && texto !== motivo.texto;
-  const naEtapa = etapaAtual === "1.1";
+  const naEtapa = etapaAtual === "1.1" || etapaAtual === "1.2";
   const liberado = pode && naEtapa;
   const vazio = texto.trim() === "";
   const longo = texto.trim().length > LIMITE_COMENTARIO;
@@ -304,7 +304,7 @@ function Cancelamento({ id, pode, motivoSemPermissao, etapaAtual, aoCancelar }: 
       {!pode && <p title={motivoSemPermissao ?? ""} style={{ margin: "0 0 10px", fontSize: 12, color: C.muted }}>Somente visualização: quem movimenta o fluxo cancela demandas.</p>}
       {pode && !naEtapa && (
         <p style={{ margin: "0 0 10px", fontSize: 12, color: "#8a5a00", background: "#fff6e0", borderRadius: 8, padding: "6px 10px" }}>
-          Este card não está na etapa 1.1 (Classificar): só dá para cancelar a demanda enquanto ela está nessa etapa.
+          Este card já passou da etapa 1.2 (Priorizar - Backlog da Esteira): só dá para cancelar a demanda enquanto ela está na 1.1 ou na 1.2.
         </p>
       )}
 

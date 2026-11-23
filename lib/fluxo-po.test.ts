@@ -840,13 +840,14 @@ test("motivoDeCancelamento: acha pelo id, recusa o resto", () => {
   for (const ruim of ["", "ERP", "outro", null, undefined, 5]) assert.equal(motivoDeCancelamento(ruim), undefined, String(ruim));
 });
 
-test("avaliarCancelamento: só na etapa 1.1 (mesmo sem Cliente); fora dela ou fora do quadro é recusado com o motivo", () => {
+test("avaliarCancelamento: só nas etapas 1.1 e 1.2 (mesmo sem Cliente); da 2.1 em diante ou fora do quadro é recusado com o motivo", () => {
   assert.deepEqual(avaliarCancelamento(pbi()), { permitido: true, faltas: [] });
   assert.equal(avaliarCancelamento(pbi({ cliente: "" })).permitido, true); // cancelar não é movimentação: não exige Cliente
-  const na12 = avaliarCancelamento(pbi12());
-  assert.equal(na12.permitido, false);
-  assert.match(na12.faltas[0], /só pode ser cancelada na etapa 1\.1 \(Classificar\).*1\.2 Priorizar - Backlog da Esteira/);
-  assert.equal(avaliarCancelamento(pbi21()).permitido, false);
+  assert.deepEqual(avaliarCancelamento(pbi12()), { permitido: true, faltas: [] }); // 1.2: liberado em 2026-11-23
+  assert.equal(avaliarCancelamento(pbi12({ cliente: "" })).permitido, true);
+  const na21 = avaliarCancelamento(pbi21());
+  assert.equal(na21.permitido, false);
+  assert.match(na21.faltas[0], /só pode ser cancelada nas etapas 1\.1 \(Classificar\) e 1\.2 \(Priorizar - Backlog da Esteira\).*2\.1 Comitê/);
   assert.equal(avaliarCancelamento(pbi12({ etapa: "Análise" })).permitido, false);
   assert.deepEqual(avaliarCancelamento(pbi12({ status: "Execução", etapa: "Execução" })), { permitido: false, faltas: ["O PBI não está em nenhuma etapa do fluxo."] });
 });

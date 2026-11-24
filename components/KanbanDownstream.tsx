@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Building2, Gauge, Info, Layers } from "lucide-react";
+import AbasVisao from "@/components/AbasVisao";
 import { useProduto } from "@/components/ProdutoContext";
 import MultiSelectFiltro from "@/components/MultiSelectFiltro";
 import { C, PASTEL, infoPrioridade } from "@/lib/kmm-theme";
@@ -28,6 +29,10 @@ const ESTILO_LOCAL = `
 .kd-scroll::-webkit-scrollbar-thumb{ background:#DAD5CD; border-radius:6px; }
 `;
 
+/** Exibição dos cards (2026-11-24): "reduzido" = só o ID e o título (cabem vários por quadro); "completo" = com prioridade, cliente, área, PO e effort. */
+type ModoCard = "reduzido" | "completo";
+const CHAVE_MODO_CARD = "kanban-downstream:cards:v1";
+
 function iniciais(nome: string): string {
   const partes = nome.trim().split(/\s+/).filter(Boolean);
   if (!partes.length) return "";
@@ -44,6 +49,20 @@ export default function KanbanDownstream({ refreshKey = 0 }: { refreshKey?: numb
   const [areasSel, setAreasSel] = useState<string[]>([]);
   const [responsaveisSel, setResponsaveisSel] = useState<string[]>([]);
   const [infoAberto, setInfoAberto] = useState(false);
+  // Padrão "reduzido" (é o que deixa ver os cards de um quadro cheio); a escolha fica na sessão do navegador (try/catch: sem armazenamento, funciona sem lembrar).
+  const [modoCard, setModoCard] = useState<ModoCard>("reduzido");
+  useEffect(() => {
+    try {
+      const salvo = window.sessionStorage.getItem(CHAVE_MODO_CARD);
+      if (salvo === "reduzido" || salvo === "completo") setModoCard(salvo);
+    } catch {}
+  }, []);
+  const escolherModoCard = (m: ModoCard) => {
+    setModoCard(m);
+    try {
+      window.sessionStorage.setItem(CHAVE_MODO_CARD, m);
+    } catch {}
+  };
 
   useEffect(() => {
     let cancelado = false;
@@ -148,9 +167,19 @@ export default function KanbanDownstream({ refreshKey = 0 }: { refreshKey?: numb
             {itensVisiveis.length} {itensVisiveis.length === 1 ? "demanda" : "demandas"}
           </span>
         )}
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <AbasVisao
+          rotulo="Exibição dos cards"
+          opcoes={[
+            { valor: "reduzido" as ModoCard, label: "Card reduzido" },
+            { valor: "completo" as ModoCard, label: "Informação completa" },
+          ]}
+          valor={modoCard}
+          onChange={escolherModoCard}
+        />
         <button
           className="kmm-btn"
-          style={{ marginLeft: "auto", ...(infoAberto ? { borderColor: C.orange, color: C.orange, background: "#FFF1EA" } : {}) }}
+          style={{ ...(infoAberto ? { borderColor: C.orange, color: C.orange, background: "#FFF1EA" } : {}) }}
           aria-pressed={infoAberto}
           aria-expanded={infoAberto}
           onClick={() => setInfoAberto((v) => !v)}
@@ -158,6 +187,7 @@ export default function KanbanDownstream({ refreshKey = 0 }: { refreshKey?: numb
           <Info size={14} style={{ marginRight: 6, verticalAlign: -2 }} />
           Regras do fluxo
         </button>
+        </div>
       </div>
 
       {infoAberto && <RegrasDoFluxo />}
@@ -187,7 +217,7 @@ export default function KanbanDownstream({ refreshKey = 0 }: { refreshKey?: numb
 
                   <div style={{ display: "flex", flexDirection: "column", gap: subdividido ? 12 : 0 }}>
                     {quadro.divisoes.map((div) => (
-                      <Divisao key={div.chave} divisao={div} cards={porDivisao[div.chave] ?? []} cor={cor} subdividido={subdividido} />
+                      <Divisao key={div.chave} divisao={div} cards={porDivisao[div.chave] ?? []} cor={cor} subdividido={subdividido} modoCard={modoCard} />
                     ))}
                   </div>
                 </section>
@@ -200,7 +230,10 @@ export default function KanbanDownstream({ refreshKey = 0 }: { refreshKey?: numb
   );
 }
 
-function Divisao({ divisao, cards, cor, subdividido }: { divisao: DivisaoDownstream; cards: ItemKanbanDownstream[]; cor: { bg: string; dot: string }; subdividido: boolean }) {
+function Divisao({ divisao, cards, cor, subdividido, modoCard }: { divisao: DivisaoDownstream; cards: ItemKanbanDownstream[]; cor: { bg: string; dot: string }; subdividido: boolean; modoCard: ModoCard }) {
+  // Altura da lista de cada divisão: no modo reduzido cabem ao menos 4 cards (~70 px cada) mesmo nos quadros divididos (To Do/Doing, Tech/Produto, QA/Produto);
+  // sobe com a altura da tela, e acima disso a lista rola. No modo completo (cards de ~190 px) também ficou maior que antes (era 32vh/66vh).
+  const alturaMax = modoCard === "reduzido" ? (subdividido ? "max(330px, 46vh)" : "max(330px, 78vh)") : subdividido ? "max(330px, 48vh)" : "max(330px, 78vh)";
   return (
     <div
       aria-label={subdividido ? divisao.titulo : undefined}
@@ -215,13 +248,13 @@ function Divisao({ divisao, cards, cor, subdividido }: { divisao: DivisaoDownstr
           </span>
         </div>
       )}
-      <div className="kd-scroll" style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: subdividido ? "32vh" : "66vh", overflowY: "auto", paddingRight: 2 }}>
+      <div className="kd-scroll" style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: alturaMax, overflowY: "auto", paddingRight: 2 }}>
         {cards.length === 0 ? (
           <div style={{ border: `1.5px dashed ${C.border}`, borderRadius: 12, padding: "18px 12px", textAlign: "center", fontSize: 12.5, color: C.faint, background: subdividido ? "rgba(255,255,255,.55)" : undefined }}>
             Sem demandas
           </div>
         ) : (
-          cards.map((i) => <CardDownstream key={i.id} item={i} cor={cor} mostrarEffort={divisao.chave === "priorizacao"} />)
+          cards.map((i) => (modoCard === "reduzido" ? <CardReduzido key={i.id} item={i} /> : <CardDownstream key={i.id} item={i} cor={cor} mostrarEffort={divisao.chave === "priorizacao"} />))
         )}
       </div>
     </div>
@@ -269,6 +302,26 @@ function RegrasDoFluxo() {
         })}
       </div>
     </div>
+  );
+}
+
+/** Card reduzido (2026-11-24): só a identificação do PBI (link para o Azure) e o título, em até 2 linhas (o título inteiro aparece ao passar o mouse). */
+function CardReduzido({ item }: { item: ItemKanbanDownstream }) {
+  return (
+    <article className="kd-card" style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 10, padding: "7px 10px 8px", flexShrink: 0 }}>
+      <a
+        className="kd-id"
+        href={`https://dev.azure.com/${ORG_DEVOPS}/${encodeURIComponent(item.projeto)}/_workitems/edit/${item.id}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{ fontSize: 11, fontWeight: 600, color: C.muted, textDecoration: "none", fontVariantNumeric: "tabular-nums", letterSpacing: ".01em" }}
+      >
+        #{item.id}
+      </a>
+      <div style={{ marginTop: 2, fontSize: 12.5, fontWeight: 500, lineHeight: 1.35, color: C.text, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }} title={item.titulo}>
+        {item.titulo}
+      </div>
+    </article>
   );
 }
 

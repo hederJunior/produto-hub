@@ -80,7 +80,7 @@ function IndicadorCompacto({
 }
 
 /** Faixas do gráfico de aging (dias desde a Data de abertura do produto); "Sem data" só aparece se houver itens sem data. */
-const FAIXAS_AGING: { rotulo: string; contem: (d: number) => boolean }[] = [
+export const FAIXAS_AGING: { rotulo: string; contem: (d: number) => boolean }[] = [
   { rotulo: "< 15 dias", contem: (d) => d < 15 },
   { rotulo: "15–30 dias", contem: (d) => d >= 15 && d < 30 },
   { rotulo: "30–45 dias", contem: (d) => d >= 30 && d < 45 },

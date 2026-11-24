@@ -9,9 +9,10 @@ import DistribuicaoPorStatus from "@/components/DistribuicaoPorStatus";
 import EntregasCliente from "@/components/EntregasCliente";
 import AbasVisao from "@/components/AbasVisao";
 import { ALTURA_QUADRO, DivisorSecao, VisaoBacklogOrcamento, VisaoPorStatus } from "@/components/BaseGeralDemandas";
-import { Users } from "lucide-react";
+import { FileDown, Users } from "lucide-react";
 import { nomeCurtoDaSquad } from "@/lib/backlog";
 import { formatarChaveDia } from "@/lib/datas";
+import type { EntregasCliente as DadosEntregas } from "@/lib/entregas-cliente";
 import {
   calcularIndicadoresGestao,
   ordemDoStatus,
@@ -174,6 +175,47 @@ export default function ClientesPage() {
 
   const ind = useMemo(() => calcularIndicadoresGestao(visiveis), [visiveis]);
 
+  // "Gerar OPR": PDF com tudo o que está filtrado na tela (lib/opr-pdf.tsx, gerado no navegador).
+  const [gerandoOpr, setGerandoOpr] = useState(false);
+  const [erroOpr, setErroOpr] = useState<string | null>(null);
+  // A coluna Observação chega depois da tabela; gerar antes disso deixaria o PDF incompleto.
+  const comentariosPendentes = visiveis.some((p) => p.qtdComentarios > 0 && comentarios[p.id] === undefined);
+  const oprIndisponivel = !clienteSel || carregando || comentariosPendentes;
+
+  async function gerarOpr() {
+    if (!clienteSel || oprIndisponivel || gerandoOpr) return;
+    setGerandoOpr(true);
+    setErroOpr(null);
+    try {
+      // Demandas entregues: mesma consulta da seção da tela (a tela guarda o resultado no próprio componente).
+      let entregas: DadosEntregas | null = null;
+      let avisoEntregas: string | undefined;
+      try {
+        const res = await fetch(`/api/clientes/entregas?produto=${produto}&cliente=${encodeURIComponent(clienteSel === SEM_CLIENTE ? "" : clienteSel)}`, { cache: "no-store" });
+        const j = await res.json();
+        if (j.erro) avisoEntregas = j.erro;
+        entregas = { lancamentos: j.lancamentos ?? [], finalizadas: j.finalizadas ?? [], previsao: j.previsao ?? [], avisoPrevisao: j.avisoPrevisao };
+      } catch {
+        avisoEntregas = "Não foi possível carregar as demandas entregues.";
+      }
+      const { gerarOprPdf, nomeArquivoOpr } = await import("@/lib/opr-pdf");
+      const geradoEm = new Date();
+      const blob = await gerarOprPdf({ cliente: clienteSel, squads: squadsSel.map(rotuloSquad), geradoEm, itens: visiveis, comentarios, entregas, avisoEntregas });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = nomeArquivoOpr(clienteSel, geradoEm);
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    } catch (e: any) {
+      setErroOpr(`Não foi possível gerar a OPR: ${e?.message ?? "erro desconhecido"}`);
+    } finally {
+      setGerandoOpr(false);
+    }
+  }
+
   return (
     <div>
       <PageHeader
@@ -189,9 +231,21 @@ export default function ClientesPage() {
           pesquisavel
           placeholderBusca="Digite o nome do cliente…"
         />
+        <button
+          type="button"
+          className="kmm-btn primary"
+          onClick={gerarOpr}
+          disabled={oprIndisponivel || gerandoOpr}
+          title={!clienteSel ? "Selecione um cliente para gerar a OPR." : comentariosPendentes ? "Aguarde: as observações (último comentário) ainda estão carregando." : "Gera o PDF da OPR com os dados filtrados na tela."}
+          style={{ display: "inline-flex", alignItems: "center", gap: 7, opacity: oprIndisponivel || gerandoOpr ? 0.55 : 1, cursor: oprIndisponivel || gerandoOpr ? "not-allowed" : "pointer" }}
+        >
+          <FileDown size={15} />
+          {gerandoOpr ? "Gerando OPR…" : "Gerar OPR"}
+        </button>
       </PageHeader>
 
-      {erro && <div className="kmm-card" style={{ marginBottom: 16, fontSize: 13, color: C.red }}>{erro}</div>}
+      {erroOpr && <div className="kmm-card" style={{ marginBottom: 16, fontSize: 13, color: C.red }}>{erroOpr}</div>}
+      {erro &&<div className="kmm-card" style={{ marginBottom: 16, fontSize: 13, color: C.red }}>{erro}</div>}
       {avisos.map((a) => (
         <div key={a} className="kmm-card" style={{ marginBottom: 12, fontSize: 13, color: "#8a5a00", background: "#fff6e0" }}>{a}</div>
       ))}

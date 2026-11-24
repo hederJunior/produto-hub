@@ -10,7 +10,7 @@ import { norm, type PbiGestaoCliente } from "@/lib/gestao-clientes";
  * carrega (ESTADOS_GESTAO_CLIENTES); "HML c/ cliente" = Teste Aceite Usuário e "Ag. Deploy" =
  * Aguardando Deploy (rótulos curtos do desenho de referência).
  */
-const LINHAS: { estado: string; rotulo: string; cor: string }[] = [
+export const LINHAS_DISTRIBUICAO: { estado: string; rotulo: string; cor: string }[] = [
   { estado: "Backlog", rotulo: "Backlog", cor: "#64748B" },
   { estado: "Orçamento", rotulo: "Orçamento", cor: "#6366F1" },
   { estado: "Execução", rotulo: "Execução", cor: "#0EA5E9" },
@@ -20,7 +20,7 @@ const LINHAS: { estado: string; rotulo: string; cor: string }[] = [
 
 export default function DistribuicaoPorStatus({ itens, carregando }: { itens: PbiGestaoCliente[]; carregando: boolean }) {
   const total = itens.length;
-  const linhas = LINHAS.map((l) => {
+  const linhas = LINHAS_DISTRIBUICAO.map((l) => {
     const qtd = itens.filter((p) => norm(p.state) === norm(l.estado)).length;
     return { ...l, qtd, pct: total ? Math.round((qtd / total) * 100) : 0 };
   });

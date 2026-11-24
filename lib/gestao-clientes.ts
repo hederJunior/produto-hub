@@ -130,3 +130,51 @@ export function ordemDoStatus(state: string): number {
   const i = ESTADOS_GESTAO_CLIENTES.findIndex((e) => norm(e) === norm(state));
   return i === -1 ? 99 : i;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Ordenação das listas da Gestão de clientes (pedido por Heder em 2026-11-24). Vale para a tela e
+// para o PDF da OPR. Dentro do mesmo grupo status|etapa, desempata pelo ID do PBI (crescente).
+// ---------------------------------------------------------------------------------------------
+
+type ItemOrdenavel = Pick<PbiGestaoCliente, "id" | "state" | "etapa">;
+
+/** Posição da etapa na lista; "Relacionamento" casa "Relacionamento Comercial". Etapa fora da lista vai depois das conhecidas. */
+function posicaoDaEtapa(etapa: string, ordem: readonly string[]): number {
+  const e = norm(etapa);
+  const i = ordem.findIndex((o) => norm(o) === e || (norm(o) === "relacionamento" && e.startsWith("relacionamento")));
+  return i === -1 ? ordem.length : i;
+}
+
+/** Listagem completa: status do board e, dentro dele, etapa (a ordem é a do fluxo da esteira). */
+const ORDEM_LISTAGEM: { estado: string; etapas: string[] }[] = [
+  { estado: "Backlog", etapas: ["Backlog", "Comitê", "Análise"] },
+  { estado: "Orçamento", etapas: ["Relacionamento"] },
+  { estado: "Execução", etapas: ["Aguardando Priorização", "Relacionamento", "Análise", "Execução", "Validação Interna"] },
+  { estado: "Teste Aceite Usuário", etapas: ["Delivery"] },
+  { estado: "Aguardando Deploy", etapas: [] },
+];
+
+/** Chave numérica da listagem: status × 100 + etapa. Status desconhecido vai para o fim. */
+export function chaveDaListagem(p: Pick<PbiGestaoCliente, "state" | "etapa">): number {
+  const i = ORDEM_LISTAGEM.findIndex((g) => norm(g.estado) === norm(p.state));
+  if (i === -1) return 9999;
+  return i * 100 + posicaoDaEtapa(p.etapa, ORDEM_LISTAGEM[i].etapas);
+}
+
+export function ordenarListagem<T extends ItemOrdenavel>(itens: readonly T[]): T[] {
+  return [...itens].sort((a, b) => chaveDaListagem(a) - chaveDaListagem(b) || a.id - b.id);
+}
+
+/** "Demandas em backlog": Backlog | Comitê primeiro, depois Backlog | Backlog (e Análise). */
+export function ordenarBacklog<T extends ItemOrdenavel>(itens: readonly T[]): T[] {
+  const ordem = ["Comitê", "Backlog", "Análise"];
+  return [...itens].sort((a, b) => posicaoDaEtapa(a.etapa, ordem) - posicaoDaEtapa(b.etapa, ordem) || a.id - b.id);
+}
+
+/** "Demandas em execução": Análise, Execução e Validação Interna; as demais etapas ficam no fim, na ordem da listagem. */
+export function ordenarExecucao<T extends ItemOrdenavel>(itens: readonly T[]): T[] {
+  const ordem = ["Análise", "Execução", "Validação Interna"];
+  return [...itens].sort(
+    (a, b) => posicaoDaEtapa(a.etapa, ordem) - posicaoDaEtapa(b.etapa, ordem) || chaveDaListagem(a) - chaveDaListagem(b) || a.id - b.id
+  );
+}

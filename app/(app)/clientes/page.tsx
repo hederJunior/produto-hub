@@ -15,7 +15,8 @@ import { formatarChaveDia } from "@/lib/datas";
 import type { EntregasCliente as DadosEntregas } from "@/lib/entregas-cliente";
 import {
   calcularIndicadoresGestao,
-  ordemDoStatus,
+  ordenarExecucao,
+  ordenarListagem,
   type PbiGestaoCliente,
   type UltimoComentario,
 } from "@/lib/gestao-clientes";
@@ -170,7 +171,8 @@ export default function ClientesPage() {
   const visiveis = useMemo(() => {
     if (!clienteSel) return [];
     const filtrados = itens.filter((p) => clienteDe(p) === clienteSel && (!squadsSel.length || squadsSel.includes(p.areaPath)));
-    return filtrados.sort((a, b) => ordemDoStatus(a.state) - ordemDoStatus(b.state) || a.id - b.id);
+    // Ordem status | etapa da listagem (2026-11-24; lib/gestao-clientes.ts → ordenarListagem).
+    return ordenarListagem(filtrados);
   }, [itens, clienteSel, squadsSel]);
 
   const ind = useMemo(() => calcularIndicadoresGestao(visiveis), [visiveis]);
@@ -361,7 +363,7 @@ export default function ClientesPage() {
       <div style={{ marginTop: 16 }}>
         {visao === "backlog" && <VisaoBacklogOrcamento itens={visiveis} indicadores={ind} carregando={carregando} />}
         {visao === "execucao" && (
-          <VisaoPorStatus estado="Execução" tituloTabela="Demandas em execução" tituloGrafico="Execução por etapa" itens={visiveis} comentarios={comentarios} carregando={carregando} />
+          <VisaoPorStatus estado="Execução" ordenar={ordenarExecucao} tituloTabela="Demandas em execução" tituloGrafico="Execução por etapa" itens={visiveis} comentarios={comentarios} carregando={carregando} />
         )}
         {visao === "testes" && (
           <VisaoPorStatus

@@ -9,11 +9,10 @@
  * filtrado. Módulo carregado sob demanda (import dinâmico no clique) para o @react-pdf/renderer
  * não entrar no bundle da página.
  */
-import { Document, Font, Image, Link, Page, pdf, StyleSheet, Text, View } from "@react-pdf/renderer";
+import { Document, Font, Image, Link, Page, Path, pdf, StyleSheet, Svg, Text, View } from "@react-pdf/renderer";
 import { PASTEL } from "@/lib/kmm-theme";
-import { nomeCurtoDaSquad } from "@/lib/backlog";
 import { chaveDia, formatarChaveDia } from "@/lib/datas";
-import { agingDiasPbi, calcularIndicadoresGestao, emBacklogDemanda, norm, type PbiGestaoCliente, type UltimoComentario } from "@/lib/gestao-clientes";
+import { agingDiasPbi, calcularIndicadoresGestao, emBacklogDemanda, norm, ordenarBacklog, ordenarExecucao, ordenarListagem, type PbiGestaoCliente, type UltimoComentario } from "@/lib/gestao-clientes";
 import { estaFinalizado, tituloComIdExterno, versaoPrevistaDaSprint, type EntregasCliente } from "@/lib/entregas-cliente";
 import { LINHAS_DISTRIBUICAO } from "@/components/DistribuicaoPorStatus";
 import { FAIXAS_AGING } from "@/components/BaseGeralDemandas";
@@ -72,16 +71,16 @@ function corDoStatus(state: string): string {
 type Cel = string | { t: string; href?: string; bold?: boolean; status?: string; cor?: string };
 type Coluna = { titulo: string; peso: number; direita?: boolean; /** Limite de linhas da célula (texto longo vira "…"), como na tela. */ linhas?: number };
 
-function Tabela({ colunas, linhas, vazio, leve }: { colunas: Coluna[]; linhas: Cel[][]; vazio: string; leve?: boolean }) {
+function Tabela({ colunas, linhas, vazio }: { colunas: Coluna[]; linhas: Cel[][]; vazio: string }) {
   const soma = colunas.reduce((n, c) => n + c.peso, 0);
   const largura = (c: Coluna) => `${(c.peso / soma) * 100}%`;
   const celula = { paddingHorizontal: 4, paddingVertical: 3.5 };
   return (
     <View>
       {/* Cabeçalho repetido em cada página quando a tabela quebra. */}
-      <View fixed style={{ flexDirection: "row", backgroundColor: leve ? COR.faixa : COR.laranja, borderBottomWidth: leve ? 1 : 0, borderBottomColor: COR.laranja }}>
+      <View fixed style={{ flexDirection: "row", backgroundColor: COR.laranja }}>
         {colunas.map((c) => (
-          <Text key={c.titulo} style={{ ...celula, width: largura(c), fontFamily: "Helvetica-Bold", fontSize: 7.5, color: leve ? COR.texto : "#FFFFFF", textAlign: c.direita ? "right" : "left" }}>
+          <Text key={c.titulo} style={{ ...celula, width: largura(c), fontFamily: "Helvetica-Bold", fontSize: 7.5, color: "#FFFFFF", textAlign: c.direita ? "right" : "left" }}>
             {c.titulo}
           </Text>
         ))}
@@ -225,6 +224,220 @@ function Indicador({ cor, titulo, valor }: { cor: keyof typeof PASTEL; titulo: s
   );
 }
 
+// ---------------------------------------------------------------- demandas entregues
+
+const limitar = (n: number) => ({ maxLines: n }) as object;
+const VERDE = { solido: "#22A55B", bg: PASTEL.green.bg };
+const LARANJA = { solido: COR.laranja, bg: PASTEL.orange.bg, texto: "#E04300" };
+
+function Pilula({ texto, fg, bg }: { texto: string; fg: string; bg: string }) {
+  return (
+    <View style={{ backgroundColor: bg, borderRadius: 7, paddingVertical: 1.5, paddingHorizontal: 6, marginLeft: 5 }}>
+      <Text style={{ fontFamily: "Helvetica-Bold", fontSize: 6.6, color: fg }}>{texto}</Text>
+    </View>
+  );
+}
+
+/** Cartão branco de cantos arredondados com título, ponto colorido e contagem. */
+function Cartao({ titulo, contagem, cor, children }: { titulo: string; contagem?: string; cor: string; children: React.ReactNode }) {
+  return (
+    <View style={{ borderWidth: 0.7, borderColor: "#E8E2DB", borderRadius: 9, paddingVertical: 8, paddingHorizontal: 12, backgroundColor: "#FFFFFF" }}>
+      <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 3 }}>
+        <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: cor, marginRight: 7 }} />
+        <Text style={{ fontFamily: "Helvetica-Bold", fontSize: 11, flex: 1 }}>{titulo}</Text>
+        {contagem ? <Text style={{ fontSize: 7.5, color: COR.cinza }}>{contagem}</Text> : null}
+      </View>
+      {children}
+    </View>
+  );
+}
+
+function Kpi({ valor, titulo, detalhe, cor }: { valor: string; titulo: string; detalhe: string; cor: { bg: string; dot: string } }) {
+  return (
+    <View style={{ flex: 1, flexDirection: "row", alignItems: "center", backgroundColor: cor.bg, borderRadius: 9, paddingVertical: 6, paddingHorizontal: 13 }}>
+      <Text style={{ fontFamily: "Helvetica-Bold", fontSize: 20, color: cor.dot, marginRight: 11 }}>{valor}</Text>
+      <View style={{ flex: 1 }}>
+        <Text style={{ fontFamily: "Helvetica-Bold", fontSize: 8.8 }}>{titulo}</Text>
+        <Text style={{ fontSize: 7.2, color: COR.cinza, marginTop: 1 }}>{detalhe}</Text>
+      </View>
+    </View>
+  );
+}
+
+function IconeCheck() {
+  return (
+    <View style={{ width: 13, height: 13, borderRadius: 7, backgroundColor: VERDE.bg, alignItems: "center", justifyContent: "center", marginRight: 7, marginTop: 0.5 }}>
+      <Svg width={8} height={8} viewBox="0 0 10 10">
+        <Path d="M1.8 5.2 L4.1 7.4 L8.2 2.8" stroke={VERDE.solido} strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+      </Svg>
+    </View>
+  );
+}
+
+function ItemEntrega({ titulo, href, direita, icone, linhas = 1 }: { titulo: string; href: string; direita?: React.ReactNode; icone?: React.ReactNode; linhas?: number }) {
+  return (
+    <View wrap={false} style={{ flexDirection: "row", alignItems: "flex-start", paddingVertical: 1.7 }}>
+      {icone}
+      <Text style={{ flex: 1, fontSize: 7.9, color: COR.texto, ...limitar(linhas) }}>
+        <Link src={href} style={{ color: COR.texto, textDecoration: "none" }}>
+          {titulo}
+        </Link>
+      </Text>
+      {direita}
+    </View>
+  );
+}
+
+/** Selo do grupo (versão ou sprint) + legenda + contagem; os itens ficam numa linha vertical, como numa linha do tempo. */
+function GrupoLinhaDoTempo({ rotulo, fg, bg, legenda, qtd, linha, children }: { rotulo: string; fg: string; bg: string; legenda?: string; qtd: number; linha: string; children: React.ReactNode }) {
+  return (
+    <View style={{ marginTop: 5 }}>
+      <View wrap={false} style={{ flexDirection: "row", alignItems: "center", marginBottom: 2 }}>
+        <View style={{ backgroundColor: bg, borderRadius: 9, paddingVertical: 2, paddingHorizontal: 8 }}>
+          <Text style={{ fontFamily: "Helvetica-Bold", fontSize: 9, color: fg }}>{rotulo}</Text>
+        </View>
+        <Text style={{ flex: 1, fontSize: 7.2, color: COR.cinza, marginLeft: 7 }}>{legenda ?? ""}</Text>
+        <Text style={{ fontSize: 7, color: COR.cinza }}>{plural(qtd, "demanda", "demandas")}</Text>
+      </View>
+      <View style={{ marginLeft: 9, paddingLeft: 10, borderLeftWidth: 1.2, borderLeftColor: linha }}>{children}</View>
+    </View>
+  );
+}
+
+function agrupar<T>(lista: T[], chave: (x: T) => string): { chave: string; itens: T[] }[] {
+  const grupos: { chave: string; itens: T[] }[] = [];
+  for (const x of lista) {
+    const k = chave(x);
+    const g = grupos.find((gr) => gr.chave === k);
+    if (g) g.itens.push(x);
+    else grupos.push({ chave: k, itens: [x] });
+  }
+  return grupos;
+}
+
+const Vazio = ({ texto }: { texto: string }) => <Text style={{ fontFamily: "Helvetica-Oblique", fontSize: 8, color: COR.cinza, paddingVertical: 4 }}>{texto}</Text>;
+
+function DemandasEntregues({ e, aviso, hoje }: { e: EntregasCliente | null; aviso?: string; hoje: string }) {
+  if (!e) {
+    return (
+      <View style={{ backgroundColor: PASTEL.amber.bg, borderRadius: 8, padding: "9 12" }}>
+        <Text style={{ color: "#8a5a00", fontSize: 9 }}>{t(aviso) || "Não foi possível carregar as demandas entregues."}</Text>
+      </View>
+    );
+  }
+  const porVersao = agrupar(e.lancamentos, (p) => p.versao);
+  const porSprint = agrupar(e.previsao, (p) => p.sprint);
+  const datasDaSprint = (p: { sprintInicio: string | null; sprintFim: string | null }) =>
+    p.sprintInicio && p.sprintFim ? `${formatarChaveDia(p.sprintInicio).slice(0, 5)} – ${formatarChaveDia(p.sprintFim).slice(0, 5)}` : "";
+
+  return (
+    <View>
+      <View style={{ flexDirection: "row", marginBottom: 9 }}>
+        <Kpi valor={String(porVersao.length)} titulo="Versões entregues" detalhe={`${plural(e.lancamentos.length, "demanda", "demandas")} nos últimos lançamentos`} cor={{ bg: PASTEL.green.bg, dot: VERDE.solido }} />
+        <View style={{ width: 9 }} />
+        <Kpi valor={String(e.finalizadas.length)} titulo="Itens finalizados" detalhe="os mais recentes do cliente" cor={{ bg: PASTEL.sky.bg, dot: PASTEL.sky.dot }} />
+        <View style={{ width: 9 }} />
+        <Kpi valor={String(e.previsao.length)} titulo="Próximas entregas" detalhe="sprint atual e seguintes" cor={{ bg: PASTEL.orange.bg, dot: LARANJA.texto }} />
+      </View>
+
+      <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
+        {/* Esquerda: lançamentos de versão, agrupados por versão */}
+        <View style={{ width: "54%", paddingRight: 8 }}>
+          <Cartao titulo="Lançamentos de versão" contagem={e.lancamentos.length ? plural(e.lancamentos.length, "demanda", "demandas") : undefined} cor={VERDE.solido}>
+            {porVersao.length === 0 ? (
+              <Vazio texto="Nenhum PBI com versão informada para este cliente." />
+            ) : (
+              porVersao.map((g) => (
+                <GrupoLinhaDoTempo key={g.chave} rotulo={`v${g.chave}`} fg="#FFFFFF" bg={VERDE.solido} qtd={g.itens.length} linha="#BFE6CD">
+                  {g.itens.map((p) => (
+                    <ItemEntrega
+                      key={p.id}
+                      linhas={2}
+                      titulo={t(tituloComIdExterno(p.idExterno, p.titulo))}
+                      href={linkPbi(p)}
+                      direita={
+                        <>
+                          {p.interno ? <Pilula texto="Interno" fg={COR.cinza} bg={COR.faixa} /> : null}
+                          {!estaFinalizado(p.state) ? <Pilula texto={t(p.state)} fg="#B26A00" bg={PASTEL.amber.bg} /> : null}
+                        </>
+                      }
+                    />
+                  ))}
+                </GrupoLinhaDoTempo>
+              ))
+            )}
+          </Cartao>
+        </View>
+
+        {/* Direita: últimos finalizados e próximas entregas */}
+        <View style={{ width: "46%", paddingLeft: 8 }}>
+          <Cartao titulo="Últimos itens finalizados" cor={PASTEL.sky.dot}>
+            {e.finalizadas.length === 0 ? (
+              <Vazio texto="Nenhuma demanda finalizada ainda para este cliente." />
+            ) : (
+              e.finalizadas.map((p) => (
+                <ItemEntrega
+                  key={p.id}
+                  icone={<IconeCheck />}
+                  titulo={t(tituloComIdExterno(p.idExterno, p.titulo))}
+                  href={linkPbi(p)}
+                  direita={<Text style={{ fontFamily: "Helvetica-Bold", fontSize: 7.2, color: COR.cinza, marginLeft: 6 }}>{p.closedDate ? formatarChaveDia(chaveDia(p.closedDate)).slice(0, 5) : ""}</Text>}
+                />
+              ))
+            )}
+          </Cartao>
+
+          <View style={{ height: 8 }} />
+
+          <Cartao titulo="Próximas entregas" contagem={e.previsao.length ? plural(e.previsao.length, "demanda", "demandas") : undefined} cor={LARANJA.solido}>
+            {e.avisoPrevisao ? <Text style={{ fontSize: 7.4, color: "#8a5a00", backgroundColor: PASTEL.amber.bg, borderRadius: 5, padding: "4 7", marginBottom: 3 }}>{t(e.avisoPrevisao)}</Text> : null}
+            {porSprint.length === 0 ? (
+              <Vazio texto="Nenhuma demanda programada para a sprint atual ou posteriores." />
+            ) : (
+              porSprint.map((g) => {
+                const ref = g.itens[0];
+                const atual = !!ref.sprintInicio && !!ref.sprintFim && ref.sprintInicio <= hoje && hoje <= ref.sprintFim;
+                const versao = versaoPrevistaDaSprint(ref.sprint);
+                const datas = datasDaSprint(ref);
+                const legenda = [atual ? "Sprint atual" : versao ? t(ref.sprint) : "", datas].filter(Boolean).join(" · ");
+                return (
+                  <GrupoLinhaDoTempo
+                    key={g.chave}
+                    rotulo={versao ? `v${versao}` : t(ref.sprint)}
+                    fg={atual ? "#FFFFFF" : LARANJA.texto}
+                    bg={atual ? LARANJA.solido : LARANJA.bg}
+                    legenda={legenda}
+                    qtd={g.itens.length}
+                    linha="#F9C9B4"
+                  >
+                    {g.itens.map((p) => (
+                      <ItemEntrega
+                        key={p.id}
+                        titulo={t(tituloComIdExterno(p.idExterno, p.titulo))}
+                        href={linkPbi(p)}
+                        direita={
+                          <>
+                            {p.interno ? <Pilula texto="Interno" fg={COR.cinza} bg={COR.faixa} /> : null}
+                            <Pilula texto={t(p.state)} fg={corDoStatus(p.state)} bg={COR.faixa} />
+                          </>
+                        }
+                      />
+                    ))}
+                  </GrupoLinhaDoTempo>
+                );
+              })
+            )}
+          </Cartao>
+        </View>
+      </View>
+
+      <Text style={{ fontSize: 6.8, color: COR.cinza, marginTop: 6 }}>
+        Próximas entregas: demandas em aberto do cliente e do KMM (INTERNO) do mesmo projeto, programadas para a sprint atual ou posteriores. A versão prevista é a sprint do PBI.
+      </Text>
+    </View>
+  );
+}
+
 // ---------------------------------------------------------------- documento
 
 export type DadosOpr = {
@@ -242,11 +455,11 @@ export type DadosOpr = {
 
 function OprDocument({ d }: { d: DadosOpr }) {
   const agora = d.geradoEm.getTime();
-  const itens = d.itens;
+  const itens = ordenarListagem(d.itens);
   const ind = calcularIndicadoresGestao(itens, agora);
-  const backlog = itens.filter(emBacklogDemanda);
+  const backlog = ordenarBacklog(itens.filter(emBacklogDemanda));
   const orcamento = itens.filter((p) => norm(p.state) === "orcamento");
-  const execucao = itens.filter((p) => norm(p.state) === "execucao");
+  const execucao = ordenarExecucao(itens.filter((p) => norm(p.state) === "execucao"));
   const testes = itens.filter((p) => norm(p.state) === "teste aceite usuario");
   const totalEffort = orcamento.reduce((n, p) => n + (p.effort ?? 0), 0);
   const obs = (p: PbiGestaoCliente) => {
@@ -254,10 +467,8 @@ function OprDocument({ d }: { d: DadosOpr }) {
     return c?.texto ? truncar(t(c.texto), 260) : "—";
   };
   const pbi = (p: PbiGestaoCliente): Cel => ({ t: String(p.id), href: linkPbi(p) });
-  const squadDe = (p: PbiGestaoCliente) => t(nomeCurtoDaSquad(p.areaPath)) || "—";
   const dataGeracao = d.geradoEm.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
   const horaGeracao = d.geradoEm.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" });
-  const e = d.entregas;
 
   const infoLinhas: [string, string][] = [
     ["Cliente", t(d.cliente)],
@@ -290,40 +501,8 @@ function OprDocument({ d }: { d: DadosOpr }) {
           <Distribuicao itens={itens} />
         </Secao>
 
-        {/* 2 — listagem completa */}
-        <Secao n={2} titulo="Listagem de demandas" quebra>
-          <Text style={{ ...S.legenda, marginBottom: 6 }}>{plural(itens.length, "demanda", "demandas")} na visão, na ordem do fluxo do board.</Text>
-          <Tabela
-            colunas={[
-              { titulo: "Chamado", peso: 7 },
-              { titulo: "Tarefa", peso: 21, linhas: 2 },
-              { titulo: "PBI", peso: 5.5 },
-              { titulo: "Status no board", peso: 9.5 },
-              { titulo: "Abertura produto", peso: 7.5 },
-              { titulo: "Etapa", peso: 8 },
-              { titulo: "PO", peso: 8, linhas: 2 },
-              { titulo: "Squad", peso: 8 },
-              { titulo: "Classificação", peso: 7 },
-              { titulo: "Observação", peso: 24, linhas: 3 },
-            ]}
-            linhas={itens.map((p) => [
-              t(p.idExterno) || "—",
-              t(p.titulo),
-              pbi(p),
-              { t: t(p.state), status: p.state },
-              dataCurta(p.dataAberturaProduto),
-              t(p.etapa) || "—",
-              t(p.po) || "—",
-              squadDe(p),
-              t(p.classificacao) || "—",
-              obs(p),
-            ])}
-            vazio="Nenhuma demanda para os filtros atuais."
-          />
-        </Secao>
-
-        {/* 3 — aging (gráfico) + backlog (tabela) */}
-        <Secao n={3} titulo="Backlog e aging" quebra>
+        {/* 2 — aging (gráfico) + backlog (tabela) */}
+        <Secao n={2} titulo="Backlog e aging" quebra>
           <View style={{ flexDirection: "row" }}>
             <View style={{ width: "30%", paddingRight: 16 }}>
               <Text style={S.subtitulo}>Demandas por faixa de aging</Text>
@@ -344,19 +523,18 @@ function OprDocument({ d }: { d: DadosOpr }) {
               </View>
               <Tabela
                 colunas={[
-                  { titulo: "Chamado", peso: 9 },
-                  { titulo: "Tarefa", peso: 25, linhas: 2 },
+                  { titulo: "Chamado", peso: 10 },
+                  { titulo: "Tarefa", peso: 28, linhas: 2 },
                   { titulo: "PBI", peso: 7 },
-                  { titulo: "Squad", peso: 10 },
-                  { titulo: "PO", peso: 13, linhas: 2 },
-                  { titulo: "Abertura produto", peso: 10 },
-                  { titulo: "Etapa", peso: 10 },
-                  { titulo: "Data comitê", peso: 8 },
-                  { titulo: "Agging aberto", peso: 8, direita: true },
+                  { titulo: "PO", peso: 14, linhas: 2 },
+                  { titulo: "Abertura produto", peso: 11 },
+                  { titulo: "Etapa", peso: 11 },
+                  { titulo: "Data comitê", peso: 9 },
+                  { titulo: "Agging aberto", peso: 10, direita: true },
                 ]}
                 linhas={backlog.map((p) => {
                   const aging = agingDiasPbi(p, agora);
-                  return [t(p.idExterno) || "—", t(p.titulo), pbi(p), squadDe(p), t(p.po) || "—", dataCurta(p.dataAberturaProduto), t(p.etapa) || "—", dataCurta(p.dataComite), { t: aging == null ? "—" : `${aging} d`, bold: true }];
+                  return [t(p.idExterno) || "—", t(p.titulo), pbi(p), t(p.po) || "—", dataCurta(p.dataAberturaProduto), t(p.etapa) || "—", dataCurta(p.dataComite), { t: aging == null ? "—" : `${aging} d`, bold: true }];
                 })}
                 vazio="Nenhuma demanda em backlog para os filtros atuais."
               />
@@ -364,8 +542,8 @@ function OprDocument({ d }: { d: DadosOpr }) {
           </View>
         </Secao>
 
-        {/* 4 — aguardando aceite comercial (Orçamento) */}
-        <Secao n={4} titulo="Demandas aguardando aceite comercial" quebra>
+        {/* 3 — aguardando aceite comercial (Orçamento) */}
+        <Secao n={3} titulo="Demandas aguardando aceite comercial" quebra>
           <View style={S.linhaTitulo}>
             <Text style={S.legenda}>Demandas com status Orçamento.</Text>
             <Text style={{ fontSize: 8, color: COR.cinza }}>{plural(orcamento.length, "demanda", "demandas")}</Text>
@@ -389,75 +567,47 @@ function OprDocument({ d }: { d: DadosOpr }) {
           )}
         </Secao>
 
-        {/* 5 e 6 — execução e testes do usuário (tabelas, sem gráficos) */}
-        <Secao n={5} titulo="Demandas em execução">
-          <TabelaPorStatus itens={execucao} vazio="Nenhuma demanda em execução para os filtros atuais." pbi={pbi} squadDe={squadDe} obs={obs} />
+        {/* 4 e 5 — execução e testes do usuário (tabelas, sem gráficos) */}
+        <Secao n={4} titulo="Demandas em execução">
+          <TabelaPorStatus itens={execucao} vazio="Nenhuma demanda em execução para os filtros atuais." pbi={pbi} obs={obs} />
         </Secao>
-        <Secao n={6} titulo="Demandas em testes do usuário">
-          <TabelaPorStatus itens={testes} vazio="Nenhuma demanda em testes do usuário para os filtros atuais." pbi={pbi} squadDe={squadDe} obs={obs} />
+        <Secao n={5} titulo="Demandas em testes do usuário">
+          <TabelaPorStatus itens={testes} vazio="Nenhuma demanda em testes do usuário para os filtros atuais." pbi={pbi} obs={obs} />
         </Secao>
 
-        {/* 7 — demandas entregues */}
-        <Secao n={7} titulo="Demandas entregues" quebra>
-          {!e ? (
-            <Text style={{ color: COR.cinza }}>{d.avisoEntregas || "Não foi possível carregar as demandas entregues."}</Text>
-          ) : (
-            <View style={{ flexDirection: "row" }}>
-              <View style={{ width: "55%", paddingRight: 18 }}>
-                <Text style={{ ...S.subtitulo, marginBottom: 5 }}>Lançamentos de versão</Text>
-                <Tabela
-                  leve
-                  colunas={[
-                    { titulo: "Demanda", peso: 58, linhas: 1 },
-                    { titulo: "Status", peso: 25 },
-                    { titulo: "Versão", peso: 17 },
-                  ]}
-                  linhas={e.lancamentos.map((p) => [
-                    { t: t(tituloComIdExterno(p.idExterno, p.titulo)) + (p.interno ? " (Interno)" : ""), href: linkPbi(p) },
-                    estaFinalizado(p.state) ? "Finalizado" : t(p.state),
-                    { t: `v${p.versao}`, bold: true, cor: "#22A55B" },
-                  ])}
-                  vazio="Nenhum PBI com versão informada para este cliente."
-                />
-              </View>
-              <View style={{ width: "45%" }}>
-                <Text style={{ ...S.subtitulo, marginBottom: 5 }}>Últimos itens finalizados</Text>
-                <Tabela
-                  leve
-                  colunas={[
-                    { titulo: "Demanda", peso: 72, linhas: 1 },
-                    { titulo: "Finalizada em", peso: 28 },
-                  ]}
-                  linhas={e.finalizadas.map((p) => [{ t: t(tituloComIdExterno(p.idExterno, p.titulo)), href: linkPbi(p) }, p.closedDate ? formatarChaveDia(chaveDia(p.closedDate)) : "—"])}
-                  vazio="Nenhuma demanda finalizada ainda para este cliente."
-                />
-                <View style={{ marginTop: 16 }}>
-                  <View style={S.linhaTitulo}>
-                    <Text style={S.subtitulo}>Próximas entregas</Text>
-                    <Text style={{ fontSize: 8, color: COR.cinza }}>{plural(e.previsao.length, "demanda", "demandas")}</Text>
-                  </View>
-                  {e.avisoPrevisao ? <Text style={{ ...S.legenda, color: "#8a5a00", marginBottom: 4 }}>{t(e.avisoPrevisao)}</Text> : null}
-                  <Tabela
-                    leve
-                    colunas={[
-                      { titulo: "Demanda", peso: 50, linhas: 1 },
-                      { titulo: "Status", peso: 28 },
-                      { titulo: "Versão prevista", peso: 22 },
-                    ]}
-                    linhas={e.previsao.map((p) => {
-                      const versao = versaoPrevistaDaSprint(p.sprint);
-                      return [
-                        { t: t(tituloComIdExterno(p.idExterno, p.titulo)) + (p.interno ? " (Interno)" : ""), href: linkPbi(p) },
-                        t(p.state),
-                        { t: versao ? `v${versao}` : t(p.sprint), bold: true, cor: "#22A55B" },
-                      ];
-                    })}
-                    vazio="Nenhuma demanda programada para a sprint atual ou posteriores."
-                  />
-                </View>
-              </View>
-            </View>
-          )}
+        {/* 6 — demandas entregues (visão principal do documento) */}
+        <Secao n={6} titulo="Demandas entregues" quebra>
+          <DemandasEntregues e={d.entregas} aviso={d.avisoEntregas} hoje={chaveDia(d.geradoEm)} />
+        </Secao>
+
+        {/* 7 — listagem completa: sempre no fim do documento */}
+        <Secao n={7} titulo="Listagem de demandas" quebra>
+          <Text style={{ ...S.legenda, marginBottom: 6 }}>{plural(itens.length, "demanda", "demandas")} na visão, na ordem do fluxo da esteira (status e etapa).</Text>
+          <Tabela
+            colunas={[
+              { titulo: "Chamado", peso: 7 },
+              { titulo: "Tarefa", peso: 22, linhas: 2 },
+              { titulo: "PBI", peso: 5.5 },
+              { titulo: "Status no board", peso: 10 },
+              { titulo: "Abertura produto", peso: 8 },
+              { titulo: "Etapa", peso: 10 },
+              { titulo: "PO", peso: 9, linhas: 2 },
+              { titulo: "Classificação", peso: 8 },
+              { titulo: "Observação", peso: 24, linhas: 3 },
+            ]}
+            linhas={itens.map((p) => [
+              t(p.idExterno) || "—",
+              t(p.titulo),
+              pbi(p),
+              { t: t(p.state), status: p.state },
+              dataCurta(p.dataAberturaProduto),
+              t(p.etapa) || "—",
+              t(p.po) || "—",
+              t(p.classificacao) || "—",
+              obs(p),
+            ])}
+            vazio="Nenhuma demanda para os filtros atuais."
+          />
         </Secao>
       </Page>
     </Document>
@@ -468,13 +618,11 @@ function TabelaPorStatus({
   itens,
   vazio,
   pbi,
-  squadDe,
   obs,
 }: {
   itens: PbiGestaoCliente[];
   vazio: string;
   pbi: (p: PbiGestaoCliente) => Cel;
-  squadDe: (p: PbiGestaoCliente) => string;
   obs: (p: PbiGestaoCliente) => string;
 }) {
   return (
@@ -484,14 +632,13 @@ function TabelaPorStatus({
         colunas={[
           { titulo: "Chamado", peso: 8 },
           { titulo: "PBI", peso: 6 },
-          { titulo: "Título", peso: 22, linhas: 2 },
-          { titulo: "Squad", peso: 9 },
-          { titulo: "Etapa", peso: 11 },
-          { titulo: "PO", peso: 11, linhas: 2 },
-          { titulo: "Classificação", peso: 9 },
-          { titulo: "Observação", peso: 24, linhas: 3 },
+          { titulo: "Título", peso: 24, linhas: 2 },
+          { titulo: "Etapa", peso: 12 },
+          { titulo: "PO", peso: 12, linhas: 2 },
+          { titulo: "Classificação", peso: 10 },
+          { titulo: "Observação", peso: 28, linhas: 3 },
         ]}
-        linhas={itens.map((p) => [t(p.idExterno) || "—", pbi(p), t(p.titulo), squadDe(p), t(p.etapa) || "—", t(p.po) || "—", t(p.classificacao) || "—", obs(p)])}
+        linhas={itens.map((p) => [t(p.idExterno) || "—", pbi(p), t(p.titulo), t(p.etapa) || "—", t(p.po) || "—", t(p.classificacao) || "—", obs(p)])}
         vazio={vazio}
       />
     </View>

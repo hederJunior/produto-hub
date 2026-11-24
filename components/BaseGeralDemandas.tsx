@@ -6,7 +6,7 @@ import { ExternalLink, X } from "lucide-react";
 import { BARRA_FORTE, BARRA_SUAVE, C, PASTEL } from "@/lib/kmm-theme";
 import { nomeCurtoDaSquad } from "@/lib/backlog";
 import { formatarChaveDia } from "@/lib/datas";
-import { agingDiasPbi, emBacklogDemanda, norm, type IndicadoresGestao, type PbiGestaoCliente, type UltimoComentario } from "@/lib/gestao-clientes";
+import { agingDiasPbi, emBacklogDemanda, norm, ordenarBacklog, type IndicadoresGestao, type PbiGestaoCliente, type UltimoComentario } from "@/lib/gestao-clientes";
 
 const ORG_DEVOPS = "kmmbynstech";
 
@@ -97,7 +97,8 @@ export function VisaoBacklogOrcamento({
   carregando: boolean;
 }) {
   const [orcamentoAberto, setOrcamentoAberto] = useState(false);
-  const backlog = itens.filter(emBacklogDemanda);
+  // Ordem pedida em 2026-11-24: Backlog | Comitê primeiro, depois Backlog | Backlog.
+  const backlog = ordenarBacklog(itens.filter(emBacklogDemanda));
   const orcamento = itens.filter((p) => norm(p.state) === "orcamento");
   const agora = Date.now();
   const valor = (v: number | null) => (carregando ? "…" : v == null ? "—" : String(v));
@@ -241,6 +242,7 @@ export function VisaoPorStatus({
   itens,
   comentarios,
   carregando,
+  ordenar,
 }: {
   /** Nome do status do board (comparado sem acento/maiúsculas), ex. "Execução". */
   estado: string;
@@ -249,8 +251,10 @@ export function VisaoPorStatus({
   itens: PbiGestaoCliente[];
   comentarios: Record<number, UltimoComentario | null>;
   carregando: boolean;
+  /** Ordenação opcional da tabela (Execução usa a ordem por etapa); sem ela, fica a ordem recebida. */
+  ordenar?: (lista: PbiGestaoCliente[]) => PbiGestaoCliente[];
 }) {
-  const doStatus = itens.filter((p) => norm(p.state) === norm(estado));
+  const doStatus = ordenar ? ordenar(itens.filter((p) => norm(p.state) === norm(estado))) : itens.filter((p) => norm(p.state) === norm(estado));
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 2fr)", gap: 16, alignItems: "stretch" }}>

@@ -5,8 +5,8 @@
 import { randomUUID } from "node:crypto";
 import { getServiceClient } from "./supabase";
 import { exigirPermissaoMovimento, ErroFluxoPo, lerPbiFluxoPoAtual, type UsuarioFluxoPo } from "./fluxo-po-servidor";
-import { itemDeChecklistValido } from "./fluxo-po";
-import { montarChecklist, type ChecklistPbi, type ItemChecklistEstado, type LinhaChecklist } from "./fluxo-po-checklist";
+import { itemDeChecklistValido, type EtapaFluxo } from "./fluxo-po";
+import { montarChecklist, resumirChecklistPorPbi, type ChecklistPbi, type ItemChecklistEstado, type LinhaChecklist } from "./fluxo-po-checklist";
 
 function validarId(id: unknown): number {
   const n = Number(id);
@@ -23,6 +23,17 @@ export async function lerChecklistPbi(idBruto: unknown): Promise<ChecklistPbi> {
     throw new ErroFluxoPo(502, "banco", "Não foi possível ler o checklist (banco de dados).");
   }
   return montarChecklist((data ?? []) as LinhaChecklist[]);
+}
+
+/** "Feitos de total" do checklist de UMA etapa para vários PBIs, numa só consulta (quadro do Fluxo do PO). Lança se o banco falhar. */
+export async function lerResumoChecklistDaEtapa(ids: number[], etapa: EtapaFluxo): Promise<Record<number, { feitos: number; total: number }>> {
+  if (!ids.length) return {};
+  const { data, error } = await getServiceClient().from("FluxoPoChecklist").select("workItemId, etapa, itemId, marcado, marcadoPor, marcadoEm").eq("etapa", etapa).in("workItemId", ids);
+  if (error) {
+    console.error("[fluxo-po/checklist] leitura em lote falhou:", error.message);
+    throw new ErroFluxoPo(502, "banco", "Não foi possível ler o checklist (banco de dados).");
+  }
+  return resumirChecklistPorPbi(ids, etapa, (data ?? []) as (LinhaChecklist & { workItemId: number })[]);
 }
 
 /**

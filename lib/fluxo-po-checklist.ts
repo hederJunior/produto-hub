@@ -56,3 +56,21 @@ export function resumoDoChecklist(itens: ItemChecklistEstado[] | undefined): { f
   const lista = itens ?? [];
   return { feitos: lista.filter((i) => i.marcado).length, total: lista.length };
 }
+
+/** Checklist completo = tem itens e TODOS marcados. Sem informação (undefined) ou sem itens = não completo. */
+export function checklistCompleto(resumo: { feitos: number; total: number } | null | undefined): boolean {
+  return !!resumo && resumo.total > 0 && resumo.feitos === resumo.total;
+}
+
+/**
+ * Resumo ("feitos de total") do checklist da etapa para vários PBIs de uma vez, a partir das linhas da tabela (PURO): quem não tem linha
+ * aparece com 0 feitos. Usado pelo quadro para decidir a tag "Pronto para mover" da coluna 2.1.
+ */
+export function resumirChecklistPorPbi(ids: number[], etapa: EtapaFluxo, linhas: (LinhaChecklist & { workItemId: number })[]): Record<number, { feitos: number; total: number }> {
+  const out: Record<number, { feitos: number; total: number }> = {};
+  for (const id of ids) {
+    const doPbi = linhas.filter((l) => l.workItemId === id && l.etapa === etapa);
+    out[id] = resumoDoChecklist(montarChecklist(doPbi)[etapa]);
+  }
+  return out;
+}

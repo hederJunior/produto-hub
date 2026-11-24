@@ -53,3 +53,25 @@ test("montarChecklist: marcadoEm sem fuso sai como ISO UTC", () => {
   const c = montarChecklist([{ etapa: "1.1", itemId: "entendimento-dor", marcado: true, marcadoPor: "Ana", marcadoEm: "2026-11-20T23:47:54.857" }]);
   assert.equal(c["1.1"]![0].marcadoEm, "2026-11-20T23:47:54.857Z");
 });
+
+test("checklistCompleto: só com itens e todos marcados; sem informação = não", async () => {
+  const { checklistCompleto } = await import("./fluxo-po-checklist");
+  assert.equal(checklistCompleto({ feitos: 5, total: 5 }), true);
+  assert.equal(checklistCompleto({ feitos: 4, total: 5 }), false);
+  assert.equal(checklistCompleto({ feitos: 0, total: 0 }), false);
+  assert.equal(checklistCompleto(undefined), false);
+  assert.equal(checklistCompleto(null), false);
+});
+
+test("resumirChecklistPorPbi: 2.1 de vários PBIs, ignora outras etapas, itens que não existem e PBIs sem linha", async () => {
+  const { resumirChecklistPorPbi } = await import("./fluxo-po-checklist");
+  const l = (workItemId: number, etapa: string, itemId: string, marcado = true) => ({ workItemId, etapa, itemId, marcado, marcadoPor: "x", marcadoEm: "2026-11-24T12:00:00Z" });
+  const linhas = [
+    ...["construir-proposta", "apresentacao-comite", "estimativa-tech", "estimativa-qa", "definicao-delivery"].map((i) => l(1, "2.1", i)),
+    l(2, "2.1", "construir-proposta"),
+    l(2, "2.1", "estimativa-qa", false),
+    l(2, "1.1", "entendimento-dor"),
+    l(2, "2.1", "item-antigo-que-nao-existe"),
+  ];
+  assert.deepEqual(resumirChecklistPorPbi([1, 2, 3], "2.1", linhas), { 1: { feitos: 5, total: 5 }, 2: { feitos: 1, total: 5 }, 3: { feitos: 0, total: 5 } });
+});

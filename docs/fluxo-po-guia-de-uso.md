@@ -29,7 +29,7 @@ As etapas **3.1, 3.2 e 4.1 são só de exibição** nesta fase (não dá para mo
 ## 3. O quadro
 
 - **Cards** mostram o número (clique abre o PBI no Azure), o título, o cliente, o **PO** (a partir da 1.2) e, conforme a coluna: esteira (Area Path), prioridade, **aging** (dias desde a Data Abertura Produto; **vermelho acima de 30**) e, na 2.1, a **Data Comitê** (vermelho com "Atrasada" quando já passou).
-- **Prontidão:** o card diz **"Pronto para mover"** ou **"Falta: …"** (por exemplo, "Falta: Data Comitê"). Cards em vermelho com "Inconsistente" têm um estado fora das regras (hoje: Etapa Comitê sem Data Comitê).
+- **Prontidão:** o card diz **"Pronto para mover"** ou **"Falta: …"** (por exemplo, "Falta: Data Comitê"). **Na coluna 2.1** a tag "Pronto para mover" só aparece quando **todos os itens do checklist da 2.1 estão marcados** (além da regra de Data Comitê); sem isso o card fica sem tag. O checklist continua não bloqueando o botão Mover. Cards em vermelho com "Inconsistente" têm um estado fora das regras (hoje: Etapa Comitê sem Data Comitê).
 - **Contadores** no topo de cada coluna: quantos cards estão prontos e quantos bloqueados.
 - **Filtros:** *Esteira* (escolha **uma ou mais**; mostra as esteiras escolhidas **e** os cards da raiz KMM5, que ainda não têm esteira), *Meus itens* (PBIs em que você é o PO ou o responsável; precisa do seu **nome** no cadastro) e *Somente bloqueados*.
 - Os filtros ficam **guardados na sessão do navegador**: ao abrir o detalhe de um card e voltar, o quadro mantém os mesmos filtros (e a aba Upstream/Downstream). Fechar a aba do navegador limpa tudo.

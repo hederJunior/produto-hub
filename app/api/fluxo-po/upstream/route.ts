@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getFluxoPoUpstream } from "@/lib/devops-client";
 import { getUsuarioAtual } from "@/lib/auth-server";
 import { permissaoDoFluxo, projetoSuportado } from "@/lib/fluxo-po";
+import { lerResumoChecklistDaEtapa } from "@/lib/fluxo-po-checklist-servidor";
 
 // Nunca prerenderizar/cachear estaticamente (mesmo motivo documentado em app/api/roadmap/route.ts).
 export const dynamic = "force-dynamic";
@@ -28,7 +29,16 @@ export async function GET(req: Request) {
 
   try {
     const dados = await getFluxoPoUpstream(url.searchParams.get("esteira"));
-    return NextResponse.json({ ...dados, podeMovimentar: podeMover, permissao, eu });
+    // Checklist dos cards da 2.1 (a tag "Pronto para mover" dessa coluna só aparece com todos os itens marcados). Se o banco falhar, o quadro
+    // continua, sem a tag na 2.1, e avisa.
+    let checklistComite: Record<number, { feitos: number; total: number }> = {};
+    const avisos = [...(dados.avisos ?? [])];
+    try {
+      checklistComite = await lerResumoChecklistDaEtapa(dados.cards.filter((c) => c.etapa === "2.1").map((c) => c.pbi.id), "2.1");
+    } catch {
+      avisos.push("Não foi possível ler o checklist da etapa 2.1: a tag \"Pronto para mover\" não é exibida nessa coluna até a próxima atualização.");
+    }
+    return NextResponse.json({ ...dados, avisos, checklistComite, podeMovimentar: podeMover, permissao, eu });
   } catch (err) {
     console.error("[fluxo-po/upstream] falha:", err);
     return NextResponse.json({ erro: "Não foi possível carregar o quadro do Azure DevOps.", cards: [], esteiras: [], podeMovimentar: podeMover, permissao, eu, avisos: [] }, { status: 502 });

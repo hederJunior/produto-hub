@@ -28,13 +28,14 @@ import {
   type CardFluxo,
   type EtapaFluxo,
 } from "@/lib/fluxo-po";
+import { checklistCompleto } from "@/lib/fluxo-po-checklist";
 
 /** Onde o quadro guarda, na sessão do navegador, os filtros do usuário. */
 const CHAVE_FILTROS = "fluxo-po:filtros:v1";
 
 type Esteira = { valor: string; rotulo: string };
 type Eu = { email: string | null; nome: string | null };
-type Resposta = { cards: CardFluxo[]; esteiras: Esteira[]; avisos: string[]; podeMovimentar: boolean; permissao?: { pode: boolean; motivo: string | null }; eu: Eu; erro?: string };
+type Resposta = { cards: CardFluxo[]; esteiras: Esteira[]; avisos: string[]; /** Itens do checklist da 2.1 marcados, por PBI (a tag "Pronto para mover" da 2.1 exige todos). */ checklistComite?: Record<string, { feitos: number; total: number }>; podeMovimentar: boolean; permissao?: { pode: boolean; motivo: string | null }; eu: Eu; erro?: string };
 
 // Uma cor por coluna (as 3 primeiras são as etapas com movimento na Fase 1).
 const COR_DA_ETAPA: Record<EtapaFluxo, { bg: string; dot: string }> = {
@@ -203,6 +204,8 @@ export default function FluxoPoUpstream() {
       if (r.card) pbis.push(r.card.pbi);
       return { ...d, cards: montarCards(pbis) };
     });
+    // Card que chegou à 2.1: o checklist dele (que pode já ter marcações) vem do servidor; recarrega o quadro.
+    if (r.destino === "2.1") setRecarga((n) => n + 1);
     const linhas: string[] = [];
     if (r.comentario.publicado) linhas.push("Comentário de transição registrado no PBI.");
     if (r.assesments && r.assesments.atualizados.length + r.assesments.jaIguais.length > 0) {
@@ -237,7 +240,14 @@ export default function FluxoPoUpstream() {
 
   // Contadores por coluna (prontos e bloqueados): sobre os cards dos filtros de esteira e meus itens. O filtro
   // "Somente bloqueados" não os zera, senão o número de prontos sumiria justamente quando ele está ligado.
-  const contadores = useMemo(() => contarPorEtapa(visiveis.map((c) => c.pbi)), [visiveis]);
+  // Na 2.1 "pronto" = regra cumprida E checklist inteiro marcado (o mesmo critério da tag do card).
+  const checklistComite = dados?.checklistComite;
+  const checklistDoCardCompleto = (id: number) => checklistCompleto(checklistComite?.[String(id)]);
+  const contadores = useMemo(() => {
+    const c = contarPorEtapa(visiveis.map((x) => x.pbi));
+    c["2.1"].prontos = visiveis.filter((x) => x.etapa === "2.1" && x.prontidao?.pronto && checklistCompleto(checklistComite?.[String(x.pbi.id)])).length;
+    return c;
+  }, [visiveis, checklistComite]);
   const totalBloqueados = ETAPAS_FLUXO.reduce((soma, e) => soma + contadores[e.codigo].bloqueados, 0);
 
   // "Somente bloqueados": cards de etapas com movimento que ainda não cumprem a regra (inclui os inconsistentes).
@@ -417,6 +427,7 @@ export default function FluxoPoUpstream() {
                         <CardEsteira
                           key={c.pbi.id}
                           card={c}
+                          checklistCompleto={checklistDoCardCompleto(c.pbi.id)}
                           cor={cor}
                           hoje={hoje}
                           podeMover={podeMover}
@@ -459,6 +470,7 @@ function rotuloDaEsteira(dados: Resposta | null, valor: string): string {
  */
 function CardEsteira({
   card,
+  checklistCompleto: checklistInteiro,
   cor,
   hoje,
   podeMover,
@@ -467,6 +479,8 @@ function CardEsteira({
   aoFimArrasto,
 }: {
   card: CardFluxo;
+  /** Todos os itens do checklist da 2.1 marcados (só usado na coluna 2.1). */
+  checklistCompleto: boolean;
   cor: { bg: string; dot: string };
   hoje: Date;
   podeMover: boolean;
@@ -559,7 +573,8 @@ function CardEsteira({
       ) : (
         card.prontidao &&
         (card.prontidao.pronto ? (
-          <div style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 9, fontSize: 11.5, fontWeight: 600, color: PASTEL.green.dot, background: PASTEL.green.bg, borderRadius: 8, padding: "3px 9px" }}>
+          // Na 2.1 a tag só aparece com TODOS os itens do checklist marcados (pedido do Heder, 2026-11-24); sem isso, nada é mostrado.
+          etapa === "2.1" && !checklistInteiro ? null : <div style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 9, fontSize: 11.5, fontWeight: 600, color: PASTEL.green.dot, background: PASTEL.green.bg, borderRadius: 8, padding: "3px 9px" }}>
             <CheckCircle2 size={13} />
             Pronto para mover
           </div>

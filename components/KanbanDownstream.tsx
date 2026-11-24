@@ -210,8 +210,28 @@ export default function KanbanDownstream({ refreshKey = 0 }: { refreshKey?: numb
                 <section key={quadro.chave} aria-label={quadro.titulo} style={{ background: C.soft, borderRadius: 16, borderTop: `3px solid ${cor.dot}`, padding: "12px 10px 10px" }}>
                   <header style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 4px 10px" }}>
                     <span style={{ fontFamily: "Sora,sans-serif", fontWeight: 600, fontSize: 13.5, color: C.text }}>{quadro.titulo}</span>
-                    <span style={{ marginLeft: "auto", fontSize: 12, fontWeight: 600, color: C.muted, background: "#fff", borderRadius: 999, padding: "1px 9px", fontVariantNumeric: "tabular-nums" }}>
-                      {total}
+                    <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      {/* Só no quadro "Ag. priorização" (2026-11-24): somatório do Effort dos PBIs, ao lado do número de demandas. */}
+                      {quadro.chave === "priorizacao" && (() => {
+                        const doQuadro = quadro.divisoes.flatMap((d) => porDivisao[d.chave] ?? []);
+                        const horas = doQuadro.reduce((n, i) => n + (i.effort ?? 0), 0);
+                        const semEffort = doQuadro.filter((i) => i.effort == null).length;
+                        return (
+                          <span
+                            title={`Somatório do campo Effort (horas) dos PBIs deste quadro: horas a serem alocadas.${semEffort ? ` ${semEffort} ${semEffort === 1 ? "demanda está sem Effort preenchido e não entra na soma" : "demandas estão sem Effort preenchido e não entram na soma"}.` : ""}`}
+                            style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 600, color: C.text, background: cor.bg, borderRadius: 999, padding: "1px 9px", fontVariantNumeric: "tabular-nums", cursor: "help" }}
+                          >
+                            <Gauge size={11} color={cor.dot} />
+                            {horas.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} h
+                          </span>
+                        );
+                      })()}
+                      <span
+                        title="Número de demandas (PBIs) neste quadro"
+                        style={{ fontSize: 12, fontWeight: 600, color: C.muted, background: "#fff", borderRadius: 999, padding: "1px 9px", fontVariantNumeric: "tabular-nums", cursor: "help" }}
+                      >
+                        {total}
+                      </span>
                     </span>
                   </header>
 

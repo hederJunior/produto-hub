@@ -41,7 +41,7 @@ const S = StyleSheet.create({
   rodape: { position: "absolute", bottom: 20, left: 36, right: 36, flexDirection: "row", justifyContent: "space-between", fontSize: 7.5, color: COR.cinza },
   eyebrow: { fontSize: 9, fontFamily: "Helvetica-Bold", color: COR.laranja, letterSpacing: 0.4 },
   tituloDoc: { fontSize: 24, fontFamily: "Helvetica-Bold", marginTop: 4 },
-  subtituloDoc: { fontSize: 11, color: COR.cinza, marginTop: 3, marginBottom: 14 },
+  subtituloDoc: { fontSize: 11, color: COR.cinza, marginTop: 3, marginBottom: 10 },
   secaoTitulo: { fontSize: 14, fontFamily: "Helvetica-Bold", color: COR.laranja, paddingBottom: 3, borderBottomWidth: 1, borderBottomColor: COR.laranja, marginBottom: 9 },
   subtitulo: { fontSize: 10, fontFamily: "Helvetica-Bold" },
   legenda: { fontSize: 7.5, color: COR.cinza, marginTop: 1 },
@@ -71,52 +71,96 @@ function corDoStatus(state: string): string {
 type Cel = string | { t: string; href?: string; bold?: boolean; status?: string; cor?: string };
 type Coluna = { titulo: string; peso: number; direita?: boolean; /** Limite de linhas da célula (texto longo vira "…"), como na tela. */ linhas?: number };
 
+/**
+ * Layout das tabelas (opção 2 "Linhas em cartão", escolhida pelo Heder em 2026-11-24): sem moldura nem
+ * preenchimento no cabeçalho; cada linha é um cartão cinza-claro de cantos arredondados, com espaço
+ * entre eles. Valores numéricos em destaque (coluna alinhada à direita e em negrito) viram etiqueta.
+ */
+const TAB = {
+  cabTexto: "#8A8F98",
+  linhaFundo: "#F6F7F9",
+  texto: "#1F2328",
+  id: "#6B7280",
+  link: "#E04300",
+  etiquetaFundo: "#FFFFFF",
+  etiquetaTexto: "#E04300",
+};
+
 function Tabela({ colunas, linhas, vazio }: { colunas: Coluna[]; linhas: Cel[][]; vazio: string }) {
   const soma = colunas.reduce((n, c) => n + c.peso, 0);
   const largura = (c: Coluna) => `${(c.peso / soma) * 100}%`;
-  const celula = { paddingHorizontal: 4, paddingVertical: 3.5 };
+  // Tabelas largas (muitas colunas) usam margens menores para sobrar espaço ao texto.
+  const padH = colunas.length > 6 ? 6 : 9;
+  const celula = { paddingHorizontal: padH, paddingVertical: colunas.length > 6 ? 4 : 4.5 };
+
   return (
     <View>
       {/* Cabeçalho repetido em cada página quando a tabela quebra. */}
-      <View fixed style={{ flexDirection: "row", backgroundColor: COR.laranja }}>
+      <View fixed style={{ flexDirection: "row", marginBottom: 3 }}>
         {colunas.map((c) => (
-          <Text key={c.titulo} style={{ ...celula, width: largura(c), fontFamily: "Helvetica-Bold", fontSize: 7.5, color: "#FFFFFF", textAlign: c.direita ? "right" : "left" }}>
+          <Text
+            key={c.titulo}
+            style={{ paddingHorizontal: padH, paddingVertical: 3, width: largura(c), fontFamily: "Helvetica-Bold", fontSize: 6.6, color: TAB.cabTexto, textAlign: c.direita ? "right" : "left", textTransform: "uppercase", letterSpacing: 0.5 }}
+          >
             {c.titulo}
           </Text>
         ))}
       </View>
       {linhas.length === 0 ? (
-        <Text style={{ ...celula, paddingVertical: 8, color: COR.cinza, borderBottomWidth: 0.5, borderBottomColor: COR.borda }}>{vazio}</Text>
+        <Text style={{ ...celula, color: COR.cinza }}>{vazio}</Text>
       ) : (
         linhas.map((cels, i) => (
-          <View key={i} wrap={false} style={{ flexDirection: "row", backgroundColor: i % 2 ? COR.zebra : "#FFFFFF", borderBottomWidth: 0.5, borderBottomColor: COR.borda }}>
+          <View key={i} wrap={false} style={{ flexDirection: "row", alignItems: "center", backgroundColor: TAB.linhaFundo, borderRadius: 6, marginBottom: 2.5 }}>
             {cels.map((cel, j) => {
               const o = typeof cel === "string" ? { t: cel } : cel;
               const col = colunas[j];
-              const base = { ...(col.linhas ? ({ maxLines: col.linhas } as object) : {}), fontSize: 7.5, textAlign: col.direita ? ("right" as const) : ("left" as const), fontFamily: o.bold ? "Helvetica-Bold" : "Helvetica", color: o.cor ?? COR.texto };
+              const ehId = col.titulo === "Chamado" || col.titulo === "PBI";
+              const base = { ...(col.linhas ? ({ maxLines: col.linhas } as object) : {}), fontSize: 7.6, textAlign: col.direita ? ("right" as const) : ("left" as const), fontFamily: o.bold ? "Helvetica-Bold" : "Helvetica", color: o.cor ?? (ehId ? TAB.id : TAB.texto) };
+              let conteudo: React.ReactNode;
+              if (o.status) {
+                conteudo = (
+                  <View style={{ flexDirection: "row", alignItems: "center" }}>
+                    <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: corDoStatus(o.status), marginRight: 4 }} />
+                    <Text style={{ ...base, fontFamily: "Helvetica-Bold", color: corDoStatus(o.status), flex: 1 }}>{o.t}</Text>
+                  </View>
+                );
+              } else if (col.direita && o.bold) {
+                conteudo = (
+                  <View style={{ alignSelf: "flex-end", backgroundColor: TAB.etiquetaFundo, borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2 }}>
+                    <Text style={{ fontFamily: "Helvetica-Bold", fontSize: 7.6, color: TAB.etiquetaTexto }}>{o.t}</Text>
+                  </View>
+                );
+              } else if (o.href) {
+                // Link dentro de um Text: o limite de linhas só vale no Text.
+                conteudo = (
+                  <Text style={{ ...base, color: TAB.link }}>
+                    <Link src={o.href} style={{ color: TAB.link, textDecoration: "none" }}>
+                      {o.t}
+                    </Link>
+                  </Text>
+                );
+              } else {
+                conteudo = <Text style={base}>{o.t}</Text>;
+              }
               return (
                 <View key={j} style={{ ...celula, width: largura(col) }}>
-                  {o.status ? (
-                    <View style={{ flexDirection: "row", alignItems: "center" }}>
-                      <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: corDoStatus(o.status), marginRight: 4 }} />
-                      <Text style={{ ...base, fontFamily: "Helvetica-Bold", color: corDoStatus(o.status), flex: 1 }}>{o.t}</Text>
-                    </View>
-                  ) : o.href ? (
-                    // Link dentro de um Text: o limite de linhas só vale no Text.
-                    <Text style={{ ...base, color: COR.link }}>
-                      <Link src={o.href} style={{ color: COR.link, textDecoration: "none" }}>
-                        {o.t}
-                      </Link>
-                    </Text>
-                  ) : (
-                    <Text style={base}>{o.t}</Text>
-                  )}
+                  {conteudo}
                 </View>
               );
             })}
           </View>
         ))
       )}
+    </View>
+  );
+}
+
+/** Linha do total "Horas para aprovação": faixa laranja suave de cantos arredondados, no estilo das linhas. */
+function TotalHoras({ valor }: { valor: string }) {
+  return (
+    <View wrap={false} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: "#FFF0EB", borderRadius: 6, paddingVertical: 7, paddingHorizontal: 9, marginTop: 3 }}>
+      <Text style={{ fontFamily: "Helvetica-Bold", fontSize: 9, color: "#E04300" }}>Horas para aprovação</Text>
+      <Text style={{ fontFamily: "Helvetica-Bold", fontSize: 11, color: "#E04300" }}>{valor}</Text>
     </View>
   );
 }
@@ -460,6 +504,43 @@ export type DadosOpr = {
   avisoEntregas?: string;
 };
 
+/** Página 1: distribuição por status (30%) ao lado das demandas aguardando aceite comercial / escopo (70%). */
+function Pagina1Bloco({ itens, orcamento, totalEffort, pbi }: { itens: PbiGestaoCliente[]; orcamento: PbiGestaoCliente[]; totalEffort: number; pbi: (p: PbiGestaoCliente) => Cel }) {
+  return (
+    <View style={{ flexDirection: "row", marginTop: 14 }}>
+      <View style={{ width: "30%", paddingRight: 18 }}>
+        <TituloColuna n={1} titulo="Distribuição por status" />
+        <Distribuicao itens={itens} />
+      </View>
+      <View style={{ width: "70%" }}>
+        <TituloColuna n={2} titulo="Demandas aguardando aceite comercial / Escopo" />
+        <View style={S.linhaTitulo}>
+          <Text style={S.legenda}>Demandas com status Orçamento.</Text>
+          <Text style={{ fontSize: 8, color: COR.cinza }}>{plural(orcamento.length, "demanda", "demandas")}</Text>
+        </View>
+        <Tabela
+          colunas={[
+            { titulo: "Chamado", peso: 11 },
+            { titulo: "Tarefa", peso: 46, linhas: 2 },
+            { titulo: "PBI", peso: 9 },
+            { titulo: "Data comitê", peso: 12 },
+            { titulo: "Effort", peso: 13, direita: true },
+          ]}
+          linhas={orcamento.map((p) => [
+            t(p.idExterno) || "—",
+            t(p.titulo),
+            pbi(p),
+            dataCurta(p.dataComite),
+            { t: p.effort == null ? "—" : `${numero(p.effort)} h`, bold: true },
+          ])}
+          vazio="Nenhuma demanda em orçamento para os filtros atuais."
+        />
+        {orcamento.length > 0 && <TotalHoras valor={`${numero(totalEffort)} h`} />}
+      </View>
+    </View>
+  );
+}
+
 function OprDocument({ d }: { d: DadosOpr }) {
   const agora = d.geradoEm.getTime();
   const itens = ordenarListagem(d.itens);
@@ -503,36 +584,7 @@ function OprDocument({ d }: { d: DadosOpr }) {
         </View>
 
         {/* 1 e 2 — lado a lado (30 x 70): distribuição por status e demandas aguardando aceite comercial */}
-        <View style={{ flexDirection: "row", marginTop: 18 }}>
-          <View style={{ width: "30%", paddingRight: 18 }}>
-            <TituloColuna n={1} titulo="Distribuição por status" />
-            <Distribuicao itens={itens} />
-          </View>
-          <View style={{ width: "70%" }}>
-            <TituloColuna n={2} titulo="Demandas aguardando aceite comercial / Escopo" />
-            <View style={S.linhaTitulo}>
-              <Text style={S.legenda}>Demandas com status Orçamento.</Text>
-              <Text style={{ fontSize: 8, color: COR.cinza }}>{plural(orcamento.length, "demanda", "demandas")}</Text>
-            </View>
-            <Tabela
-              colunas={[
-                { titulo: "Chamado", peso: 11 },
-                { titulo: "Tarefa", peso: 50, linhas: 2 },
-                { titulo: "PBI", peso: 9 },
-                { titulo: "Data comitê", peso: 13 },
-                { titulo: "Effort", peso: 13, direita: true },
-              ]}
-              linhas={orcamento.map((p) => [t(p.idExterno) || "—", t(p.titulo), pbi(p), dataCurta(p.dataComite), { t: p.effort == null ? "—" : `${numero(p.effort)} h`, bold: true }])}
-              vazio="Nenhuma demanda em orçamento para os filtros atuais."
-            />
-            {orcamento.length > 0 && (
-              <View wrap={false} style={{ flexDirection: "row", justifyContent: "space-between", backgroundColor: COR.destaque, borderLeftWidth: 3, borderLeftColor: COR.laranja, padding: "6 10", marginTop: 6 }}>
-                <Text style={{ fontFamily: "Helvetica-Bold", fontSize: 9, color: COR.laranja }}>Horas para aprovação</Text>
-                <Text style={{ fontFamily: "Helvetica-Bold", fontSize: 10 }}>{numero(totalEffort)} h</Text>
-              </View>
-            )}
-          </View>
-        </View>
+        <Pagina1Bloco itens={itens} orcamento={orcamento} totalEffort={totalEffort} pbi={pbi} />
 
         {/* 3 — aging (gráfico) + backlog (tabela) */}
         <Secao n={3} titulo="Backlog e aging" quebra>
@@ -600,8 +652,8 @@ function OprDocument({ d }: { d: DadosOpr }) {
               { titulo: "Abertura produto", peso: 8 },
               { titulo: "Etapa", peso: 10 },
               { titulo: "PO", peso: 9, linhas: 2 },
-              { titulo: "Classificação", peso: 8 },
-              { titulo: "Observação", peso: 24, linhas: 3 },
+              { titulo: "Classificação", peso: 10.5 },
+              { titulo: "Observação", peso: 22, linhas: 3 },
             ]}
             linhas={itens.map((p) => [
               t(p.idExterno) || "—",

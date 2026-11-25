@@ -15,6 +15,7 @@ import { chaveDia, formatarChaveDia } from "@/lib/datas";
 import { agingDiasPbi, calcularIndicadoresGestao, emBacklogDemanda, norm, ordenarBacklog, ordenarExecucao, ordenarListagem, type PbiGestaoCliente, type UltimoComentario } from "@/lib/gestao-clientes";
 import { estaFinalizado, tituloComIdExterno, versaoPrevistaDaSprint, type EntregasCliente } from "@/lib/entregas-cliente";
 import { LINHAS_DISTRIBUICAO } from "@/components/DistribuicaoPorStatus";
+import { ROTULO_BLOQUEIO, descreverMotivos, type LinhaBloqueio } from "@/lib/bloqueio-clientes";
 import { FAIXAS_AGING } from "@/components/BaseGeralDemandas";
 
 const ORG_DEVOPS = "kmmbynstech";
@@ -502,15 +503,30 @@ export type DadosOpr = {
   /** null = não foi possível carregar (a seção mostra um aviso). */
   entregas: EntregasCliente | null;
   avisoEntregas?: string;
+  /** Cliente bloqueado para novas demandas (última verificação diária); null/ausente = não bloqueado. */
+  bloqueio?: LinhaBloqueio | null;
 };
 
+/** Cliente "Bloqueado para novas demandas" (regra diária): cartão vermelho-claro abaixo da distribuição por status. */
+function AvisoBloqueioPdf({ bloqueio }: { bloqueio: LinhaBloqueio }) {
+  const verificado = new Date(bloqueio.verificadoEm).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+  return (
+    <View wrap={false} style={{ marginTop: 12, backgroundColor: "#FDF1F0", borderLeftWidth: 3, borderLeftColor: "#DD3322", borderRadius: 6, paddingVertical: 8, paddingHorizontal: 10 }}>
+      <Text style={{ fontFamily: "Helvetica-Bold", fontSize: 8.6, color: "#B42318" }}>{ROTULO_BLOQUEIO}</Text>
+      <Text style={{ fontSize: 7.6, color: "#5C3A36", marginTop: 2 }}>{descreverMotivos(bloqueio)}.</Text>
+      <Text style={{ fontSize: 6.8, color: "#8A6F6B", marginTop: 3 }}>Verificado em {verificado}.</Text>
+    </View>
+  );
+}
+
 /** Página 1: distribuição por status (30%) ao lado das demandas aguardando aceite comercial / escopo (70%). */
-function Pagina1Bloco({ itens, orcamento, totalEffort, pbi }: { itens: PbiGestaoCliente[]; orcamento: PbiGestaoCliente[]; totalEffort: number; pbi: (p: PbiGestaoCliente) => Cel }) {
+function Pagina1Bloco({ itens, orcamento, totalEffort, pbi, bloqueio }: { itens: PbiGestaoCliente[]; orcamento: PbiGestaoCliente[]; totalEffort: number; pbi: (p: PbiGestaoCliente) => Cel; bloqueio?: LinhaBloqueio | null }) {
   return (
     <View style={{ flexDirection: "row", marginTop: 14 }}>
       <View style={{ width: "30%", paddingRight: 18 }}>
         <TituloColuna n={1} titulo="Distribuição por status" />
         <Distribuicao itens={itens} />
+        {bloqueio ? <AvisoBloqueioPdf bloqueio={bloqueio} /> : null}
       </View>
       <View style={{ width: "70%" }}>
         <TituloColuna n={2} titulo="Demandas aguardando aceite comercial / Escopo" />
@@ -584,7 +600,7 @@ function OprDocument({ d }: { d: DadosOpr }) {
         </View>
 
         {/* 1 e 2 — lado a lado (30 x 70): distribuição por status e demandas aguardando aceite comercial */}
-        <Pagina1Bloco itens={itens} orcamento={orcamento} totalEffort={totalEffort} pbi={pbi} />
+        <Pagina1Bloco itens={itens} orcamento={orcamento} totalEffort={totalEffort} pbi={pbi} bloqueio={d.bloqueio} />
 
         {/* 3 — aging (gráfico) + backlog (tabela) */}
         <Secao n={3} titulo="Backlog e aging" quebra>

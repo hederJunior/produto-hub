@@ -7,6 +7,8 @@ import FluxoPoDetalheBlocos, { type RespostaCancelamento } from "@/components/Fl
 import { CampoInformacao, type Campo, type Listas } from "@/components/FluxoPoCampo";
 import FluxoPoMoverDialog from "@/components/FluxoPoMoverDialog";
 import { C, PASTEL, infoPrioridade } from "@/lib/kmm-theme";
+import { AvisoBloqueioCliente, useBloqueios } from "@/components/AvisoBloqueioCliente";
+import { acharBloqueio } from "@/lib/bloqueio-clientes";
 import { formatarChaveDia } from "@/lib/datas";
 import { urlPbiAzure } from "@/lib/fluxo-po-campos";
 import {
@@ -79,6 +81,7 @@ function rascunhoDe(pbi: PbiFluxo): Rascunho {
  * DevOps com as listas de valores do próprio Azure. Quem só visualiza vê os mesmos dados sem poder editar.
  */
 export default function FluxoPoDetalhe({ id }: { id: string }) {
+  const bloqueados = useBloqueios();
   const [info, setInfo] = useState<Info | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(true);
@@ -296,6 +299,13 @@ export default function FluxoPoDetalhe({ id }: { id: string }) {
           </a>
         </div>
       </div>
+
+      {/* Cliente bloqueado para novas demandas: só aparece enquanto o card está em 1.1 Classificar */}
+      {etapaAtual === "1.1" && acharBloqueio(bloqueados.bloqueios, pbi.cliente) ? (
+        <div style={{ marginBottom: 12 }}>
+          <AvisoBloqueioCliente bloqueio={acharBloqueio(bloqueados.bloqueios, pbi.cliente)!} comCliente />
+        </div>
+      ) : null}
 
       {/* Etapas (uma aba por etapa) */}
       <div role="tablist" aria-label="Etapas do fluxo" style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>

@@ -9,8 +9,8 @@ const FERRAMENTAS = [
   {
     href: "/admin/job",
     icon: RefreshCw,
-    titulo: "JOB de captura",
-    descricao: "Liga/desliga a captura automática diária e acompanha o histórico de execuções.",
+    titulo: "JOBs",
+    descricao: "Captura diária dos PBIs e verificação diária de clientes bloqueados: liga/desliga, executa na hora e histórico de execuções.",
   },
   {
     href: "/admin/indicadores-manuais",

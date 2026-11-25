@@ -9,7 +9,12 @@ import { ehAdmin } from "@/lib/auth-server";
 // /api/demandas/filtro e /api/painel-state, as únicas 2 sem esse marcador na época).
 export const dynamic = "force-dynamic";
 
-const ROW_ID = "default";
+/** Cada JOB tem a sua linha em JobConfig: "default" = captura (padrão), "bloqueio-clientes" = verificação diária de bloqueio. */
+const LINHAS_VALIDAS = ["default", "bloqueio-clientes"];
+function linhaDe(request: NextRequest): string | null {
+  const job = request.nextUrl.searchParams.get("job") ?? "default";
+  return LINHAS_VALIDAS.includes(job) ? job : null;
+}
 
 /**
  * Config do JOB de captura (AC-3). horario/frequencia são apenas informativos aqui — a decisão
@@ -17,10 +22,12 @@ const ROW_ID = "default";
  * o `vercel.json` (schedule do cron), mudar exige redeploy. O único campo que a interface
  * controla de fato é `ativo` (kill-switch, lido pela rota /api/jobs/captura antes de rodar).
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   if (!(await ehAdmin())) {
     return NextResponse.json({ erro: "Acesso restrito a administradores." }, { status: 403 });
   }
+  const ROW_ID = linhaDe(request);
+  if (!ROW_ID) return NextResponse.json({ erro: "JOB desconhecido." }, { status: 400 });
   const supabase = getServiceClient();
   const { data, error } = await supabase
     .from("JobConfig")
@@ -39,6 +46,8 @@ export async function PUT(request: NextRequest) {
   if (!(await ehAdmin())) {
     return NextResponse.json({ erro: "Acesso restrito a administradores." }, { status: 403 });
   }
+  const ROW_ID = linhaDe(request);
+  if (!ROW_ID) return NextResponse.json({ erro: "JOB desconhecido." }, { status: 400 });
   const { ativo } = (await request.json()) as { ativo: boolean };
   if (typeof ativo !== "boolean") {
     return NextResponse.json({ erro: "Campo 'ativo' (boolean) é obrigatório." }, { status: 400 });

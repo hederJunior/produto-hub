@@ -348,3 +348,16 @@ model FluxoPoMovimento {
   @@index([criadoEm])
   @@index([usuario])
 }
+
+/// Clientes bloqueados para novas demandas (2026-11-24): resultado da verificação diária (JOB "bloqueio-clientes"), 1 linha
+/// por cliente que tem demanda em Backlog, Execução ou HML. Regra em lib/bloqueio-clientes.ts; as telas leem daqui.
+/// `motivos`: JSON com os motivos do bloqueio ("backlog" | "execucao" | "hml"). Toda linha tem o mesmo `verificadoEm` do dia.
+model ClienteBloqueio {
+  cliente      String   @id
+  bloqueado    Boolean
+  qtdBacklog   Int
+  qtdExecucao  Int
+  qtdHml       Int
+  motivos      Json
+  verificadoEm DateTime
+}

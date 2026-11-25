@@ -6,6 +6,8 @@ import { C } from "@/lib/kmm-theme";
 import PageHeader from "@/components/PageHeader";
 import MultiSelectFiltro from "@/components/MultiSelectFiltro";
 import DistribuicaoPorStatus from "@/components/DistribuicaoPorStatus";
+import { AvisoBloqueioCliente, useBloqueios } from "@/components/AvisoBloqueioCliente";
+import { acharBloqueio } from "@/lib/bloqueio-clientes";
 import EntregasCliente from "@/components/EntregasCliente";
 import AbasVisao from "@/components/AbasVisao";
 import { ALTURA_QUADRO, DivisorSecao, VisaoBacklogOrcamento, VisaoPorStatus } from "@/components/BaseGeralDemandas";
@@ -63,6 +65,8 @@ export default function ClientesPage() {
   // Observação (último comentário) chega depois da tabela, em lotes: id → comentário | null.
   const [comentarios, setComentarios] = useState<Record<number, UltimoComentario | null>>({});
   const geracao = useRef(0);
+  // Clientes bloqueados para novas demandas (última verificação diária): aviso abaixo da distribuição e linha no PDF.
+  const bloqueados = useBloqueios();
   // Ids cujo comentário já foi pedido (evita repetir ao trocar de cliente e voltar).
   const comentariosPedidos = useRef<Set<number>>(new Set());
 
@@ -176,13 +180,14 @@ export default function ClientesPage() {
   }, [itens, clienteSel, squadsSel]);
 
   const ind = useMemo(() => calcularIndicadoresGestao(visiveis), [visiveis]);
+  const bloqueioDoCliente = clienteSel ? acharBloqueio(bloqueados.bloqueios, clienteSel) : undefined;
 
   // "Gerar OPR": PDF com tudo o que está filtrado na tela (lib/opr-pdf.tsx, gerado no navegador).
   const [gerandoOpr, setGerandoOpr] = useState(false);
   const [erroOpr, setErroOpr] = useState<string | null>(null);
   // A coluna Observação chega depois da tabela; gerar antes disso deixaria o PDF incompleto.
   const comentariosPendentes = visiveis.some((p) => p.qtdComentarios > 0 && comentarios[p.id] === undefined);
-  const oprIndisponivel = !clienteSel || carregando || comentariosPendentes;
+  const oprIndisponivel = !clienteSel || carregando || comentariosPendentes || bloqueados.carregando;
 
   async function gerarOpr() {
     if (!clienteSel || oprIndisponivel || gerandoOpr) return;
@@ -202,7 +207,7 @@ export default function ClientesPage() {
       }
       const { gerarOprPdf, nomeArquivoOpr } = await import("@/lib/opr-pdf");
       const geradoEm = new Date();
-      const blob = await gerarOprPdf({ cliente: clienteSel, geradoEm, itens: visiveis, comentarios, entregas, avisoEntregas });
+      const blob = await gerarOprPdf({ cliente: clienteSel, geradoEm, itens: visiveis, comentarios, entregas, avisoEntregas, bloqueio: bloqueioDoCliente ?? null });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -277,6 +282,11 @@ export default function ClientesPage() {
       <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
       <div style={{ flex: "0 1 320px", minWidth: 280, position: "sticky", top: 16 }}>
         <DistribuicaoPorStatus itens={visiveis} carregando={carregando} />
+        {bloqueioDoCliente && (
+          <div style={{ marginTop: 14 }}>
+            <AvisoBloqueioCliente bloqueio={bloqueioDoCliente} />
+          </div>
+        )}
       </div>
       <div style={{ flex: "1 1 640px", minWidth: 0 }}>
       <div className="kmm-card" style={{ padding: 0, overflow: "hidden" }}>

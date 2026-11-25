@@ -6,6 +6,7 @@ import AbasVisao from "@/components/AbasVisao";
 import PageHeader from "@/components/PageHeader";
 import FluxoPoUpstream from "@/components/FluxoPoUpstream";
 import FluxoPoDownstream from "@/components/FluxoPoDownstream";
+import { FaixaClientesBloqueados, useBloqueios } from "@/components/AvisoBloqueioCliente";
 
 type Aba = "upstream" | "downstream";
 
@@ -16,6 +17,7 @@ type Aba = "upstream" | "downstream";
  */
 export default function FluxoPoPage() {
   const [aba, setAba] = useState<Aba>("upstream");
+  const bloqueados = useBloqueios();
 
   // A aba escolhida fica guardada na sessão (junto com os filtros do quadro): voltar do detalhe não joga o usuário de volta no Upstream.
   useEffect(() => {
@@ -50,6 +52,9 @@ export default function FluxoPoPage() {
           { valor: "downstream", label: "Downstream", icone: <CalendarRange size={15} /> },
         ]}
       />
+
+      {/* Clientes bloqueados para novas demandas (última verificação diária) */}
+      <FaixaClientesBloqueados bloqueios={bloqueados.bloqueios} verificadoEm={bloqueados.verificadoEm} />
 
       <div style={{ marginTop: 18 }}>{aba === "upstream" ? <FluxoPoUpstream /> : <FluxoPoDownstream />}</div>
     </div>

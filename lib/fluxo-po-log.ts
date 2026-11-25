@@ -12,7 +12,7 @@ export type LinhaLogMovimento = {
   origem: EtapaFluxo | null;
   destino: string;
   /** "edicao" = edição das informações do PBI na tela de detalhe (T16); "cancelamento" = demanda cancelada pelo detalhe da 1.1; "analise" = análise (Description do Assesment) registrada na 2.1; "tag" = botão "Necessário análise tech" da 2.1. Nenhuma das quatro é troca de etapa. */
-  direcao: "avanco" | "volta" | "edicao" | "cancelamento" | "analise" | "tag" | null;
+  direcao: "avanco" | "volta" | "edicao" | "cancelamento" | "analise" | "tag" | "seguranca" | null;
   proposta: boolean;
   usuario: string;
   usuarioNome: string | null;
@@ -33,7 +33,7 @@ export type ContextoLog = {
   workItemId: number | null;
   origem: EtapaFluxo | null;
   destino: string;
-  direcao: "avanco" | "volta" | "edicao" | "cancelamento" | "analise" | "tag" | null;
+  direcao: "avanco" | "volta" | "edicao" | "cancelamento" | "analise" | "tag" | "seguranca" | null;
   proposta: boolean;
   usuario: string;
   usuarioNome: string | null;
@@ -123,6 +123,21 @@ export function linhaDeEdicao(
 export function linhaDeAnalise(ctx: ContextoLog & { workItemId: number }, r: { alteracoes: Alteracao[]; avisos: string[] }): LinhaLogMovimento {
   return {
     ...baseDaLinha({ ...ctx, direcao: "analise" }),
+    resultado: "sucesso",
+    motivo: null,
+    alteracoes: r.alteracoes,
+    avisos: r.avisos.length ? r.avisos : null,
+    comentarioPublicado: null,
+    comentarioId: null,
+    comentarioErro: null,
+    assesments: null,
+  };
+}
+
+/** Requisitos de segurança e privacidade registrados na 1.2: o complemento da Description do PBI foi gravado (a alteração guarda só o resumo das respostas). */
+export function linhaDeSeguranca(ctx: ContextoLog & { workItemId: number }, r: { alteracoes: Alteracao[]; avisos: string[] }): LinhaLogMovimento {
+  return {
+    ...baseDaLinha({ ...ctx, direcao: "seguranca" }),
     resultado: "sucesso",
     motivo: null,
     alteracoes: r.alteracoes,

@@ -74,6 +74,7 @@ Abra por **Detalhes** no card. No topo: número, título, etapa atual, cliente, 
 - **Necessário análise tech** (aba **2.1**, no alto do bloco Análise; só para quem movimenta e com o card na 2.1): acrescenta ao PBI a tag **"Pronto para refinamento tech"** (as outras tags ficam; se já existe, nada muda). Não muda a etapa do card na hora (a Etapa continua Comitê); depois, avançar para a 3.1 mantém a tag e avançar para a 3.2 a remove.
 - **Ocultar a coluna 1.1 Classificar:** no quadro, o botão com o olho cortado no cabeçalho da coluna 1.1 recolhe a coluna (os cards deixam de aparecer); o botão com o olho a mostra de volta. A escolha vale enquanto a aba do navegador estiver aberta.
 - **Filtro PBI** (ao lado de Esteira): escolha um ou mais PBIs digitando o número ou parte do título; o quadro mostra só eles. "Todos os PBIs" limpa. Vale enquanto a aba do navegador estiver aberta.
+- **Requisitos de segurança e privacidade de dados** (aba **1.2**, abaixo da Descrição; só para quem movimenta e com o card na 1.2): responda as **7 perguntas** (Sim / Não / Não aplicável, com observação opcional) e clique em **Registrar requisitos**. O formulário entra como complemento no **fim da Descrição do PBI** no Azure DevOps; registrar de novo atualiza esse mesmo trecho, sem apagar o resto da descrição.
 
 ## 6. Perguntas frequentes
 

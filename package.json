@@ -13,6 +13,7 @@
     "prisma:migrate": "prisma migrate dev",
     "test:fluxo-po:integracao": "node --use-system-ca --env-file=.env --import ./scripts/registrar-ts.mjs scripts/azure-testar-mover.mjs 46766 && node --use-system-ca --env-file=.env --import ./scripts/registrar-ts.mjs scripts/azure-testar-editar.mjs 46766 && node --use-system-ca --env-file=.env --import ./scripts/registrar-ts.mjs scripts/azure-testar-checklist.mjs 46766 && node --use-system-ca --env-file=.env --import ./scripts/registrar-ts.mjs scripts/azure-testar-fluxo-completo.mjs 46766",
     "test:fluxo-po:analise": "node --use-system-ca --env-file=.env --import ./scripts/registrar-ts.mjs scripts/azure-testar-analise.mjs 46766",
+    "test:fluxo-po:seguranca": "node --use-system-ca --env-file=.env --import ./scripts/registrar-ts.mjs scripts/azure-testar-seguranca.mjs 46766",
     "test:fluxo-po:tag-tech": "node --use-system-ca --env-file=.env --import ./scripts/registrar-ts.mjs scripts/azure-testar-tag-tech.mjs 46766",
     "test:fluxo-po:cancelamento": "node --use-system-ca --env-file=.env --import ./scripts/registrar-ts.mjs scripts/azure-testar-cancelamento.mjs 46766",
     "test:wiql": "node --import ./scripts/registrar-ts.mjs --test lib/devops-wiql.test.ts",
@@ -20,7 +21,7 @@
     "test:estimativa-mensal": "node --import ./scripts/registrar-ts.mjs --test lib/estimativa-mensal.test.ts",
     "test:bloqueio-clientes": "node --import ./scripts/registrar-ts.mjs --test lib/bloqueio-clientes.test.ts",
     "test:gestao-clientes": "node --import ./scripts/registrar-ts.mjs --test lib/gestao-clientes.test.ts",
-    "test:fluxo-po": "node --import ./scripts/registrar-ts.mjs --test lib/fluxo-po.test.ts lib/fluxo-po-checklist.test.ts lib/fluxo-po-detalhe.test.ts lib/fluxo-po-log.test.ts lib/html-seguro.test.ts lib/fluxo-po-analise.test.ts lib/fluxo-po-analise-servidor.test.ts lib/fluxo-po-tag-tech-servidor.test.ts"
+    "test:fluxo-po": "node --import ./scripts/registrar-ts.mjs --test lib/fluxo-po.test.ts lib/fluxo-po-checklist.test.ts lib/fluxo-po-detalhe.test.ts lib/fluxo-po-log.test.ts lib/html-seguro.test.ts lib/fluxo-po-analise.test.ts lib/fluxo-po-analise-servidor.test.ts lib/fluxo-po-tag-tech-servidor.test.ts lib/fluxo-po-seguranca.test.ts lib/fluxo-po-seguranca-servidor.test.ts"
   },
   "dependencies": {
     "next": "^14.2.0",

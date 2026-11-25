@@ -7,6 +7,7 @@ import { AO_AVANCAR, LIMITE_COMENTARIO, MOTIVOS_CANCELAMENTO, QUANDO_AVANCA, mot
 import { TAG_PRONTO_REFINAMENTO_TECH, urlPbiAzure } from "@/lib/fluxo-po-campos";
 import type { ChecklistPbi, ItemChecklistEstado } from "@/lib/fluxo-po-checklist";
 import type { AnexoPbi, EntradaHistorico, MovimentoPbi } from "@/lib/fluxo-po-detalhe";
+import { LIMITE_OBSERVACAO, PERGUNTAS_SEGURANCA, ROTULO_RESPOSTA, type ItemSeguranca, type RespostaSeguranca } from "@/lib/fluxo-po-seguranca";
 
 type AbaEtapa = "1.1" | "1.2" | "2.1";
 type Comentario = { id: number; autor: string; quando: string | null; editadoEm: string | null; html: string };
@@ -113,13 +114,16 @@ export default function FluxoPoDetalheBlocos({
   aoPublicarComentario?: () => void;
   aoCancelarDemanda?: (r: RespostaCancelamento) => void;
 }) {
+  // Registrar os requisitos de segurança muda a Description do PBI: a descrição mostrada na tela é recarregada.
+  const [versaoDescricao, setVersaoDescricao] = useState(0);
   return (
     <div style={{ marginTop: 14 }}>
       <style>{ESTILO_HTML}</style>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(380px, 1fr))", gap: 14, alignItems: "start" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
           <Checklist id={id} aba={aba} pode={pode} motivoSemPermissao={motivoSemPermissao} />
-          <Descricao id={id} aba={aba} />
+          <Descricao id={id} aba={aba} versao={versaoDescricao} />
+          {aba === "1.2" && <RequisitosSeguranca id={id} pode={pode} motivoSemPermissao={motivoSemPermissao} etapaAtual={etapaAtual} aoRegistrar={() => setVersaoDescricao((n) => n + 1)} />}
           {aba === "2.1" && <Analise id={id} pode={pode} motivoSemPermissao={motivoSemPermissao} etapaAtual={etapaAtual} />}
           {(aba === "1.1" || aba === "1.2") && <Cancelamento id={id} pode={pode} motivoSemPermissao={motivoSemPermissao} etapaAtual={etapaAtual} aoCancelar={aoCancelarDemanda} />}
           <Comentarios id={id} pode={pode} motivoSemPermissao={motivoSemPermissao} aoPublicar={aoPublicarComentario} />
@@ -208,8 +212,8 @@ function Checklist({ id, aba, pode, motivoSemPermissao }: { id: number; aba: Aba
 
 // ---------------------------------------------------------------------------------------------------------------
 
-function Descricao({ id, aba }: { id: number; aba: AbaEtapa }) {
-  const { dados, erro, carregando } = useCarga<{ html: string; vazia: boolean; truncada: boolean }>(`/api/fluxo-po/pbi/${id}/descricao`);
+function Descricao({ id, aba, versao }: { id: number; aba: AbaEtapa; versao: number }) {
+  const { dados, erro, carregando } = useCarga<{ html: string; vazia: boolean; truncada: boolean }>(`/api/fluxo-po/pbi/${id}/descricao`, [versao]);
   return (
     <Bloco
       titulo="Descrição da solicitação"
@@ -261,6 +265,143 @@ type AssesmentAnalise = {
   truncada: boolean;
   perdas: { imagens: number; estilos: boolean };
 };
+
+/**
+ * Requisitos de segurança e privacidade de dados (etapa 1.2, pedido por Heder em 2026-11-25): formulário de 7 perguntas (Sim / Não /
+ * Não aplicável + observação). "Registrar requisitos" grava o formulário como complemento no fim da Description do PBI (substitui o
+ * anterior, se houver). Só quem movimenta o fluxo e só com o card na 1.2; o servidor confere tudo de novo e, se outra pessoa mudou o
+ * formulário no Azure enquanto a tela estava aberta, recusa (409). Todas as perguntas precisam de resposta para registrar.
+ */
+function RequisitosSeguranca({ id, pode, motivoSemPermissao, etapaAtual, aoRegistrar }: { id: number; pode: boolean; motivoSemPermissao: string | null; etapaAtual: EtapaFluxo | null; aoRegistrar: () => void }) {
+  const { dados, erro, carregando, setDados } = useCarga<{ etapa: string | null; registrado: boolean; itens: ItemSeguranca[] }>(`/api/fluxo-po/pbi/${id}/seguranca`);
+  const [itens, setItens] = useState<ItemSeguranca[] | null>(null);
+  const [enviando, setEnviando] = useState(false);
+  const [falha, setFalha] = useState<{ mensagem: string; conflito: boolean } | null>(null);
+  const [ok, setOk] = useState<string | null>(null);
+
+  // O que está no Azure (base da trava) e o que está sendo preenchido; quando os dados mudam (abrir, depois de registrar), o rascunho recomeça deles.
+  useEffect(() => {
+    if (dados) setItens(dados.itens.map((i) => ({ ...i })));
+  }, [dados]);
+
+  const liberado = pode && etapaAtual === "1.2";
+  const respondidas = (itens ?? []).filter((i) => i.resposta !== null).length;
+  const total = PERGUNTAS_SEGURANCA.length;
+  const resumo = (x: ItemSeguranca[]) => JSON.stringify(x.map((i) => [i.id, i.resposta, i.observacao.trim()]));
+  const alterado = !!itens && !!dados && resumo(itens) !== resumo(dados.itens);
+  const podeRegistrar = liberado && !enviando && respondidas === total && (alterado || !dados?.registrado);
+
+  function mudar(idPergunta: string, parte: Partial<ItemSeguranca>) {
+    setOk(null);
+    setItens((atual) => (atual ? atual.map((i) => (i.id === idPergunta ? { ...i, ...parte } : i)) : atual));
+  }
+
+  async function registrar() {
+    if (!podeRegistrar || !itens || !dados) return;
+    setEnviando(true);
+    setFalha(null);
+    setOk(null);
+    try {
+      const res = await fetch(`/api/fluxo-po/pbi/${id}/seguranca`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ respostas: itens, base: dados.registrado ? dados.itens : null }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setFalha({ mensagem: j.erro ?? "Não foi possível registrar os requisitos.", conflito: res.status === 409 });
+        return;
+      }
+      setDados(j.estado);
+      setOk(["Requisitos registrados na descrição do PBI.", ...(j.avisos ?? [])].join(" "));
+      aoRegistrar();
+    } catch {
+      setFalha({ mensagem: "Não foi possível falar com o servidor. Nada foi registrado.", conflito: false });
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  const dica = !pode ? (motivoSemPermissao ?? "Seu perfil só permite visualizar.") : etapaAtual !== "1.2" ? "Disponível só enquanto o card está na etapa 1.2." : "";
+
+  return (
+    <Bloco
+      titulo="Requisitos de segurança e privacidade de dados"
+      extra={
+        dados && (
+          <span style={{ fontSize: 12, fontWeight: 600, color: dados.registrado ? PASTEL.green.dot : C.muted }}>
+            {dados.registrado ? "Registrado no PBI" : "Ainda não registrado"} · {respondidas} de {total}
+          </span>
+        )
+      }
+    >
+      {carregando && !dados ? (
+        <Carregando />
+      ) : erro ? (
+        <Erro texto={erro} />
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <p style={{ margin: 0, fontSize: 12, color: C.muted }}>
+            Requisitos para softwares/projetos desenvolvidos pela KMM. Ao registrar, o formulário entra como complemento no fim da Descrição do PBI.
+          </p>
+          {PERGUNTAS_SEGURANCA.map((p, idx) => {
+            const item = itens?.find((i) => i.id === p.id);
+            return (
+              <fieldset key={p.id} disabled={!liberado || enviando} title={dica} style={{ margin: 0, minWidth: 0, border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", background: "#fff" }}>
+                <legend style={{ padding: "0 4px", fontSize: 11.5, fontWeight: 600, color: C.muted }}>Pergunta {idx + 1}</legend>
+                <div style={{ fontSize: 13.5, color: C.text, marginBottom: 8 }}>{p.texto}</div>
+                <div role="radiogroup" aria-label={`Resposta da pergunta ${idx + 1}`} style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 8 }}>
+                  {(["sim", "nao", "na"] as RespostaSeguranca[]).map((r) => (
+                    <label key={r} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, cursor: liberado ? "pointer" : "default" }}>
+                      <input type="radio" name={`seg-${id}-${p.id}`} checked={item?.resposta === r} onChange={() => mudar(p.id, { resposta: r })} />
+                      {ROTULO_RESPOSTA[r]}
+                    </label>
+                  ))}
+                </div>
+                <textarea
+                  className="kmm-input"
+                  rows={2}
+                  maxLength={LIMITE_OBSERVACAO}
+                  value={item?.observacao ?? ""}
+                  placeholder="Observação (opcional)"
+                  aria-label={`Observação da pergunta ${idx + 1}`}
+                  onChange={(e) => mudar(p.id, { observacao: e.target.value })}
+                  style={{ width: "100%", resize: "vertical", fontSize: 13 }}
+                />
+              </fieldset>
+            );
+          })}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className="kmm-btn"
+              onClick={registrar}
+              disabled={!podeRegistrar}
+              title={dica || (respondidas < total ? "Responda todas as perguntas para registrar." : !alterado && dados?.registrado ? "Nada mudou desde o último registro." : "")}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, opacity: podeRegistrar ? 1 : 0.55, cursor: podeRegistrar ? "pointer" : "not-allowed" }}
+            >
+              {enviando ? <Loader2 size={14} className="kmm-spin" /> : <Check size={14} color={C.green} />}
+              Registrar requisitos
+            </button>
+            {liberado && respondidas < total && <span style={{ fontSize: 12, color: C.muted }}>Faltam {total - respondidas} resposta(s).</span>}
+          </div>
+          {ok && <p role="status" style={{ margin: 0, fontSize: 12.5, color: C.green }}>{ok}</p>}
+          {falha && (
+            <p role="alert" style={{ margin: 0, fontSize: 12.5, color: C.red }}>
+              {falha.mensagem}{" "}
+              {falha.conflito && (
+                <button type="button" className="kmm-btn" onClick={() => window.location.reload()} style={{ marginLeft: 6, fontSize: 12 }}>
+                  Recarregar
+                </button>
+              )}
+            </p>
+          )}
+          {!liberado && <p style={{ margin: 0, fontSize: 12, color: C.muted }}>{dica}</p>}
+        </div>
+      )}
+    </Bloco>
+  );
+}
 
 /**
  * Botão "Necessário análise tech" (etapa 2.1, pedido por Heder em 2026-11-24): acrescenta ao PBI a tag "Pronto para refinamento tech" (as outras tags
@@ -897,7 +1038,7 @@ function Historico({ id, versao }: { id: number; versao: number | undefined }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 420, overflowY: "auto" }}>
           {plataforma.dados.movimentos.map((m) => {
             const cor = COR_RESULTADO[m.resultado] ?? COR_RESULTADO.erro;
-            const oque = m.direcao === "tag" ? "Tag de análise tech" : m.direcao === "analise" ? "Análise registrada" : m.direcao === "cancelamento" ? "Cancelamento da demanda" : m.direcao === "edicao" ? "Edição das informações" : `${m.direcao === "volta" ? "Voltou" : "Avançou"}: ${m.origem ?? "—"} → ${m.destino}${m.proposta ? " (proposta)" : ""}`;
+            const oque = m.direcao === "seguranca" ? "Requisitos de segurança registrados" : m.direcao === "tag" ? "Tag de análise tech" : m.direcao === "analise" ? "Análise registrada" : m.direcao === "cancelamento" ? "Cancelamento da demanda" : m.direcao === "edicao" ? "Edição das informações" : `${m.direcao === "volta" ? "Voltou" : "Avançou"}: ${m.origem ?? "—"} → ${m.destino}${m.proposta ? " (proposta)" : ""}`;
             return (
               <div key={m.id} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: "8px 11px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 12.5 }}>

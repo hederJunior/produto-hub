@@ -1346,6 +1346,47 @@ export function aspasWiql(valor: string): string {
   return valor.replace(/'/g, "''");
 }
 
+/** Falha de uma consulta WIQL (guarda o status HTTP; 0 = sem resposta, erro de rede). */
+export class ErroWiql extends Error {
+  readonly status: number;
+  constructor(mensagem: string, status: number) {
+    super(mensagem);
+    this.status = status;
+  }
+}
+
+const PAUSAS_WIQL_MS = [500, 1500, 3500];
+
+/**
+ * Executa uma WIQL e devolve os IDs. Falha MOMENTÂNEA do Azure DevOps (sem resposta, 408, 429 ou 5xx — ex.: muitas consultas ao mesmo
+ * tempo, quando duas telas ou o JOB de bloqueio consultam juntos) é repetida até 3 vezes, respeitando o Retry-After (no máximo 8 s);
+ * os demais erros (ex.: 400 por nome de State inexistente) falham de imediato com o status em `ErroWiql`.
+ */
+export async function wiqlIdsComRetentativa(org: string, pat: string, project: string, wiql: string): Promise<number[]> {
+  for (let tentativa = 0; ; tentativa++) {
+    let status = 0;
+    let texto = "";
+    let pausa: number | null = null;
+    try {
+      const res = await fetch(`https://dev.azure.com/${org}/${encodeURIComponent(project)}/_apis/wit/wiql?api-version=${API_VERSION}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader(pat) },
+        body: JSON.stringify({ query: wiql }),
+      });
+      if (res.ok) return ((await res.json()) as { workItems: { id: number }[] }).workItems.map((w) => w.id);
+      status = res.status;
+      texto = await res.text();
+      const depoisDe = Number(res.headers.get("retry-after"));
+      if (Number.isFinite(depoisDe) && depoisDe > 0) pausa = Math.min(depoisDe * 1000, 8000);
+    } catch (e) {
+      texto = e instanceof Error ? e.message : String(e);
+    }
+    const momentanea = status === 0 || status === 408 || status === 429 || status >= 500;
+    if (!momentanea || tentativa >= PAUSAS_WIQL_MS.length) throw new ErroWiql(`${status || "sem resposta"}: ${texto}`, status);
+    await new Promise((r) => setTimeout(r, pausa ?? PAUSAS_WIQL_MS[tentativa]));
+  }
+}
+
 export async function buscarLoteCampos(org: string, pat: string, ids: number[], fields: string[]): Promise<WorkItem[]> {
   const lotes: number[][] = [];
   for (let i = 0; i < ids.length; i += 200) lotes.push(ids.slice(i, i + 200));
@@ -1694,13 +1735,7 @@ export async function getPbisGestaoClientes(
               AND [System.State] = '${aspasWiql(estado)}'
             ORDER BY [System.Id]
           `;
-          const res = await fetch(`https://dev.azure.com/${org}/${encodeURIComponent(project)}/_apis/wit/wiql?api-version=${API_VERSION}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", ...authHeader(pat) },
-            body: JSON.stringify({ query: wiql }),
-          });
-          if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
-          return ((await res.json()) as { workItems: { id: number }[] }).workItems.map((w) => w.id);
+          return wiqlIdsComRetentativa(org, pat, project, wiql);
         })
       );
       const ids = new Set<number>();
@@ -1708,7 +1743,9 @@ export async function getPbisGestaoClientes(
         if (r.status === "fulfilled") r.value.forEach((id) => ids.add(id));
         else {
           console.error(`[gestao-clientes] WIQL do status "${ESTADOS_GESTAO_CLIENTES[i]}" falhou em ${project}:`, r.reason);
-          avisos.push(`Status "${ESTADOS_GESTAO_CLIENTES[i]}" não pôde ser consultado em ${project} (nome inexistente no board?).`);
+          // 400 = a WIQL rejeitou o valor de State (nome inexistente neste projeto); qualquer outro status é falha do serviço (já repetida 3 vezes).
+          const motivo = r.reason instanceof ErroWiql && r.reason.status === 400 ? "nome inexistente no board?" : "o Azure DevOps não respondeu agora; atualize a tela em instantes";
+          avisos.push(`Status "${ESTADOS_GESTAO_CLIENTES[i]}" não pôde ser consultado em ${project} (${motivo}).`);
         }
       });
       return { project, ids: Array.from(ids) };
@@ -1937,13 +1974,7 @@ export async function getKanbanUpstream(project: string): Promise<{ itens: ItemK
           AND (${areas.map((a) => `[System.AreaPath] UNDER '${aspasWiql(a.valor)}'`).join(" OR ")})
         ORDER BY [System.Id]
       `;
-      const res = await fetch(`https://dev.azure.com/${org}/${encodeURIComponent(project)}/_apis/wit/wiql?api-version=${API_VERSION}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeader(pat) },
-        body: JSON.stringify({ query: wiql }),
-      });
-      if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
-      return ((await res.json()) as { workItems: { id: number }[] }).workItems.map((w) => w.id);
+      return wiqlIdsComRetentativa(org, pat, project, wiql);
     })
   );
   const ids = new Set<number>();
@@ -2032,13 +2063,7 @@ export async function getKanbanDownstream(produtos: Produto[]): Promise<{ itens:
               AND ${clausulaAreaPaths(areas)}
             ORDER BY [System.Id]
           `;
-          const res = await fetch(`https://dev.azure.com/${org}/${encodeURIComponent(project)}/_apis/wit/wiql?api-version=${API_VERSION}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", ...authHeader(pat) },
-            body: JSON.stringify({ query: wiql }),
-          });
-          if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
-          return ((await res.json()) as { workItems: { id: number }[] }).workItems.map((w) => w.id);
+          return wiqlIdsComRetentativa(org, pat, project, wiql);
         })
       );
       const ids = new Set<number>();

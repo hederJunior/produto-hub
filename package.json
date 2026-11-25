@@ -15,6 +15,7 @@
     "test:fluxo-po:analise": "node --use-system-ca --env-file=.env --import ./scripts/registrar-ts.mjs scripts/azure-testar-analise.mjs 46766",
     "test:fluxo-po:tag-tech": "node --use-system-ca --env-file=.env --import ./scripts/registrar-ts.mjs scripts/azure-testar-tag-tech.mjs 46766",
     "test:fluxo-po:cancelamento": "node --use-system-ca --env-file=.env --import ./scripts/registrar-ts.mjs scripts/azure-testar-cancelamento.mjs 46766",
+    "test:wiql": "node --import ./scripts/registrar-ts.mjs --test lib/devops-wiql.test.ts",
     "test:previsao-entregas": "node --import ./scripts/registrar-ts.mjs --test lib/previsao-entregas.test.ts",
     "test:estimativa-mensal": "node --import ./scripts/registrar-ts.mjs --test lib/estimativa-mensal.test.ts",
     "test:bloqueio-clientes": "node --import ./scripts/registrar-ts.mjs --test lib/bloqueio-clientes.test.ts",

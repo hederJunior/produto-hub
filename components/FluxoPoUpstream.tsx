@@ -67,6 +67,8 @@ export default function FluxoPoUpstream() {
   // (sessionStorage): quem abre o detalhe de um card e volta encontra o quadro com os mesmos filtros.
   const [esteirasSel, setEsteirasSel] = useState<string[]>([]);
   const [meusItens, setMeusItens] = useState(false);
+  // Filtro de PBI (2026-11-25): um ou mais PBIs escolhidos pelo número ou pelo título; o quadro mostra só eles.
+  const [pbisSel, setPbisSel] = useState<string[]>([]);
   const [somenteBloqueados, setSomenteBloqueados] = useState(false);
   // Coluna "1.1 Classificar" recolhida (2026-11-24): o quadro não mostra os cards dela, só o título, o total e o botão para mostrar de novo.
   const [ocultar11, setOcultar11] = useState(false);
@@ -148,9 +150,10 @@ export default function FluxoPoUpstream() {
   // bloqueado (aba anônima, política do navegador) e a tela precisa funcionar do mesmo jeito, só sem lembrar dos filtros.
   useEffect(() => {
     try {
-      const guardado = JSON.parse(window.sessionStorage.getItem(CHAVE_FILTROS) ?? "null") as { esteiras?: unknown; meusItens?: unknown; somenteBloqueados?: unknown; ocultar11?: unknown } | null;
+      const guardado = JSON.parse(window.sessionStorage.getItem(CHAVE_FILTROS) ?? "null") as { esteiras?: unknown; pbis?: unknown; meusItens?: unknown; somenteBloqueados?: unknown; ocultar11?: unknown } | null;
       if (guardado && typeof guardado === "object") {
         if (Array.isArray(guardado.esteiras)) setEsteirasSel(guardado.esteiras.filter((v): v is string => typeof v === "string"));
+        if (Array.isArray(guardado.pbis)) setPbisSel(guardado.pbis.filter((v): v is string => typeof v === "string"));
         setMeusItens(guardado.meusItens === true);
         setSomenteBloqueados(guardado.somenteBloqueados === true);
         setOcultar11(guardado.ocultar11 === true);
@@ -163,11 +166,11 @@ export default function FluxoPoUpstream() {
   useEffect(() => {
     if (!filtrosRestaurados) return; // não sobrescreve o guardado com os valores iniciais antes de restaurar
     try {
-      window.sessionStorage.setItem(CHAVE_FILTROS, JSON.stringify({ esteiras: esteirasSel, meusItens, somenteBloqueados, ocultar11 }));
+      window.sessionStorage.setItem(CHAVE_FILTROS, JSON.stringify({ esteiras: esteirasSel, pbis: pbisSel, meusItens, somenteBloqueados, ocultar11 }));
     } catch {
       /* idem */
     }
-  }, [filtrosRestaurados, esteirasSel, meusItens, somenteBloqueados, ocultar11]);
+  }, [filtrosRestaurados, esteirasSel, pbisSel, meusItens, somenteBloqueados, ocultar11]);
   // Esteira guardada que já não existe no Azure sai do filtro (senão o quadro ficaria só com os cards sem esteira).
   useEffect(() => {
     const existentes = dados?.esteiras ?? [];
@@ -176,6 +179,12 @@ export default function FluxoPoUpstream() {
   }, [dados?.esteiras]);
 
   const cards = dados?.cards ?? [];
+  // PBI guardado que já não está no quadro (movido de etapa fora do fluxo, concluído…) sai do filtro, senão o quadro ficaria vazio sem explicação.
+  useEffect(() => {
+    if (!dados?.cards.length) return;
+    const ids = new Set(dados.cards.map((c) => String(c.pbi.id)));
+    setPbisSel((sel) => (sel.every((v) => ids.has(v)) ? sel : sel.filter((v) => ids.has(v))));
+  }, [dados?.cards]);
   const podeMover = !!dados?.podeMovimentar;
 
   function abrirMover(card: CardFluxo, destino: EtapaFluxo) {
@@ -230,7 +239,7 @@ export default function FluxoPoUpstream() {
   const eu: Eu = dados?.eu ?? { email: null, nome: null };
 
   // Esteiras escolhidas (uma ou mais) + os cards da raiz KMM5 (etapa 1.1, ainda sem esteira, são de quem vai classificar para qualquer uma).
-  const visiveis = useMemo(
+  const visiveisSemPbi = useMemo(
     () =>
       cards.filter((c) => {
         const area = c.pbi.areaPath;
@@ -240,6 +249,18 @@ export default function FluxoPoUpstream() {
       }),
     [cards, esteirasSel, meusItens, eu.email, eu.nome] // eslint-disable-line react-hooks/exhaustive-deps
   );
+  // Opções do filtro de PBI: os cards que passam pelos outros filtros (esteira e meus itens), do número maior para o menor, mais os já escolhidos.
+  const opcoesPbi = useMemo(() => {
+    const ids = new Set(visiveisSemPbi.map((c) => String(c.pbi.id)));
+    pbisSel.forEach((v) => ids.add(v));
+    return Array.from(ids).sort((a, b) => Number(b) - Number(a));
+  }, [visiveisSemPbi, pbisSel]);
+  const tituloDoPbi = useMemo(() => new Map(cards.map((c) => [String(c.pbi.id), c.pbi.titulo])), [cards]);
+  const rotuloDoPbi = (v: string) => {
+    const t = (tituloDoPbi.get(v) ?? "").trim();
+    return t ? `#${v} — ${t.length > 55 ? `${t.slice(0, 54)}…` : t}` : `#${v}`;
+  };
+  const visiveis = useMemo(() => (pbisSel.length ? visiveisSemPbi.filter((c) => pbisSel.includes(String(c.pbi.id))) : visiveisSemPbi), [visiveisSemPbi, pbisSel]);
 
   // Contadores por coluna (prontos e bloqueados): sobre os cards dos filtros de esteira e meus itens. O filtro
   // "Somente bloqueados" não os zera, senão o número de prontos sumiria justamente quando ele está ligado.
@@ -289,6 +310,18 @@ export default function FluxoPoUpstream() {
             placeholderBusca="Digite o nome da esteira…"
           />
         </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>PBI</span>
+          <MultiSelectFiltro
+            rotuloTodos="Todos os PBIs"
+            opcoes={opcoesPbi}
+            selecionados={pbisSel}
+            onChange={setPbisSel}
+            formatar={rotuloDoPbi}
+            pesquisavel
+            placeholderBusca="Digite o número ou o título do PBI…"
+          />
+        </div>
         <button
           type="button"
           className="kmm-btn"
@@ -326,6 +359,7 @@ export default function FluxoPoUpstream() {
             {exibidos.length} {exibidos.length === 1 ? "demanda" : "demandas"}
             {esteirasSel.length ? ` em ${esteirasSel.length === 1 ? rotuloDaEsteira(dados, esteirasSel[0]) : `${esteirasSel.length} esteiras`} (mais os cards sem esteira)` : ""}
             {meusItens ? " suas" : ""}
+            {pbisSel.length ? ` (${pbisSel.length === 1 ? "1 PBI escolhido" : `${pbisSel.length} PBIs escolhidos`})` : ""}
           </span>
         )}
         {atualizadoEm && (

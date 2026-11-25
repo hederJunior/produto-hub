@@ -2772,3 +2772,7 @@ Pedido do Heder, em quatro partes:
 Pedido do Heder: (1) na tabela de identificação do topo da página 1, **tirar as linhas "Squads" e "Demandas na visão"** (sobraram Cliente e Posição em); (2) na primeira página, lado a lado, na proporção **30 x 70**, o painel "Distribuição por status" e a tabela "Demandas aguardando aceite comercial".
 **Feito** em `lib/opr-pdf.tsx`: distribuição à esquerda (30%) e a tabela de Orçamento com o total de Effort à direita (70%), cada uma com o título numerado (1 e 2). A seção "Aguardando aceite comercial" deixou de ter página própria; as demais seguem a ordem: 3 Backlog e aging, 4 Execução, 5 Testes do usuário, 6 Demandas entregues, 7 Listagem (no fim). Com MARONI o PDF foi de 12 para 11 páginas. O campo `squads` saiu de `DadosOpr` (não é mais usado: o PDF não informa mais o filtro de squad).
 **Decisão minha:** a distribuição ficou na esquerda (como na tela) e a tabela na direita; se o filtro de squad estiver ativo, o PDF não diz isso em lugar nenhum. Se a tabela de orçamento for longa, ela continua na página seguinte e o restante só começa na página de backlog.
+
+## 2026-11-24 — OPR (PDF): textos da seção 2 da página 1
+
+Pedido do Heder: o rótulo do total passou de "TOTAL EFFORT" para **"Horas para aprovação"** e o título da seção 2 da página 1 passou a ser **"Demandas aguardando aceite comercial / Escopo"** (só no PDF; a tela não mudou). O novo layout das tabelas do PDF está em escolha entre 5 opções (ver entrada seguinte quando decidido).

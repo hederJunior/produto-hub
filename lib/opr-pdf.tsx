@@ -509,7 +509,7 @@ function OprDocument({ d }: { d: DadosOpr }) {
             <Distribuicao itens={itens} />
           </View>
           <View style={{ width: "70%" }}>
-            <TituloColuna n={2} titulo="Demandas aguardando aceite comercial" />
+            <TituloColuna n={2} titulo="Demandas aguardando aceite comercial / Escopo" />
             <View style={S.linhaTitulo}>
               <Text style={S.legenda}>Demandas com status Orçamento.</Text>
               <Text style={{ fontSize: 8, color: COR.cinza }}>{plural(orcamento.length, "demanda", "demandas")}</Text>
@@ -527,7 +527,7 @@ function OprDocument({ d }: { d: DadosOpr }) {
             />
             {orcamento.length > 0 && (
               <View wrap={false} style={{ flexDirection: "row", justifyContent: "space-between", backgroundColor: COR.destaque, borderLeftWidth: 3, borderLeftColor: COR.laranja, padding: "6 10", marginTop: 6 }}>
-                <Text style={{ fontFamily: "Helvetica-Bold", fontSize: 8.5, color: COR.laranja }}>TOTAL EFFORT</Text>
+                <Text style={{ fontFamily: "Helvetica-Bold", fontSize: 9, color: COR.laranja }}>Horas para aprovação</Text>
                 <Text style={{ fontFamily: "Helvetica-Bold", fontSize: 10 }}>{numero(totalEffort)} h</Text>
               </View>
             )}

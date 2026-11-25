@@ -52,7 +52,7 @@ const JOBS: DefinicaoJob[] = [
     job: "bloqueio-clientes",
     titulo: "JOB de bloqueio de clientes",
     agendamento:
-      "Verifica uma vez por dia quais clientes estão Bloqueados para novas demandas (3 demandas em Backlog, ou 3 em Execução, ou 3 em HML com cliente; KMM4 + KMM5) e guarda o resultado para a Gestão de clientes, o Fluxo do PO e o PDF da OPR. Todo dia às 08:30 (horário de Brasília).",
+      "Verifica uma vez por dia quais clientes estão Bloqueados para novas demandas (3 demandas em Backlog, ou 3 em Execução, ou 3 em HML com cliente; KMM4 + KMM5; não contam as demandas das esteiras SWAT, Ecossistema e Obrigações Legais e Financeiras nem as do Area Path KMM5 sem esteira) e guarda o resultado para a Gestão de clientes, o Fluxo do PO e o PDF da OPR. Todo dia às 08:30 (horário de Brasília).",
     descricaoExecutar: "Refaz a verificação agora e atualiza o que as telas mostram (ignora o liga/desliga).",
     rotaExecutar: "/api/jobs/bloqueio-clientes",
     rotuloItens: "clientes avaliados",

@@ -1,7 +1,7 @@
 // Testes da regra "Bloqueado para novas demandas". Rodar: npm run test:bloqueio-clientes
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { acharBloqueio, avaliarBloqueios, descreverMotivos } from "./bloqueio-clientes";
+import { acharBloqueio, areaForaDaConta, avaliarBloqueios, descreverMotivos } from "./bloqueio-clientes";
 import type { PbiGestaoCliente } from "./gestao-clientes";
 
 let seq = 1;
@@ -75,4 +75,32 @@ test("acharBloqueio ignora acento e caixa", () => {
   assert.equal(acharBloqueio(lista, "comercio sao jose")?.cliente, "Comércio São José");
   assert.equal(acharBloqueio(lista, ""), undefined);
   assert.equal(acharBloqueio(lista, "outro"), undefined);
+});
+
+test("areaForaDaConta: SWAT, Ecossistema, Obrigações Legais e Financeiras e a raiz KMM5 ficam de fora", () => {
+  for (const a of ["KMM5\\TMS - SWAT", "KMM4\\TMS - SWAT", "KMM5\\TMS - Ecossistema", "KMM5\\TMS - Obrigacoes Legais e Financeiras", "KMM5\\TMS - Obrigações Legais e Financeiras", "KMM5\\tms - swat", "KMM5"]) {
+    assert.equal(areaForaDaConta(a), true, a);
+  }
+});
+
+test("areaForaDaConta: outras esteiras (inclusive do KMM5), a raiz KMM4 e vazio contam normalmente", () => {
+  for (const a of ["KMM5\\TMS - Dedicada Maroni", "KMM5\\TMS - Melhorias", "KMM4\\TMS - Rangers", "KMM4", "", null, undefined]) {
+    assert.equal(areaForaDaConta(a), false, String(a));
+  }
+});
+
+test("demandas de Area Path fora da conta não entram em nenhuma das 3 contagens", () => {
+  const com = (areaPath: string, n: number, state: string, etapa: string) => Array.from({ length: n }, () => ({ ...pbi("A", state, etapa), areaPath }));
+  const itens = [
+    ...com("KMM5\\TMS - SWAT", 5, "Execução", "Execução"),
+    ...com("KMM5\\TMS - Ecossistema", 5, "Backlog", "Backlog"),
+    ...com("KMM5\\TMS - Obrigacoes Legais e Financeiras", 5, "Teste Aceite Usuário", "Delivery"),
+    ...com("KMM5", 5, "Execução", "Execução"),
+    ...com("KMM5\\TMS - Melhorias", 2, "Execução", "Execução"),
+  ];
+  const r = de(itens, "A");
+  assert.equal(r.bloqueado, false);
+  assert.deepEqual([r.qtdBacklog, r.qtdExecucao, r.qtdHml], [0, 2, 0]);
+  // e as de esteira que conta continuam bloqueando
+  assert.equal(de([...itens, ...com("KMM5\\TMS - Melhorias", 1, "Execução", "Execução")], "A").bloqueado, true);
 });

@@ -65,6 +65,9 @@ export const CLASSIFICACOES_AZURE = [
 /** Tag que marca a etapa 3.1 (Análise de engenharia). */
 export const TAG_PRONTO_REFINAMENTO_TECH = "Pronto para refinamento tech";
 
+/** Tag do botão "Necessário análise tech" da etapa 2.1 (pedido por Heder em 2026-11-24). NÃO é a mesma da 3.1 acima e não muda a etapa do card. */
+export const TAG_PARA_REFINAMENTO_TECH = "Para refinamento tech";
+
 /** Area Path raiz do KMM5: card nela = etapa 1.1 (esteira ainda não definida). Esteiras são áreas filhas. */
 export const AREA_RAIZ_KMM5 = "KMM5";
 

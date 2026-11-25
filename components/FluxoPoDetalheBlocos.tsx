@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { AlertCircle, AlertTriangle, Ban, Bold, Check, ExternalLink, Italic, List, ListOrdered, Loader2, Paperclip, Send, Sparkles, X } from "lucide-react";
+import { AlertCircle, AlertTriangle, Ban, Bold, Check, ExternalLink, Italic, List, ListOrdered, Loader2, Paperclip, Send, Sparkles, Tag, X } from "lucide-react";
 import { C, PASTEL } from "@/lib/kmm-theme";
 import { AO_AVANCAR, LIMITE_COMENTARIO, MOTIVOS_CANCELAMENTO, QUANDO_AVANCA, motivoDeCancelamento, rotuloDaEtapa, valorLegivelDaAlteracao, type EtapaFluxo, type MotivoCancelamento } from "@/lib/fluxo-po";
-import { urlPbiAzure } from "@/lib/fluxo-po-campos";
+import { TAG_PARA_REFINAMENTO_TECH, urlPbiAzure } from "@/lib/fluxo-po-campos";
 import type { ChecklistPbi, ItemChecklistEstado } from "@/lib/fluxo-po-checklist";
 import type { AnexoPbi, EntradaHistorico, MovimentoPbi } from "@/lib/fluxo-po-detalhe";
 
@@ -263,6 +263,59 @@ type AssesmentAnalise = {
 };
 
 /**
+ * Botão "Necessário análise tech" (etapa 2.1, pedido por Heder em 2026-11-24): acrescenta ao PBI a tag "Para refinamento tech" (as outras tags
+ * ficam). Só quem movimenta e só com o card na 2.1; depois de aplicada, o botão fica marcado e desabilitado. O servidor confere tudo de novo.
+ */
+function BotaoAnaliseTech({ id, pode, motivoSemPermissao, etapaAtual }: { id: number; pode: boolean; motivoSemPermissao: string | null; etapaAtual: EtapaFluxo | null }) {
+  const { dados, setDados } = useCarga<{ aplicada: boolean }>(`/api/fluxo-po/pbi/${id}/tag-tech`);
+  const [enviando, setEnviando] = useState(false);
+  const [mensagem, setMensagem] = useState<{ texto: string; erro: boolean } | null>(null);
+  const liberado = pode && etapaAtual === "2.1";
+  const aplicada = dados?.aplicada === true;
+  const desabilitado = !liberado || aplicada || enviando || !dados;
+
+  async function marcar() {
+    if (desabilitado) return;
+    if (!window.confirm(`Adicionar ao PBI a tag "${TAG_PARA_REFINAMENTO_TECH}"?`)) return;
+    setEnviando(true);
+    setMensagem(null);
+    try {
+      const res = await fetch(`/api/fluxo-po/pbi/${id}/tag-tech`, { method: "POST" });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setMensagem({ texto: j.erro ?? "Não foi possível aplicar a tag.", erro: true });
+        return;
+      }
+      setDados({ aplicada: true });
+      setMensagem({ texto: j.jaTinha ? "O PBI já tinha a tag." : "Tag aplicada ao PBI.", erro: false });
+    } catch {
+      setMensagem({ texto: "Não foi possível aplicar a tag (sem conexão com o servidor).", erro: true });
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  const dica = aplicada
+    ? `O PBI já tem a tag "${TAG_PARA_REFINAMENTO_TECH}".`
+    : !pode
+      ? (motivoSemPermissao ?? "Seu perfil só permite visualizar.")
+      : etapaAtual !== "2.1"
+        ? "Disponível só enquanto o card está na etapa 2.1."
+        : `Adiciona ao PBI a tag "${TAG_PARA_REFINAMENTO_TECH}".`;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+      <button type="button" className="kmm-btn" onClick={marcar} disabled={desabilitado} title={dica} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, opacity: desabilitado && !aplicada ? 0.55 : 1, cursor: desabilitado ? "not-allowed" : "pointer" }}>
+        {enviando ? <Loader2 size={14} className="kmm-spin" /> : aplicada ? <Check size={14} color={C.green} /> : <Tag size={14} color={C.orange} />}
+        Necessário análise tech
+      </button>
+      {aplicada && !mensagem && <span style={{ fontSize: 11, color: C.green }}>Tag &quot;{TAG_PARA_REFINAMENTO_TECH}&quot; aplicada</span>}
+      {mensagem && <span role={mensagem.erro ? "alert" : "status"} style={{ fontSize: 11.5, color: mensagem.erro ? C.red : C.green, maxWidth: 260, textAlign: "right" }}>{mensagem.texto}</span>}
+    </div>
+  );
+}
+
+/**
  * Análise (etapa 2.1, pedido por Heder em 2026-11-24): o campo Description dos Assesments FILHOS do PBI. Quem pode movimentar edita
  * (com o card na 2.1) e "Registrar Análise" grava o texto no Assesment; os demais só leem. O texto é HTML: o editor oferece negrito,
  * itálico e listas, e o servidor limpa o que for além disso, então o bloco avisa ANTES quando o texto atual tem imagens ou estilos
@@ -351,7 +404,7 @@ function Analise({ id, pode, motivoSemPermissao, etapaAtual }: { id: number; pod
   const botaoFormato: React.CSSProperties = { display: "inline-flex", alignItems: "center", justifyContent: "center", width: 30, height: 28, background: "#fff", border: `1px solid ${C.border}`, borderRadius: 8, cursor: "pointer", color: C.text };
 
   return (
-    <Bloco titulo="Análise (Assesment)">
+    <Bloco titulo="Análise (Assesment)" extra={<BotaoAnaliseTech id={id} pode={pode} motivoSemPermissao={motivoSemPermissao} etapaAtual={etapaAtual} />}>
       {carregando && !dados ? (
         <Carregando />
       ) : erro ? (
@@ -844,7 +897,7 @@ function Historico({ id, versao }: { id: number; versao: number | undefined }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 420, overflowY: "auto" }}>
           {plataforma.dados.movimentos.map((m) => {
             const cor = COR_RESULTADO[m.resultado] ?? COR_RESULTADO.erro;
-            const oque = m.direcao === "analise" ? "Análise registrada" : m.direcao === "cancelamento" ? "Cancelamento da demanda" : m.direcao === "edicao" ? "Edição das informações" : `${m.direcao === "volta" ? "Voltou" : "Avançou"}: ${m.origem ?? "—"} → ${m.destino}${m.proposta ? " (proposta)" : ""}`;
+            const oque = m.direcao === "tag" ? "Tag de análise tech" : m.direcao === "analise" ? "Análise registrada" : m.direcao === "cancelamento" ? "Cancelamento da demanda" : m.direcao === "edicao" ? "Edição das informações" : `${m.direcao === "volta" ? "Voltou" : "Avançou"}: ${m.origem ?? "—"} → ${m.destino}${m.proposta ? " (proposta)" : ""}`;
             return (
               <div key={m.id} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: "8px 11px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 12.5 }}>

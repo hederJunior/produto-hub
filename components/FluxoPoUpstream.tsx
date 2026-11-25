@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { AlertCircle, AlertTriangle, Building2, CalendarDays, CheckCircle2, Clock, Eye, FileText, GitBranch, MoveRight, RefreshCw, UserRound, X } from "lucide-react";
+import { AlertCircle, AlertTriangle, Building2, CalendarDays, CheckCircle2, Clock, Eye, EyeOff, FileText, GitBranch, MoveRight, RefreshCw, UserRound, X } from "lucide-react";
 import { useProduto } from "@/components/ProdutoContext";
 import MultiSelectFiltro from "@/components/MultiSelectFiltro";
 import FluxoPoMoverDialog, { type RespostaMover } from "@/components/FluxoPoMoverDialog";
@@ -68,6 +68,8 @@ export default function FluxoPoUpstream() {
   const [esteirasSel, setEsteirasSel] = useState<string[]>([]);
   const [meusItens, setMeusItens] = useState(false);
   const [somenteBloqueados, setSomenteBloqueados] = useState(false);
+  // Coluna "1.1 Classificar" recolhida (2026-11-24): o quadro não mostra os cards dela, só o título, o total e o botão para mostrar de novo.
+  const [ocultar11, setOcultar11] = useState(false);
   const [filtrosRestaurados, setFiltrosRestaurados] = useState(false);
   const [hoje] = useState(() => new Date());
   const [recarga, setRecarga] = useState(0);
@@ -146,11 +148,12 @@ export default function FluxoPoUpstream() {
   // bloqueado (aba anônima, política do navegador) e a tela precisa funcionar do mesmo jeito, só sem lembrar dos filtros.
   useEffect(() => {
     try {
-      const guardado = JSON.parse(window.sessionStorage.getItem(CHAVE_FILTROS) ?? "null") as { esteiras?: unknown; meusItens?: unknown; somenteBloqueados?: unknown } | null;
+      const guardado = JSON.parse(window.sessionStorage.getItem(CHAVE_FILTROS) ?? "null") as { esteiras?: unknown; meusItens?: unknown; somenteBloqueados?: unknown; ocultar11?: unknown } | null;
       if (guardado && typeof guardado === "object") {
         if (Array.isArray(guardado.esteiras)) setEsteirasSel(guardado.esteiras.filter((v): v is string => typeof v === "string"));
         setMeusItens(guardado.meusItens === true);
         setSomenteBloqueados(guardado.somenteBloqueados === true);
+        setOcultar11(guardado.ocultar11 === true);
       }
     } catch {
       /* sem armazenamento: segue sem lembrar */
@@ -160,11 +163,11 @@ export default function FluxoPoUpstream() {
   useEffect(() => {
     if (!filtrosRestaurados) return; // não sobrescreve o guardado com os valores iniciais antes de restaurar
     try {
-      window.sessionStorage.setItem(CHAVE_FILTROS, JSON.stringify({ esteiras: esteirasSel, meusItens, somenteBloqueados }));
+      window.sessionStorage.setItem(CHAVE_FILTROS, JSON.stringify({ esteiras: esteirasSel, meusItens, somenteBloqueados, ocultar11 }));
     } catch {
       /* idem */
     }
-  }, [filtrosRestaurados, esteirasSel, meusItens, somenteBloqueados]);
+  }, [filtrosRestaurados, esteirasSel, meusItens, somenteBloqueados, ocultar11]);
   // Esteira guardada que já não existe no Azure sai do filtro (senão o quadro ficaria só com os cards sem esteira).
   useEffect(() => {
     const existentes = dados?.esteiras ?? [];
@@ -368,7 +371,7 @@ export default function FluxoPoUpstream() {
         <p style={{ color: C.muted }}>Carregando demandas do Azure DevOps…</p>
       ) : (
         <div className="fp-scroll" style={{ overflowX: "auto", paddingBottom: 6 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(250px, 1fr))", gap: 14, minWidth: 1620, alignItems: "start" }}>
+          <div style={{ display: "grid", gridTemplateColumns: ocultar11 ? "96px repeat(5, minmax(250px, 1fr))" : "repeat(6, minmax(250px, 1fr))", gap: 14, minWidth: ocultar11 ? 1466 : 1620, alignItems: "start" }}>
             {ETAPAS_FLUXO.map((etapa) => {
               const lista = porEtapa[etapa.codigo];
               const cor = COR_DA_ETAPA[etapa.codigo];
@@ -392,12 +395,34 @@ export default function FluxoPoUpstream() {
                     background: alvoValido ? cor.bg : C.soft,
                     borderRadius: 16,
                     borderTop: `3px solid ${cor.dot}`,
-                    padding: "12px 10px 10px",
+                    padding: etapa.codigo === "1.1" && ocultar11 ? "12px 6px 10px" : "12px 10px 10px",
                     outline: alvoValido ? `2px dashed ${cor.dot}` : "none",
                     opacity: arrastando && !alvoValido && arrastando.etapa !== etapa.codigo ? 0.55 : 1,
                     transition: "opacity .15s ease, background .15s ease",
                   }}
                 >
+                  {etapa.codigo === "1.1" && ocultar11 ? (
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, textAlign: "center" }}>
+                      <button
+                        type="button"
+                        onClick={() => setOcultar11(false)}
+                        title="Mostrar os cards da coluna 1.1 Classificar"
+                        aria-label="Mostrar os cards da coluna 1.1 Classificar"
+                        style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 32, height: 30, borderRadius: 9, border: `1px solid ${C.border}`, background: "#fff", cursor: "pointer", color: C.text }}
+                      >
+                        <Eye size={15} />
+                      </button>
+                      <div style={{ fontFamily: "Sora,sans-serif", fontWeight: 600, fontSize: 12.5, color: C.text, lineHeight: 1.25 }}>
+                        <span style={{ color: cor.dot }}>{etapa.codigo}</span>
+                        <div style={{ fontSize: 11.5 }}>{etapa.nome}</div>
+                      </div>
+                      <span title={`${lista.length} ${lista.length === 1 ? "demanda oculta" : "demandas ocultas"}`} style={{ fontSize: 12, fontWeight: 600, color: C.muted, background: "#fff", borderRadius: 999, padding: "1px 9px", fontVariantNumeric: "tabular-nums" }}>
+                        {lista.length}
+                      </span>
+                      <span style={{ fontSize: 10.5, color: C.faint }}>cards ocultos</span>
+                    </div>
+                  ) : (
+                  <>
                   <header style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 4px 10px" }}>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontFamily: "Sora,sans-serif", fontWeight: 600, fontSize: 13.5, color: C.text, lineHeight: 1.25 }}>
@@ -418,6 +443,17 @@ export default function FluxoPoUpstream() {
                     <span style={{ marginLeft: "auto", fontSize: 12, fontWeight: 600, color: C.muted, background: "#fff", borderRadius: 999, padding: "1px 9px", fontVariantNumeric: "tabular-nums" }}>
                       {lista.length}
                     </span>
+                    {etapa.codigo === "1.1" && (
+                      <button
+                        type="button"
+                        onClick={() => setOcultar11(true)}
+                        title="Ocultar os cards desta coluna (1.1 Classificar)"
+                        aria-label="Ocultar os cards da coluna 1.1 Classificar"
+                        style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 26, borderRadius: 8, border: `1px solid ${C.border}`, background: "#fff", cursor: "pointer", color: C.muted }}
+                      >
+                        <EyeOff size={14} />
+                      </button>
+                    )}
                   </header>
                   <div className="fp-scroll" style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: "62vh", overflowY: "auto", paddingRight: 2 }}>
                     {lista.length === 0 ? (
@@ -438,6 +474,8 @@ export default function FluxoPoUpstream() {
                       ))
                     )}
                   </div>
+                  </>
+                  )}
                 </section>
               );
             })}

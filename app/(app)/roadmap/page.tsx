@@ -20,7 +20,7 @@ import AbasVisao from "@/components/AbasVisao";
 import MultiSelectFiltro from "@/components/MultiSelectFiltro";
 import type { ItemBacklog, ItemRefinamento } from "@/lib/backlog";
 import type { ItemAgDeploy } from "@/lib/ag-deploy";
-import type { ItemPrevisao, SprintPrevisao } from "@/lib/previsao-entregas";
+import { restringirPrevisao, type ItemPrevisao, type SprintPrevisao } from "@/lib/previsao-entregas";
 import PainelCapacidade from "@/components/PainelCapacidade";
 import PageHeader from "@/components/PageHeader";
 
@@ -427,8 +427,10 @@ export default function RoadmapPage() {
       .then((j) => {
         if (cancelado) return;
         if (j.erro) setErroPrevisao(j.detalhe ? `${j.erro} (${j.detalhe})` : j.erro);
-        setPrevisaoItens(j.itens ?? []);
-        setPrevisaoSprints(j.sprints ?? []);
+        // Só as áreas "Projetos de Implantação" e "Obrigações Legais e Financeiras" (pedido por Heder em 2026-11-25).
+        const escopo = restringirPrevisao(j.itens ?? [], j.sprints ?? []);
+        setPrevisaoItens(escopo.itens);
+        setPrevisaoSprints(escopo.sprints);
         setPrevisaoAvisos(j.avisos ?? []);
       })
       .catch(() => !cancelado && setErroPrevisao("Não foi possível carregar a Previsão de Entregas do Azure DevOps."))
@@ -1078,7 +1080,7 @@ export default function RoadmapPage() {
                 Previsão de Entregas {produtoLabelFooter}
               </div>
               <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
-                PBIs em aberto agrupados pela sprint (Iteration do PBI).
+                PBIs em aberto agrupados pela sprint (Iteration do PBI), só das áreas Projetos de Implantação e Obrigações Legais e Financeiras.
               </div>
             </div>
             {carregandoPrevisao && <p style={{ color: C.muted }}>Carregando Previsão de Entregas do Azure DevOps…</p>}
@@ -1092,7 +1094,7 @@ export default function RoadmapPage() {
                 <div key={a} className="kmm-card" style={{ marginBottom: 12, fontSize: 13, color: "#8a5a00", background: "#fff6e0" }}>{a}</div>
               ))}
             {!carregandoPrevisao && !erroPrevisao && previsaoItens.length === 0 && (
-              <p style={{ color: C.muted }}>Nenhum PBI em aberto com sprint definida para o produto selecionado.</p>
+              <p style={{ color: C.muted }}>Nenhum PBI em aberto com sprint definida nas áreas Projetos de Implantação e Obrigações Legais e Financeiras para o produto selecionado.</p>
             )}
             {!carregandoPrevisao && !erroPrevisao && previsaoItens.length > 0 && (
               <PrevisaoEntregas itens={previsaoItens} sprints={previsaoSprints} hoje={agora ?? new Date()} mostrarProjeto={produto === "AMBOS"} />

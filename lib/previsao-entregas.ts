@@ -67,3 +67,24 @@ export function compararSprints(a: SprintPrevisao, b: SprintPrevisao): number {
 export function numeroDaSprint(nome: string): string {
   return nome.replace(/^sprint\s*/i, "").trim() || nome;
 }
+
+/**
+ * Áreas que a Previsão de Entregas considera (pedido por Heder em 2026-11-25): só "Projetos de Implantação" e "Obrigações Legais e
+ * Financeiras". Compara o ÚLTIMO nível do Area Path, sem o prefixo "TMS - ", sem acento nem caixa (no Azure o nome vem como
+ * "KMM5\TMS - Projetos de Implantacao"); vale para KMM4 e KMM5.
+ */
+export const AREAS_DA_PREVISAO = ["Projetos de Implantação", "Obrigações Legais e Financeiras"] as const;
+
+export function areaDaPrevisao(areaPath: string | null | undefined): boolean {
+  const partes = String(areaPath ?? "").split("\\").map((p) => p.trim()).filter(Boolean);
+  if (!partes.length) return false;
+  const nome = norm(partes[partes.length - 1].replace(/^TMS\s*-\s*/i, ""));
+  return AREAS_DA_PREVISAO.some((a) => norm(a) === nome);
+}
+
+/** Fica só com os PBIs das áreas da Previsão e com as sprints que ainda têm algum deles (sem grupo vazio). */
+export function restringirPrevisao(itens: ItemPrevisao[], sprints: SprintPrevisao[]): { itens: ItemPrevisao[]; sprints: SprintPrevisao[] } {
+  const doEscopo = itens.filter((i) => areaDaPrevisao(i.areaPath));
+  const comItem = new Set(doEscopo.map((i) => i.iterationPath));
+  return { itens: doEscopo, sprints: sprints.filter((s) => comItem.has(s.chave)) };
+}

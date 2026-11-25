@@ -202,7 +202,7 @@ export default function ClientesPage() {
       }
       const { gerarOprPdf, nomeArquivoOpr } = await import("@/lib/opr-pdf");
       const geradoEm = new Date();
-      const blob = await gerarOprPdf({ cliente: clienteSel, squads: squadsSel.map(rotuloSquad), geradoEm, itens: visiveis, comentarios, entregas, avisoEntregas });
+      const blob = await gerarOprPdf({ cliente: clienteSel, geradoEm, itens: visiveis, comentarios, entregas, avisoEntregas });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;

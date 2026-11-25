@@ -136,6 +136,15 @@ function Secao({ n, titulo, quebra, children }: { n: number; titulo: string; que
   );
 }
 
+/** Título de seção dentro de uma coluna (páginas com duas seções lado a lado). */
+function TituloColuna({ n, titulo }: { n: number; titulo: string }) {
+  return (
+    <Text style={S.secaoTitulo}>
+      {n}. {titulo}
+    </Text>
+  );
+}
+
 function Cabecalho({ cliente }: { cliente: string }) {
   return (
     <View fixed style={S.cabecalho}>
@@ -442,8 +451,6 @@ function DemandasEntregues({ e, aviso, hoje }: { e: EntregasCliente | null; avis
 
 export type DadosOpr = {
   cliente: string;
-  /** Rótulos das squads filtradas; vazio = todas. */
-  squads: string[];
   geradoEm: Date;
   /** PBIs JÁ filtrados (cliente/squad), na ordem da tela. */
   itens: PbiGestaoCliente[];
@@ -472,9 +479,7 @@ function OprDocument({ d }: { d: DadosOpr }) {
 
   const infoLinhas: [string, string][] = [
     ["Cliente", t(d.cliente)],
-    ["Squads", d.squads.length ? d.squads.map(t).join(", ") : "Todas as squads"],
     ["Posição em", `${dataGeracao} às ${horaGeracao}`],
-    ["Demandas na visão", `${itens.length} (Backlog, Orçamento, Execução, Teste Aceite Usuário e Aguardando Deploy)`],
   ];
 
   return (
@@ -497,12 +502,40 @@ function OprDocument({ d }: { d: DadosOpr }) {
           ))}
         </View>
 
-        <Secao n={1} titulo="Distribuição por status">
-          <Distribuicao itens={itens} />
-        </Secao>
+        {/* 1 e 2 — lado a lado (30 x 70): distribuição por status e demandas aguardando aceite comercial */}
+        <View style={{ flexDirection: "row", marginTop: 18 }}>
+          <View style={{ width: "30%", paddingRight: 18 }}>
+            <TituloColuna n={1} titulo="Distribuição por status" />
+            <Distribuicao itens={itens} />
+          </View>
+          <View style={{ width: "70%" }}>
+            <TituloColuna n={2} titulo="Demandas aguardando aceite comercial" />
+            <View style={S.linhaTitulo}>
+              <Text style={S.legenda}>Demandas com status Orçamento.</Text>
+              <Text style={{ fontSize: 8, color: COR.cinza }}>{plural(orcamento.length, "demanda", "demandas")}</Text>
+            </View>
+            <Tabela
+              colunas={[
+                { titulo: "Chamado", peso: 11 },
+                { titulo: "Tarefa", peso: 50, linhas: 2 },
+                { titulo: "PBI", peso: 9 },
+                { titulo: "Data comitê", peso: 13 },
+                { titulo: "Effort", peso: 13, direita: true },
+              ]}
+              linhas={orcamento.map((p) => [t(p.idExterno) || "—", t(p.titulo), pbi(p), dataCurta(p.dataComite), { t: p.effort == null ? "—" : `${numero(p.effort)} h`, bold: true }])}
+              vazio="Nenhuma demanda em orçamento para os filtros atuais."
+            />
+            {orcamento.length > 0 && (
+              <View wrap={false} style={{ flexDirection: "row", justifyContent: "space-between", backgroundColor: COR.destaque, borderLeftWidth: 3, borderLeftColor: COR.laranja, padding: "6 10", marginTop: 6 }}>
+                <Text style={{ fontFamily: "Helvetica-Bold", fontSize: 8.5, color: COR.laranja }}>TOTAL EFFORT</Text>
+                <Text style={{ fontFamily: "Helvetica-Bold", fontSize: 10 }}>{numero(totalEffort)} h</Text>
+              </View>
+            )}
+          </View>
+        </View>
 
-        {/* 2 — aging (gráfico) + backlog (tabela) */}
-        <Secao n={2} titulo="Backlog e aging" quebra>
+        {/* 3 — aging (gráfico) + backlog (tabela) */}
+        <Secao n={3} titulo="Backlog e aging" quebra>
           <View style={{ flexDirection: "row" }}>
             <View style={{ width: "30%", paddingRight: 16 }}>
               <Text style={S.subtitulo}>Demandas por faixa de aging</Text>
@@ -540,31 +573,6 @@ function OprDocument({ d }: { d: DadosOpr }) {
               />
             </View>
           </View>
-        </Secao>
-
-        {/* 3 — aguardando aceite comercial (Orçamento) */}
-        <Secao n={3} titulo="Demandas aguardando aceite comercial" quebra>
-          <View style={S.linhaTitulo}>
-            <Text style={S.legenda}>Demandas com status Orçamento.</Text>
-            <Text style={{ fontSize: 8, color: COR.cinza }}>{plural(orcamento.length, "demanda", "demandas")}</Text>
-          </View>
-          <Tabela
-            colunas={[
-              { titulo: "Chamado", peso: 11 },
-              { titulo: "Tarefa", peso: 55, linhas: 2 },
-              { titulo: "PBI", peso: 9 },
-              { titulo: "Data comitê", peso: 12 },
-              { titulo: "Effort", peso: 13, direita: true },
-            ]}
-            linhas={orcamento.map((p) => [t(p.idExterno) || "—", t(p.titulo), pbi(p), dataCurta(p.dataComite), { t: p.effort == null ? "—" : `${numero(p.effort)} h`, bold: true }])}
-            vazio="Nenhuma demanda em orçamento para os filtros atuais."
-          />
-          {orcamento.length > 0 && (
-            <View wrap={false} style={{ flexDirection: "row", justifyContent: "space-between", backgroundColor: COR.destaque, borderLeftWidth: 3, borderLeftColor: COR.laranja, padding: "6 10", marginTop: 6 }}>
-              <Text style={{ fontFamily: "Helvetica-Bold", fontSize: 8.5, color: COR.laranja }}>TOTAL EFFORT</Text>
-              <Text style={{ fontFamily: "Helvetica-Bold", fontSize: 10 }}>{numero(totalEffort)} h</Text>
-            </View>
-          )}
         </Secao>
 
         {/* 4 e 5 — execução e testes do usuário (tabelas, sem gráficos) */}

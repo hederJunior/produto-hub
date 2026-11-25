@@ -10,7 +10,8 @@ import { AvisoBloqueioCliente, useBloqueios } from "@/components/AvisoBloqueioCl
 import { acharBloqueio } from "@/lib/bloqueio-clientes";
 import EntregasCliente from "@/components/EntregasCliente";
 import AbasVisao from "@/components/AbasVisao";
-import { ALTURA_QUADRO, DivisorSecao, VisaoBacklogOrcamento, VisaoPorStatus } from "@/components/BaseGeralDemandas";
+import EstimativaMensal from "@/components/EstimativaMensal";
+import { ALTURA_TABELA_BASE, DivisorSecao, VisaoBacklogOrcamento, VisaoPorStatus } from "@/components/BaseGeralDemandas";
 import { FileDown, Users } from "lucide-react";
 import { nomeCurtoDaSquad } from "@/lib/backlog";
 import { formatarChaveDia } from "@/lib/datas";
@@ -280,19 +281,23 @@ export default function ClientesPage() {
       </div>
 
       <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
-      <div style={{ flex: "0 1 320px", minWidth: 280, position: "sticky", top: 16 }}>
+      {/* Coluna esquerda: distribuição por status, aviso de bloqueio e gráfico mensal. Sem "sticky" (2026-11-24): a coluna ficou mais alta que a tela. */}
+      <div style={{ flex: "0 1 320px", minWidth: 280 }}>
         <DistribuicaoPorStatus itens={visiveis} carregando={carregando} />
         {bloqueioDoCliente && (
           <div style={{ marginTop: 14 }}>
             <AvisoBloqueioCliente bloqueio={bloqueioDoCliente} />
           </div>
         )}
+        <div style={{ marginTop: 14 }}>
+          <EstimativaMensal itens={visiveis} carregando={carregando} />
+        </div>
       </div>
       <div style={{ flex: "1 1 640px", minWidth: 0 }}>
       <div className="kmm-card" style={{ padding: 0, overflow: "hidden" }}>
         {/* Área de rolagem PRÓPRIA da tabela, com a mesma altura padrão dos demais quadros: as barras
             (vertical e horizontal) ficam sempre visíveis e o cabeçalho acompanha a rolagem. */}
-        <div className="kmm-rolagem" style={{ overflow: "auto", height: ALTURA_QUADRO, minHeight: 340 }}>
+        <div className="kmm-rolagem" style={{ overflow: "auto", height: ALTURA_TABELA_BASE, minHeight: 340 }}>
           <table className="kmm-tab" style={{ minWidth: 1500 }}>
             <thead>
               <tr>

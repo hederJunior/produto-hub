@@ -13,6 +13,9 @@ const ORG_DEVOPS = "kmmbynstech";
 /** Altura padrão dos quadros de tabela da Gestão de clientes (todos iguais, rolando por dentro). */
 export const ALTURA_QUADRO = "min(460px, calc(100vh - 280px))";
 
+/** Tabela principal da Gestão ("Base geral de demandas"): mais alta que as demais (2026-11-24) para acompanhar a coluna da esquerda, que ganhou aviso e gráfico. */
+export const ALTURA_TABELA_BASE = "min(680px, calc(100vh - 200px))";
+
 /**
  * Blocos da Gestão de clientes. Todos recebem os PBIs JÁ filtrados (cliente/squad). Visual suave
  * (2026-10-18): cartões brancos de cantos arredondados, cabeçalho de tabela claro, tipografia leve.

@@ -29,6 +29,10 @@ export type PbiGestaoCliente = {
   dataComite: string | null;
   /** Effort do próprio PBI (Microsoft.VSTS.Scheduling.Effort), em horas — null se vazio. */
   effort: number | null;
+  /** Campo "Estimativa Total" (Custom.EstimativaTotal), em horas — null se vazio. Base do gráfico mensal da tela (× 1,25). */
+  estimativaTotal: number | null;
+  /** Activated Date (Microsoft.VSTS.Common.ActivatedDate, instante ISO) ou null. Define o mês do gráfico mensal. */
+  dataAtivacao: string | null;
   /** System.CommentCount — usado pra só buscar comentário dos PBIs que têm algum. */
   qtdComentarios: number;
 };

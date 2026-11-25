@@ -1729,6 +1729,8 @@ export async function getPbisGestaoClientes(
     CAMPO_CLASSIFICACAO,
     CAMPO_DATA_COMITE,
     "Microsoft.VSTS.Scheduling.Effort",
+    "Custom.EstimativaTotal",
+    "Microsoft.VSTS.Common.ActivatedDate",
     ...(campoIdExterno ? [campoIdExterno] : []),
   ];
 
@@ -1754,6 +1756,8 @@ export async function getPbisGestaoClientes(
         classificacao: textoDeCampo(f[CAMPO_CLASSIFICACAO]),
         dataComite: (f[CAMPO_DATA_COMITE] as string) ?? null,
         effort: typeof f["Microsoft.VSTS.Scheduling.Effort"] === "number" ? (f["Microsoft.VSTS.Scheduling.Effort"] as number) : null,
+        estimativaTotal: typeof f["Custom.EstimativaTotal"] === "number" ? (f["Custom.EstimativaTotal"] as number) : null,
+        dataAtivacao: (f["Microsoft.VSTS.Common.ActivatedDate"] as string) ?? null,
         qtdComentarios: typeof qtd === "number" ? qtd : 0,
       });
     }

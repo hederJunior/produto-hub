@@ -20,6 +20,8 @@ const pbi = (cliente: string, state: string, etapa = "Backlog"): PbiGestaoClient
   classificacao: "",
   dataComite: null,
   effort: null,
+  estimativaTotal: null,
+  dataAtivacao: null,
   qtdComentarios: 0,
 });
 const varios = (n: number, ...args: [string, string, string?]) => Array.from({ length: n }, () => pbi(...args));

@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { AlertCircle, AlertTriangle, Ban, Check, ExternalLink, Loader2, Paperclip, Send, Sparkles, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { AlertCircle, AlertTriangle, Ban, Bold, Check, ExternalLink, Italic, List, ListOrdered, Loader2, Paperclip, Send, Sparkles, X } from "lucide-react";
 import { C, PASTEL } from "@/lib/kmm-theme";
 import { AO_AVANCAR, LIMITE_COMENTARIO, MOTIVOS_CANCELAMENTO, QUANDO_AVANCA, motivoDeCancelamento, rotuloDaEtapa, valorLegivelDaAlteracao, type EtapaFluxo, type MotivoCancelamento } from "@/lib/fluxo-po";
+import { urlPbiAzure } from "@/lib/fluxo-po-campos";
 import type { ChecklistPbi, ItemChecklistEstado } from "@/lib/fluxo-po-checklist";
 import type { AnexoPbi, EntradaHistorico, MovimentoPbi } from "@/lib/fluxo-po-detalhe";
 
@@ -79,6 +80,9 @@ const ESTILO_HTML = `
 .fp-html table{ border-collapse:collapse; margin:6px 0; } .fp-html td,.fp-html th{ border:1px solid ${C.border}; padding:3px 7px; }
 .fp-html a{ color:${C.orange}; } .fp-html blockquote{ margin:6px 0; padding-left:10px; border-left:3px solid ${C.border}; color:${C.muted}; }
 .fp-html pre{ background:${C.soft}; padding:8px; border-radius:8px; overflow:auto; }
+.fp-editor{ min-height:150px; max-height:380px; overflow-y:auto; border:1px solid ${C.border}; border-radius:10px; padding:10px 12px; background:#fff; outline:none; }
+.fp-editor:focus{ border-color:#F5C5AA; box-shadow:0 0 0 3px #FFF1EA; }
+.fp-editor:empty:before{ content:attr(data-placeholder); color:${C.faint}; }
 `;
 
 /**
@@ -116,6 +120,7 @@ export default function FluxoPoDetalheBlocos({
         <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
           <Checklist id={id} aba={aba} pode={pode} motivoSemPermissao={motivoSemPermissao} />
           <Descricao id={id} aba={aba} />
+          {aba === "2.1" && <Analise id={id} pode={pode} motivoSemPermissao={motivoSemPermissao} etapaAtual={etapaAtual} />}
           {(aba === "1.1" || aba === "1.2") && <Cancelamento id={id} pode={pode} motivoSemPermissao={motivoSemPermissao} etapaAtual={etapaAtual} aoCancelar={aoCancelarDemanda} />}
           <Comentarios id={id} pode={pode} motivoSemPermissao={motivoSemPermissao} aoPublicar={aoPublicarComentario} />
         </div>
@@ -242,6 +247,231 @@ function Descricao({ id, aba }: { id: number; aba: AbaEtapa }) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------------------------------------------
+
+/** Assesment filho do PBI como a API devolve (HTML já sanitizado; `rev` é a base da trava de edição). */
+type AssesmentAnalise = {
+  id: number;
+  titulo: string;
+  estado: string;
+  rev: number;
+  html: string;
+  vazia: boolean;
+  truncada: boolean;
+  perdas: { imagens: number; estilos: boolean };
+};
+
+/**
+ * Análise (etapa 2.1, pedido por Heder em 2026-11-24): o campo Description dos Assesments FILHOS do PBI. Quem pode movimentar edita
+ * (com o card na 2.1) e "Registrar Análise" grava o texto no Assesment; os demais só leem. O texto é HTML: o editor oferece negrito,
+ * itálico e listas, e o servidor limpa o que for além disso, então o bloco avisa ANTES quando o texto atual tem imagens ou estilos
+ * que se perderiam. A trava de revisão do Assesment evita sobrescrever uma edição feita por outra pessoa no Azure DevOps.
+ */
+function Analise({ id, pode, motivoSemPermissao, etapaAtual }: { id: number; pode: boolean; motivoSemPermissao: string | null; etapaAtual: EtapaFluxo | null }) {
+  const { dados, erro, carregando, recarregar, setDados } = useCarga<{ assesments: AssesmentAnalise[] }>(`/api/fluxo-po/pbi/${id}/analise`);
+  const [selecionado, setSelecionado] = useState<number | null>(null);
+  const [alterado, setAlterado] = useState(false);
+  const [ciente, setCiente] = useState(false);
+  const [enviando, setEnviando] = useState(false);
+  const [falha, setFalha] = useState<{ mensagem: string; conflito: boolean } | null>(null);
+  const [ok, setOk] = useState<string | null>(null);
+  const editor = useRef<HTMLDivElement>(null);
+  const base = useRef("");
+
+  const lista = dados?.assesments ?? [];
+  const atual = lista.find((a) => a.id === selecionado) ?? lista[0] ?? null;
+  const emDia = etapaAtual === "2.1";
+  const editavel = pode && emDia && !!atual && !atual.truncada;
+  const comPerdas = !!atual && (atual.perdas.imagens > 0 || atual.perdas.estilos);
+
+  // Carrega o texto salvo no editor quando muda o Assesment ou a revisão (abrir, trocar, depois de registrar).
+  useEffect(() => {
+    if (editor.current && atual) {
+      editor.current.innerHTML = atual.html;
+      base.current = editor.current.innerHTML;
+    }
+    setAlterado(false);
+    setCiente(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [atual?.id, atual?.rev, editavel]);
+
+  function trocar(novoId: number) {
+    if (alterado && !window.confirm("Há alterações que ainda não foram registradas. Descartar e trocar de Assesment?")) return;
+    setFalha(null);
+    setOk(null);
+    setSelecionado(novoId);
+  }
+
+  function formatar(comando: "bold" | "italic" | "insertUnorderedList" | "insertOrderedList") {
+    editor.current?.focus();
+    document.execCommand(comando);
+    aoDigitar();
+  }
+
+  function aoDigitar() {
+    if (editor.current) setAlterado(editor.current.innerHTML !== base.current);
+    setOk(null);
+  }
+
+  /** Cola só o texto (sem a formatação de onde veio): o que o servidor guardaria de qualquer jeito é um HTML simples. */
+  function colar(e: React.ClipboardEvent<HTMLDivElement>) {
+    e.preventDefault();
+    document.execCommand("insertText", false, e.clipboardData.getData("text/plain"));
+  }
+
+  const podeRegistrar = editavel && alterado && !enviando && (!comPerdas || ciente);
+
+  async function registrar() {
+    if (!atual || !editor.current || !podeRegistrar) return;
+    setEnviando(true);
+    setFalha(null);
+    setOk(null);
+    try {
+      const res = await fetch(`/api/fluxo-po/pbi/${id}/analise`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assesmentId: atual.id, html: editor.current.innerHTML, rev: atual.rev }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setFalha({ mensagem: j.erro ?? "Não foi possível registrar a análise.", conflito: res.status === 409 });
+        return;
+      }
+      const novo = j.assesment as AssesmentAnalise;
+      setDados((d) => (d ? { assesments: d.assesments.map((a) => (a.id === novo.id ? novo : a)) } : d));
+      setOk(`Análise registrada no Assesment ${novo.id}.`);
+    } catch {
+      setFalha({ mensagem: "Não foi possível registrar a análise (sem conexão com o servidor).", conflito: false });
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  const botaoFormato: React.CSSProperties = { display: "inline-flex", alignItems: "center", justifyContent: "center", width: 30, height: 28, background: "#fff", border: `1px solid ${C.border}`, borderRadius: 8, cursor: "pointer", color: C.text };
+
+  return (
+    <Bloco titulo="Análise (Assesment)">
+      {carregando && !dados ? (
+        <Carregando />
+      ) : erro ? (
+        <Erro texto={erro} />
+      ) : !atual ? (
+        <Vazio texto="Este PBI não tem Assesment filho, então não há análise para mostrar." />
+      ) : (
+        <>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10, fontSize: 12.5, color: C.muted }}>
+            {lista.length > 1 ? (
+              <select value={atual.id} onChange={(e) => trocar(Number(e.target.value))} style={{ border: `1px solid ${C.border}`, borderRadius: 9, padding: "5px 9px", fontSize: 12.5, color: C.text, background: "#fff", fontFamily: "inherit", maxWidth: "100%" }}>
+                {lista.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    Assesment {a.id} · {a.titulo}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span>
+                Assesment <strong style={{ color: C.text }}>{atual.id}</strong> · {atual.titulo}
+              </span>
+            )}
+            <span style={{ background: C.soft, borderRadius: 999, padding: "1px 9px", fontSize: 11.5 }}>{atual.estado || "—"}</span>
+            <a href={urlPbiAzure(atual.id)} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, color: C.muted, textDecoration: "none" }}>
+              Abrir no Azure DevOps <ExternalLink size={12} />
+            </a>
+          </div>
+
+          {atual.truncada && (
+            <p style={{ margin: "0 0 10px", fontSize: 12.5, color: "#8a5a00" }}>Texto muito longo: a edição aqui foi desativada para não cortar o conteúdo. Edite no Azure DevOps.</p>
+          )}
+
+          {editavel ? (
+            <>
+              <div style={{ display: "flex", gap: 6, marginBottom: 8 }} role="toolbar" aria-label="Formatação">
+                <button type="button" title="Negrito" aria-label="Negrito" style={botaoFormato} onMouseDown={(e) => e.preventDefault()} onClick={() => formatar("bold")}>
+                  <Bold size={14} />
+                </button>
+                <button type="button" title="Itálico" aria-label="Itálico" style={botaoFormato} onMouseDown={(e) => e.preventDefault()} onClick={() => formatar("italic")}>
+                  <Italic size={14} />
+                </button>
+                <button type="button" title="Lista" aria-label="Lista" style={botaoFormato} onMouseDown={(e) => e.preventDefault()} onClick={() => formatar("insertUnorderedList")}>
+                  <List size={14} />
+                </button>
+                <button type="button" title="Lista numerada" aria-label="Lista numerada" style={botaoFormato} onMouseDown={(e) => e.preventDefault()} onClick={() => formatar("insertOrderedList")}>
+                  <ListOrdered size={14} />
+                </button>
+              </div>
+              <div
+                ref={editor}
+                className="fp-html fp-editor"
+                contentEditable={!enviando}
+                suppressContentEditableWarning
+                role="textbox"
+                aria-multiline="true"
+                aria-label="Texto da análise"
+                data-placeholder="Escreva a análise…"
+                onInput={aoDigitar}
+                onPaste={colar}
+              />
+            </>
+          ) : (
+            <>
+              {atual.vazia ? <Vazio texto="O Assesment ainda não tem análise registrada." /> : <div className="fp-html" style={{ maxHeight: 360, overflowY: "auto" }} dangerouslySetInnerHTML={{ __html: atual.html }} />}
+              <p style={{ margin: "8px 0 0", fontSize: 11.5, color: C.faint }}>
+                {!pode ? (motivoSemPermissao ?? "Seu perfil só permite visualizar.") : !emDia ? "A edição só está liberada enquanto o card está na etapa 2.1." : "Somente leitura."}
+              </p>
+            </>
+          )}
+
+          {editavel && comPerdas && (
+            <div role="alert" style={{ marginTop: 10, background: PASTEL.amber.bg, border: "1px solid #F6DDB5", color: "#8a5a00", borderRadius: 10, padding: "9px 12px", fontSize: 12.5, lineHeight: 1.45 }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 1 }} />
+                <span>
+                  O texto atual tem {atual.perdas.imagens > 0 ? `${atual.perdas.imagens} ${atual.perdas.imagens === 1 ? "imagem" : "imagens"}` : ""}
+                  {atual.perdas.imagens > 0 && atual.perdas.estilos ? " e " : ""}
+                  {atual.perdas.estilos ? "formatação (cores, fontes)" : ""} que este editor não guarda: ao registrar, {atual.perdas.imagens > 0 ? "as imagens viram \"[imagem]\" e " : ""}a formatação extra se perde. Para manter, edite direto no Azure DevOps.
+                </span>
+              </div>
+              <label style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 8, cursor: "pointer", fontWeight: 600 }}>
+                <input type="checkbox" checked={ciente} onChange={(e) => setCiente(e.target.checked)} style={{ accentColor: C.orange }} />
+                Entendo e quero registrar mesmo assim
+              </label>
+            </div>
+          )}
+
+          {falha && (
+            <div role="alert" style={{ marginTop: 10, display: "flex", alignItems: "flex-start", gap: 8, color: C.red, fontSize: 12.5 }}>
+              <AlertCircle size={15} style={{ flexShrink: 0, marginTop: 1 }} />
+              <span>
+                {falha.mensagem}{" "}
+                {falha.conflito && (
+                  <button type="button" onClick={() => { setFalha(null); recarregar(); }} className="kmm-btn" style={{ fontSize: 12, padding: "3px 10px", marginLeft: 4 }}>
+                    Recarregar a versão do Azure
+                  </button>
+                )}
+              </span>
+            </div>
+          )}
+          {ok && (
+            <p role="status" style={{ margin: "10px 0 0", display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: C.green }}>
+              <Check size={14} /> {ok}
+            </p>
+          )}
+
+          {editavel && (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
+              <button type="button" className="kmm-btn primary" onClick={registrar} disabled={!podeRegistrar} style={{ display: "inline-flex", alignItems: "center", gap: 7, opacity: podeRegistrar ? 1 : 0.55, cursor: podeRegistrar ? "pointer" : "not-allowed" }}>
+                {enviando ? <Loader2 size={14} className="kmm-spin" /> : <Send size={14} />}
+                {enviando ? "Registrando…" : "Registrar Análise"}
+              </button>
+              <span style={{ fontSize: 12, color: alterado ? "#8a5a00" : C.faint }}>{alterado ? "Alterações ainda não registradas." : "Nada para registrar."}</span>
+            </div>
+          )}
+        </>
+      )}
+    </Bloco>
+  );
+}
 
 /**
  * Cancelamento de Demanda (abas 1.1 e 1.2, entre a descrição e os comentários): o usuário escolhe um dos 7 motivos; o texto padrão do motivo
@@ -614,7 +844,7 @@ function Historico({ id, versao }: { id: number; versao: number | undefined }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 420, overflowY: "auto" }}>
           {plataforma.dados.movimentos.map((m) => {
             const cor = COR_RESULTADO[m.resultado] ?? COR_RESULTADO.erro;
-            const oque = m.direcao === "cancelamento" ? "Cancelamento da demanda" : m.direcao === "edicao" ? "Edição das informações" : `${m.direcao === "volta" ? "Voltou" : "Avançou"}: ${m.origem ?? "—"} → ${m.destino}${m.proposta ? " (proposta)" : ""}`;
+            const oque = m.direcao === "analise" ? "Análise registrada" : m.direcao === "cancelamento" ? "Cancelamento da demanda" : m.direcao === "edicao" ? "Edição das informações" : `${m.direcao === "volta" ? "Voltou" : "Avançou"}: ${m.origem ?? "—"} → ${m.destino}${m.proposta ? " (proposta)" : ""}`;
             return (
               <div key={m.id} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: "8px 11px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 12.5 }}>

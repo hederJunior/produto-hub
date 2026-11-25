@@ -70,6 +70,7 @@ Abra por **Detalhes** no card. No topo: número, título, etapa atual, cliente, 
 - **Quando avança** e **Ao avançar, grava no PBI**: lembrete da regra de cada etapa.
 
 **Aviso de PBI alterado:** se alguém alterar o PBI no Azure enquanto você está com o detalhe aberto, aparece um aviso amarelo. Se você tentar salvar um campo que a outra pessoa também mudou, o sistema **não grava** e mostra o que mudou, para você escolher entre atualizar (descartando o seu rascunho) ou continuar editando.
+- **Análise (Assesment)** (na aba **2.1**, entre a descrição e os comentários): mostra o campo **Description** do Assesment filho do PBI (com vários Assesments, escolha pelo seletor; sem nenhum, a tela avisa). Quem movimenta e está com o card na **2.1** pode editar (negrito, itálico e listas; ao colar, entra só o texto) e clicar em **Registrar Análise**: o texto é gravado no Description do Assesment, no Azure DevOps. Se o texto atual tiver imagens ou formatação (cores, fontes), a tela avisa antes, porque este editor não guarda isso. Se outra pessoa alterou o Assesment no Azure depois que você abriu a tela, o registro é recusado (nada é gravado) e você pode recarregar a versão atual. Quem só visualiza vê o texto sem poder editar.
 
 ## 6. Perguntas frequentes
 

@@ -11,8 +11,8 @@ export type LinhaLogMovimento = {
   workItemId: number;
   origem: EtapaFluxo | null;
   destino: string;
-  /** "edicao" = edição das informações do PBI na tela de detalhe (T16); "cancelamento" = demanda cancelada pelo detalhe da 1.1. Nenhuma das duas é troca de etapa. */
-  direcao: "avanco" | "volta" | "edicao" | "cancelamento" | null;
+  /** "edicao" = edição das informações do PBI na tela de detalhe (T16); "cancelamento" = demanda cancelada pelo detalhe da 1.1; "analise" = análise (Description do Assesment) registrada na 2.1. Nenhuma das três é troca de etapa. */
+  direcao: "avanco" | "volta" | "edicao" | "cancelamento" | "analise" | null;
   proposta: boolean;
   usuario: string;
   usuarioNome: string | null;
@@ -33,7 +33,7 @@ export type ContextoLog = {
   workItemId: number | null;
   origem: EtapaFluxo | null;
   destino: string;
-  direcao: "avanco" | "volta" | "edicao" | "cancelamento" | null;
+  direcao: "avanco" | "volta" | "edicao" | "cancelamento" | "analise" | null;
   proposta: boolean;
   usuario: string;
   usuarioNome: string | null;
@@ -116,6 +116,21 @@ export function linhaDeEdicao(
     comentarioId: null,
     comentarioErro: null,
     assesments: r.assesments,
+  };
+}
+
+/** Análise registrada na 2.1: o campo Description de um Assesment filho foi regravado (a alteração guarda só os tamanhos). */
+export function linhaDeAnalise(ctx: ContextoLog & { workItemId: number }, r: { alteracoes: Alteracao[]; avisos: string[] }): LinhaLogMovimento {
+  return {
+    ...baseDaLinha({ ...ctx, direcao: "analise" }),
+    resultado: "sucesso",
+    motivo: null,
+    alteracoes: r.alteracoes,
+    avisos: r.avisos.length ? r.avisos : null,
+    comentarioPublicado: null,
+    comentarioId: null,
+    comentarioErro: null,
+    assesments: null,
   };
 }
 

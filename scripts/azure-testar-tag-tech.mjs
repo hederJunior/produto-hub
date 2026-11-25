@@ -1,4 +1,4 @@
-// Fluxo do PO, etapa 2.1 — valida o botão "Necessário análise tech" (tag "Para refinamento tech") no PBI DE TESTE.
+// Fluxo do PO, etapa 2.1 — valida o botão "Necessário análise tech" (tag "Pronto para refinamento tech") no PBI DE TESTE.
 // Roda as MESMAS funções da rota GET/POST /api/fluxo-po/pbi/{id}/tag-tech (sem a camada de login). Ao final devolve as Tags (e a Etapa, se o
 // script a mudou) ao valor original e apaga as linhas de log do teste, mesmo se um passo falhar.
 // Passos sem gravar: leitura do estado, sem permissão (403) e card fora da 2.1 (422). Passos gravando (PBI na 2.1; com PREPARAR_2_1=1 o script
@@ -9,7 +9,7 @@
 import { ErroFluxoPo, aplicarPatchPbi, lerPbiFluxoPoAtual } from "../lib/fluxo-po-servidor.ts";
 import { lerTagTech, marcarNecessarioAnaliseTech } from "../lib/fluxo-po-tag-tech-servidor.ts";
 import { derivarEtapa, temTag } from "../lib/fluxo-po.ts";
-import { CAMPOS_PBI, ETAPA, TAG_PARA_REFINAMENTO_TECH } from "../lib/fluxo-po-campos.ts";
+import { CAMPOS_PBI, ETAPA, TAG_PRONTO_REFINAMENTO_TECH } from "../lib/fluxo-po-campos.ts";
 import { getServiceClient } from "../lib/supabase.ts";
 
 const PBI_DE_TESTE = 46766;
@@ -51,7 +51,7 @@ let mudouEtapa = false;
 console.log(`PBI ${id}: etapa ${derivarEtapa(inicial).etapa}, tags "${tagsOriginais}".`);
 
 try {
-  if (temTag(tagsOriginais, TAG_PARA_REFINAMENTO_TECH)) throw new Error("O PBI de teste já tem a tag; retire-a antes (o teste não sabe devolver esse estado).");
+  if (temTag(tagsOriginais, TAG_PRONTO_REFINAMENTO_TECH)) throw new Error("O PBI de teste já tem a tag; retire-a antes (o teste não sabe devolver esse estado).");
   registrar("Estado inicial: sem a tag", (await lerTagTech(id)).aplicada === false);
   await esperarErro("Sem permissão (CS) → 403", 403, () => marcarNecessarioAnaliseTech({ id, usuario: cs }));
 
@@ -66,7 +66,7 @@ try {
       console.log(`Preparação: Etapa "${etapaOriginal}" → "${ETAPA.comite}" (será devolvida no fim).`);
     }
     const r = await marcarNecessarioAnaliseTech({ id, usuario: admin });
-    const esperadas = tagsOriginais ? `${tagsOriginais}; ${TAG_PARA_REFINAMENTO_TECH}` : TAG_PARA_REFINAMENTO_TECH;
+    const esperadas = tagsOriginais ? `${tagsOriginais}; ${TAG_PRONTO_REFINAMENTO_TECH}` : TAG_PRONTO_REFINAMENTO_TECH;
     registrar("Aplica a tag mantendo as outras", r.aplicada && !r.jaTinha && r.tags === esperadas, `tags agora: "${r.tags}"`);
     registrar("Leitura confirma a tag", (await lerTagTech(id)).aplicada === true);
     const r2 = await marcarNecessarioAnaliseTech({ id, usuario: admin });

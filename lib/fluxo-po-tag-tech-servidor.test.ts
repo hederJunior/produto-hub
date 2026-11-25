@@ -1,4 +1,4 @@
-// Testes do botão "Necessário análise tech" (tag "Para refinamento tech") com Azure e log simulados. Rodar: npm run test:fluxo-po
+// Testes do botão "Necessário análise tech" (tag "Pronto para refinamento tech") com Azure e log simulados. Rodar: npm run test:fluxo-po
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { lerTagTech, marcarNecessarioAnaliseTech, type DependenciasTagTech } from "./fluxo-po-tag-tech-servidor";
@@ -35,10 +35,10 @@ async function recusa(promessa: Promise<unknown>, status: number, codigo: string
 test("acrescenta a tag mantendo as outras, com test /rev, e registra no log", async () => {
   const { deps, chamadas } = montar();
   const r = await marcarNecessarioAnaliseTech({ id: 46766, usuario: po, deps });
-  assert.deepEqual(chamadas.patches, [{ id: 46766, ops: [{ op: "test", path: "/rev", value: 30 }, { op: "add", path: "/fields/System.Tags", value: "GLPI; cliente-vip; Para refinamento tech" }] }]);
+  assert.deepEqual(chamadas.patches, [{ id: 46766, ops: [{ op: "test", path: "/rev", value: 30 }, { op: "add", path: "/fields/System.Tags", value: "GLPI; cliente-vip; Pronto para refinamento tech" }] }]);
   assert.equal(r.aplicada, true);
   assert.equal(r.jaTinha, false);
-  assert.equal(r.tags, "GLPI; cliente-vip; Para refinamento tech");
+  assert.equal(r.tags, "GLPI; cliente-vip; Pronto para refinamento tech");
   assert.equal(chamadas.logs[0].direcao, "tag");
   assert.equal(chamadas.logs[0].resultado, "sucesso");
   assert.equal(chamadas.logs[0].origem, "2.1");
@@ -47,11 +47,11 @@ test("acrescenta a tag mantendo as outras, com test /rev, e registra no log", as
 test("PBI sem nenhuma tag: fica só com a nova", async () => {
   const { deps, chamadas } = montar({ tags: "" });
   await marcarNecessarioAnaliseTech({ id: 46766, usuario: po, deps });
-  assert.equal((chamadas.patches[0].ops[1] as { value: string }).value, "Para refinamento tech");
+  assert.equal((chamadas.patches[0].ops[1] as { value: string }).value, "Pronto para refinamento tech");
 });
 
 test("já tem a tag (qualquer caixa/acento): não grava, avisa e registra", async () => {
-  const { deps, chamadas } = montar({ tags: "GLPI; PARA REFINAMENTO TECH" });
+  const { deps, chamadas } = montar({ tags: "GLPI; PRONTO PARA REFINAMENTO TECH" });
   const r = await marcarNecessarioAnaliseTech({ id: 46766, usuario: po, deps });
   assert.equal(chamadas.patches.length, 0);
   assert.equal(r.jaTinha, true);
@@ -59,11 +59,11 @@ test("já tem a tag (qualquer caixa/acento): não grava, avisa e registra", asyn
   assert.equal(chamadas.logs.length, 1);
 });
 
-test("a tag parecida 'Pronto para refinamento tech' NÃO conta como já aplicada", async () => {
-  const { deps, chamadas } = montar({ tags: "Pronto para refinamento tech" });
+test("a tag parecida 'Para refinamento tech' NÃO conta como já aplicada", async () => {
+  const { deps, chamadas } = montar({ tags: "Para refinamento tech" });
   const r = await marcarNecessarioAnaliseTech({ id: 46766, usuario: po, deps });
   assert.equal(r.jaTinha, false);
-  assert.equal((chamadas.patches[0].ops[1] as { value: string }).value, "Pronto para refinamento tech; Para refinamento tech");
+  assert.equal((chamadas.patches[0].ops[1] as { value: string }).value, "Para refinamento tech; Pronto para refinamento tech");
 });
 
 test("sem permissão: 403, nada gravado, vai para o log", async () => {
@@ -86,5 +86,5 @@ test("ID inválido: 422", async () => {
 
 test("lerTagTech: informa se o PBI já tem a tag", async () => {
   assert.deepEqual(await lerTagTech(46766, montar({ tags: "GLPI" }).deps), { aplicada: false });
-  assert.deepEqual(await lerTagTech(46766, montar({ tags: "GLPI; Para refinamento tech" }).deps), { aplicada: true });
+  assert.deepEqual(await lerTagTech(46766, montar({ tags: "GLPI; Pronto para refinamento tech" }).deps), { aplicada: true });
 });

@@ -134,7 +134,7 @@ export function linhaDeAnalise(ctx: ContextoLog & { workItemId: number }, r: { a
   };
 }
 
-/** Tag "Para refinamento tech" aplicada pelo botão da 2.1 (sucesso mesmo quando o PBI já tinha a tag: aí não há alteração e o aviso explica). */
+/** Tag "Pronto para refinamento tech" aplicada pelo botão da 2.1 (sucesso mesmo quando o PBI já tinha a tag: aí não há alteração e o aviso explica). */
 export function linhaDeTag(ctx: ContextoLog & { workItemId: number }, r: { alteracoes: Alteracao[]; avisos: string[] }): LinhaLogMovimento {
   return {
     ...baseDaLinha({ ...ctx, direcao: "tag" }),

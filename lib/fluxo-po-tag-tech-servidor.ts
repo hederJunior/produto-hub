@@ -1,8 +1,9 @@
 /**
- * Fluxo do PO — botão "Necessário análise tech" da etapa 2.1 (SERVIDOR): acrescenta a tag "Para refinamento tech" ao PBI (pedido por
+ * Fluxo do PO — botão "Necessário análise tech" da etapa 2.1 (SERVIDOR): acrescenta a tag "Pronto para refinamento tech" ao PBI (pedido por
  * Heder em 2026-11-24). Mesma disciplina das demais gravações: permissão no servidor, PBI lido AGORA, só vale com o card na 2.1,
  * PATCH com `test /rev` (conflito = 409) e TODA tentativa vai para o log (direção "tag"). Idempotente: se o PBI já tem a tag, não grava.
- * As outras tags do PBI são preservadas; a tag é diferente da "Pronto para refinamento tech", que o fluxo grava ao avançar para a 3.1.
+ * As outras tags do PBI são preservadas. É a MESMA tag que o fluxo grava ao avançar para a 3.1 (decisão do Heder em 2026-11-25): na 2.1 a Etapa
+ * ainda é Comitê, então o card segue na 2.1; ao ir para a 3.2 o fluxo remove a tag, ao ir para a 3.1 ela já está lá (adicionarTag é idempotente).
  */
 import {
   ErroFluxoPo,
@@ -13,7 +14,7 @@ import {
   type UsuarioFluxoPo,
 } from "./fluxo-po-servidor";
 import { adicionarTag, derivarEtapa, paraJsonPatch, temTag, type Alteracao, type OperacaoPatch, type PbiFluxo } from "./fluxo-po";
-import { CAMPOS_PBI, TAG_PARA_REFINAMENTO_TECH } from "./fluxo-po-campos";
+import { CAMPOS_PBI, TAG_PRONTO_REFINAMENTO_TECH } from "./fluxo-po-campos";
 import { linhaDeFalha, linhaDeTag, type ContextoLog, type LinhaLogMovimento } from "./fluxo-po-log";
 
 export type EstadoTagTech = { aplicada: boolean };
@@ -38,7 +39,7 @@ function validarId(valor: unknown): number {
 export async function lerTagTech(idBruto: unknown, deps: Partial<DependenciasTagTech> = {}): Promise<EstadoTagTech> {
   const d = { ...DEPENDENCIAS_REAIS, ...deps };
   const pbi = await d.lerPbi(validarId(idBruto));
-  return { aplicada: temTag(pbi.tags, TAG_PARA_REFINAMENTO_TECH) };
+  return { aplicada: temTag(pbi.tags, TAG_PRONTO_REFINAMENTO_TECH) };
 }
 
 export async function marcarNecessarioAnaliseTech(params: { id: unknown; usuario: UsuarioFluxoPo; deps?: Partial<DependenciasTagTech> }): Promise<ResultadoTagTech> {
@@ -47,7 +48,7 @@ export async function marcarNecessarioAnaliseTech(params: { id: unknown; usuario
   const ctx: ContextoLog = {
     workItemId: Number.isInteger(idNumerico) && idNumerico > 0 ? idNumerico : null,
     origem: null,
-    destino: `Tag "${TAG_PARA_REFINAMENTO_TECH}"`,
+    destino: `Tag "${TAG_PRONTO_REFINAMENTO_TECH}"`,
     direcao: "tag",
     proposta: false,
     usuario: params.usuario.email,
@@ -80,12 +81,12 @@ async function executar(usuario: UsuarioFluxoPo, idBruto: unknown, d: Dependenci
   ctx.origem = derivarEtapa(pbi).etapa;
   if (ctx.origem !== "2.1") throw new ErroFluxoPo(422, "regra", "Este botão só vale enquanto o card está na etapa 2.1 (Comitê / Proposta de solução); nada foi gravado.");
 
-  if (temTag(pbi.tags, TAG_PARA_REFINAMENTO_TECH)) {
-    return { aplicada: true, jaTinha: true, tags: pbi.tags, alteracoes: [], avisos: [`O PBI já tem a tag "${TAG_PARA_REFINAMENTO_TECH}"; nada foi alterado.`] };
+  if (temTag(pbi.tags, TAG_PRONTO_REFINAMENTO_TECH)) {
+    return { aplicada: true, jaTinha: true, tags: pbi.tags, alteracoes: [], avisos: [`O PBI já tem a tag "${TAG_PRONTO_REFINAMENTO_TECH}"; nada foi alterado.`] };
   }
-  const novaTags = adicionarTag(pbi.tags, TAG_PARA_REFINAMENTO_TECH);
+  const novaTags = adicionarTag(pbi.tags, TAG_PRONTO_REFINAMENTO_TECH);
   const alteracoes: Alteracao[] = [{ campo: CAMPOS_PBI.tags, rotulo: "Tags", de: pbi.tags || null, para: novaTags }];
   await d.aplicarPatch(id, paraJsonPatch(alteracoes, pbi.rev));
   const depois = await d.lerPbi(id);
-  return { aplicada: temTag(depois.tags, TAG_PARA_REFINAMENTO_TECH), jaTinha: false, tags: depois.tags, alteracoes, avisos: [] };
+  return { aplicada: temTag(depois.tags, TAG_PRONTO_REFINAMENTO_TECH), jaTinha: false, tags: depois.tags, alteracoes, avisos: [] };
 }

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { AlertCircle, AlertTriangle, Ban, Bold, Check, ExternalLink, Italic, List, ListOrdered, Loader2, Paperclip, Send, Sparkles, Tag, X } from "lucide-react";
 import { C, PASTEL } from "@/lib/kmm-theme";
 import { AO_AVANCAR, LIMITE_COMENTARIO, MOTIVOS_CANCELAMENTO, QUANDO_AVANCA, motivoDeCancelamento, rotuloDaEtapa, valorLegivelDaAlteracao, type EtapaFluxo, type MotivoCancelamento } from "@/lib/fluxo-po";
-import { TAG_PARA_REFINAMENTO_TECH, urlPbiAzure } from "@/lib/fluxo-po-campos";
+import { TAG_PRONTO_REFINAMENTO_TECH, urlPbiAzure } from "@/lib/fluxo-po-campos";
 import type { ChecklistPbi, ItemChecklistEstado } from "@/lib/fluxo-po-checklist";
 import type { AnexoPbi, EntradaHistorico, MovimentoPbi } from "@/lib/fluxo-po-detalhe";
 
@@ -263,7 +263,7 @@ type AssesmentAnalise = {
 };
 
 /**
- * Botão "Necessário análise tech" (etapa 2.1, pedido por Heder em 2026-11-24): acrescenta ao PBI a tag "Para refinamento tech" (as outras tags
+ * Botão "Necessário análise tech" (etapa 2.1, pedido por Heder em 2026-11-24): acrescenta ao PBI a tag "Pronto para refinamento tech" (as outras tags
  * ficam). Só quem movimenta e só com o card na 2.1; depois de aplicada, o botão fica marcado e desabilitado. O servidor confere tudo de novo.
  */
 function BotaoAnaliseTech({ id, pode, motivoSemPermissao, etapaAtual }: { id: number; pode: boolean; motivoSemPermissao: string | null; etapaAtual: EtapaFluxo | null }) {
@@ -276,7 +276,7 @@ function BotaoAnaliseTech({ id, pode, motivoSemPermissao, etapaAtual }: { id: nu
 
   async function marcar() {
     if (desabilitado) return;
-    if (!window.confirm(`Adicionar ao PBI a tag "${TAG_PARA_REFINAMENTO_TECH}"?`)) return;
+    if (!window.confirm(`Adicionar ao PBI a tag "${TAG_PRONTO_REFINAMENTO_TECH}"?`)) return;
     setEnviando(true);
     setMensagem(null);
     try {
@@ -296,12 +296,12 @@ function BotaoAnaliseTech({ id, pode, motivoSemPermissao, etapaAtual }: { id: nu
   }
 
   const dica = aplicada
-    ? `O PBI já tem a tag "${TAG_PARA_REFINAMENTO_TECH}".`
+    ? `O PBI já tem a tag "${TAG_PRONTO_REFINAMENTO_TECH}".`
     : !pode
       ? (motivoSemPermissao ?? "Seu perfil só permite visualizar.")
       : etapaAtual !== "2.1"
         ? "Disponível só enquanto o card está na etapa 2.1."
-        : `Adiciona ao PBI a tag "${TAG_PARA_REFINAMENTO_TECH}".`;
+        : `Adiciona ao PBI a tag "${TAG_PRONTO_REFINAMENTO_TECH}".`;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
@@ -309,7 +309,7 @@ function BotaoAnaliseTech({ id, pode, motivoSemPermissao, etapaAtual }: { id: nu
         {enviando ? <Loader2 size={14} className="kmm-spin" /> : aplicada ? <Check size={14} color={C.green} /> : <Tag size={14} color={C.orange} />}
         Necessário análise tech
       </button>
-      {aplicada && !mensagem && <span style={{ fontSize: 11, color: C.green }}>Tag &quot;{TAG_PARA_REFINAMENTO_TECH}&quot; aplicada</span>}
+      {aplicada && !mensagem && <span style={{ fontSize: 11, color: C.green }}>Tag &quot;{TAG_PRONTO_REFINAMENTO_TECH}&quot; aplicada</span>}
       {mensagem && <span role={mensagem.erro ? "alert" : "status"} style={{ fontSize: 11.5, color: mensagem.erro ? C.red : C.green, maxWidth: 260, textAlign: "right" }}>{mensagem.texto}</span>}
     </div>
   );

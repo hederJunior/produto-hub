@@ -1,10 +1,12 @@
-// Fluxo do PO, etapa 1.2 — valida os "Requisitos de segurança e privacidade de dados" no PBI DE TESTE.
+// Fluxo do PO, etapa 2.1 — valida os "Requisitos de segurança e privacidade de dados" no PBI DE TESTE.
 // Roda as MESMAS funções da rota GET/PUT /api/fluxo-po/pbi/{id}/seguranca (sem a camada de login). Ao final devolve a Description ao texto
-// original e apaga as linhas de log do teste, mesmo se um passo falhar. O PBI de teste precisa estar na etapa 1.2.
+// original e apaga as linhas de log do teste, mesmo se um passo falhar. Com o PBI de teste fora da 2.1 o script o põe na 2.1 durante o teste
+// (Etapa = Comitê) e devolve a Etapa ao valor original no fim.
 //
 // Só aceita o PBI de teste 46766.
 // Uso: node --use-system-ca --env-file=.env --import ./scripts/registrar-ts.mjs scripts/azure-testar-seguranca.mjs 46766
 import { ErroFluxoPo, aplicarPatchPbi, lerPbiFluxoPoAtual } from "../lib/fluxo-po-servidor.ts";
+import { CAMPOS_PBI, ETAPA } from "../lib/fluxo-po-campos.ts";
 import { lerDescricaoAgora, lerSegurancaDoPbi, registrarSeguranca } from "../lib/fluxo-po-seguranca-servidor.ts";
 import { PERGUNTAS_SEGURANCA, lerSegurancaDaDescricao } from "../lib/fluxo-po-seguranca.ts";
 import { derivarEtapa } from "../lib/fluxo-po.ts";
@@ -38,14 +40,23 @@ const respostas = (modelo) => PERGUNTAS_SEGURANCA.map((p, i) => ({ id: p.id, res
 
 const inicial = await lerDescricaoAgora(id);
 const original = inicial.descricaoBruta;
-const etapa = derivarEtapa(await lerPbiFluxoPoAtual(id)).etapa;
+const pbiInicial = await lerPbiFluxoPoAtual(id);
+const etapa = derivarEtapa(pbiInicial).etapa;
+const etapaOriginal = pbiInicial.etapa ?? "";
+let mudouEtapa = false;
 console.log(`PBI ${id}: etapa ${etapa}, Description com ${original.length} caracteres.`);
 
 try {
-  if (etapa !== "1.2") throw new Error(`O PBI de teste está na etapa ${etapa}; este teste precisa dele na 1.2.`);
+  if (etapa !== "2.1") {
+    await esperarErro("Card fora da 2.1 → 422", 422, () => registrarSeguranca({ id, respostas: respostas(1), base: null, usuario: admin }));
+    const agoraPbi = await lerDescricaoAgora(id);
+    await aplicarPatchPbi(id, [{ op: "test", path: "/rev", value: agoraPbi.rev }, { op: "add", path: `/fields/${CAMPOS_PBI.etapa}`, value: ETAPA.comite }]);
+    mudouEtapa = true;
+    console.log(`Preparação: Etapa "${etapaOriginal}" → "${ETAPA.comite}" (será devolvida no fim).`);
+  }
   if (lerSegurancaDaDescricao(original)) throw new Error("O PBI de teste já tem o formulário na Description; retire-o antes.");
   const estado0 = await lerSegurancaDoPbi(id);
-  registrar("Estado inicial: não registrado, em branco, etapa 1.2", !estado0.registrado && estado0.etapa === "1.2" && estado0.itens.every((i) => i.resposta === null));
+  registrar("Estado inicial: não registrado, em branco, etapa 2.1", !estado0.registrado && estado0.etapa === "2.1" && estado0.itens.every((i) => i.resposta === null));
 
   await esperarErro("Sem permissão (CS) → 403", 403, () => registrarSeguranca({ id, respostas: respostas(1), base: null, usuario: cs }));
   await esperarErro("Formulário incompleto → 422", 422, () => registrarSeguranca({ id, respostas: respostas(1).slice(0, 4), base: null, usuario: admin }));
@@ -74,6 +85,11 @@ try {
       { op: "test", path: "/rev", value: agora.rev },
       original === "" ? { op: "remove", path: "/fields/System.Description" } : { op: "add", path: "/fields/System.Description", value: original },
     ]);
+    if (mudouEtapa) {
+      const r = await lerDescricaoAgora(id);
+      await aplicarPatchPbi(id, [{ op: "test", path: "/rev", value: r.rev }, etapaOriginal === "" ? { op: "remove", path: `/fields/${CAMPOS_PBI.etapa}` } : { op: "add", path: `/fields/${CAMPOS_PBI.etapa}`, value: etapaOriginal }]);
+      registrar("Etapa do PBI de teste devolvida ao original", (await lerPbiFluxoPoAtual(id)).etapa === etapaOriginal);
+    }
     const final = (await lerDescricaoAgora(id)).descricaoBruta;
     registrar("Description do PBI de teste devolvida ao original", final === original || final.trim() === original.trim(), `${final.length} caracteres`);
   } catch (e) {

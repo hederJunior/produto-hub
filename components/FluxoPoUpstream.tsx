@@ -30,6 +30,9 @@ import {
 } from "@/lib/fluxo-po";
 import { checklistCompleto } from "@/lib/fluxo-po-checklist";
 
+/** Valor do filtro de cliente que reúne os PBIs sem cliente preenchido. */
+const SEM_CLIENTE = "(Sem cliente)";
+
 /** Onde o quadro guarda, na sessão do navegador, os filtros do usuário. */
 const CHAVE_FILTROS = "fluxo-po:filtros:v1";
 
@@ -67,6 +70,8 @@ export default function FluxoPoUpstream() {
   // (sessionStorage): quem abre o detalhe de um card e volta encontra o quadro com os mesmos filtros.
   const [esteirasSel, setEsteirasSel] = useState<string[]>([]);
   const [meusItens, setMeusItens] = useState(false);
+  // Filtro de cliente (2026-11-26): um ou mais clientes (Custom.Cliente do PBI); SEM_CLIENTE reúne os PBIs que não têm cliente preenchido.
+  const [clientesSel, setClientesSel] = useState<string[]>([]);
   // Filtro de PBI (2026-11-25): um ou mais PBIs escolhidos pelo número ou pelo título; o quadro mostra só eles.
   const [pbisSel, setPbisSel] = useState<string[]>([]);
   const [somenteBloqueados, setSomenteBloqueados] = useState(false);
@@ -150,9 +155,10 @@ export default function FluxoPoUpstream() {
   // bloqueado (aba anônima, política do navegador) e a tela precisa funcionar do mesmo jeito, só sem lembrar dos filtros.
   useEffect(() => {
     try {
-      const guardado = JSON.parse(window.sessionStorage.getItem(CHAVE_FILTROS) ?? "null") as { esteiras?: unknown; pbis?: unknown; meusItens?: unknown; somenteBloqueados?: unknown; ocultar11?: unknown } | null;
+      const guardado = JSON.parse(window.sessionStorage.getItem(CHAVE_FILTROS) ?? "null") as { esteiras?: unknown; clientes?: unknown; pbis?: unknown; meusItens?: unknown; somenteBloqueados?: unknown; ocultar11?: unknown } | null;
       if (guardado && typeof guardado === "object") {
         if (Array.isArray(guardado.esteiras)) setEsteirasSel(guardado.esteiras.filter((v): v is string => typeof v === "string"));
+        if (Array.isArray(guardado.clientes)) setClientesSel(guardado.clientes.filter((v): v is string => typeof v === "string"));
         if (Array.isArray(guardado.pbis)) setPbisSel(guardado.pbis.filter((v): v is string => typeof v === "string"));
         setMeusItens(guardado.meusItens === true);
         setSomenteBloqueados(guardado.somenteBloqueados === true);
@@ -166,11 +172,11 @@ export default function FluxoPoUpstream() {
   useEffect(() => {
     if (!filtrosRestaurados) return; // não sobrescreve o guardado com os valores iniciais antes de restaurar
     try {
-      window.sessionStorage.setItem(CHAVE_FILTROS, JSON.stringify({ esteiras: esteirasSel, pbis: pbisSel, meusItens, somenteBloqueados, ocultar11 }));
+      window.sessionStorage.setItem(CHAVE_FILTROS, JSON.stringify({ esteiras: esteirasSel, clientes: clientesSel, pbis: pbisSel, meusItens, somenteBloqueados, ocultar11 }));
     } catch {
       /* idem */
     }
-  }, [filtrosRestaurados, esteirasSel, pbisSel, meusItens, somenteBloqueados, ocultar11]);
+  }, [filtrosRestaurados, esteirasSel, clientesSel, pbisSel, meusItens, somenteBloqueados, ocultar11]);
   // Esteira guardada que já não existe no Azure sai do filtro (senão o quadro ficaria só com os cards sem esteira).
   useEffect(() => {
     const existentes = dados?.esteiras ?? [];
@@ -184,6 +190,12 @@ export default function FluxoPoUpstream() {
     if (!dados?.cards.length) return;
     const ids = new Set(dados.cards.map((c) => String(c.pbi.id)));
     setPbisSel((sel) => (sel.every((v) => ids.has(v)) ? sel : sel.filter((v) => ids.has(v))));
+  }, [dados?.cards]);
+  // Cliente guardado que já não aparece em nenhum card sai do filtro (senão o quadro ficaria vazio sem explicação).
+  useEffect(() => {
+    if (!dados?.cards.length) return;
+    const existentes = new Set(dados.cards.map((c) => (c.pbi.cliente ?? "").trim() || SEM_CLIENTE));
+    setClientesSel((sel) => (sel.every((v) => existentes.has(v)) ? sel : sel.filter((v) => existentes.has(v))));
   }, [dados?.cards]);
   const podeMover = !!dados?.podeMovimentar;
 
@@ -239,7 +251,7 @@ export default function FluxoPoUpstream() {
   const eu: Eu = dados?.eu ?? { email: null, nome: null };
 
   // Esteiras escolhidas (uma ou mais) + os cards da raiz KMM5 (etapa 1.1, ainda sem esteira, são de quem vai classificar para qualquer uma).
-  const visiveisSemPbi = useMemo(
+  const visiveisSemClientePbi = useMemo(
     () =>
       cards.filter((c) => {
         const area = c.pbi.areaPath;
@@ -249,7 +261,24 @@ export default function FluxoPoUpstream() {
       }),
     [cards, esteirasSel, meusItens, eu.email, eu.nome] // eslint-disable-line react-hooks/exhaustive-deps
   );
-  // Opções do filtro de PBI: os cards que passam pelos outros filtros (esteira e meus itens), do número maior para o menor, mais os já escolhidos.
+  // Opções do filtro de cliente: os clientes dos cards que passam pelos filtros de esteira e meus itens (mais os já escolhidos), em ordem alfabética.
+  const opcoesCliente = useMemo(() => {
+    const nomes = new Set<string>();
+    let semCliente = false;
+    for (const c of visiveisSemClientePbi) {
+      const cli = (c.pbi.cliente ?? "").trim();
+      if (cli) nomes.add(cli);
+      else semCliente = true;
+    }
+    clientesSel.forEach((v) => (v === SEM_CLIENTE ? (semCliente = true) : nomes.add(v)));
+    const ordenados = Array.from(nomes).sort((a, b) => a.localeCompare(b, "pt-BR", { sensitivity: "base" }));
+    return semCliente ? [...ordenados, SEM_CLIENTE] : ordenados;
+  }, [visiveisSemClientePbi, clientesSel]);
+  const visiveisSemPbi = useMemo(
+    () => (clientesSel.length ? visiveisSemClientePbi.filter((c) => clientesSel.includes((c.pbi.cliente ?? "").trim() || SEM_CLIENTE)) : visiveisSemClientePbi),
+    [visiveisSemClientePbi, clientesSel]
+  );
+  // Opções do filtro de PBI: os cards que passam pelos outros filtros (esteira, cliente e meus itens), do número maior para o menor, mais os já escolhidos.
   const opcoesPbi = useMemo(() => {
     const ids = new Set(visiveisSemPbi.map((c) => String(c.pbi.id)));
     pbisSel.forEach((v) => ids.add(v));
@@ -311,6 +340,17 @@ export default function FluxoPoUpstream() {
           />
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>Cliente</span>
+          <MultiSelectFiltro
+            rotuloTodos="Todos os clientes"
+            opcoes={opcoesCliente}
+            selecionados={clientesSel}
+            onChange={setClientesSel}
+            pesquisavel
+            placeholderBusca="Digite o nome do cliente…"
+          />
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>PBI</span>
           <MultiSelectFiltro
             rotuloTodos="Todos os PBIs"
@@ -359,6 +399,7 @@ export default function FluxoPoUpstream() {
             {exibidos.length} {exibidos.length === 1 ? "demanda" : "demandas"}
             {esteirasSel.length ? ` em ${esteirasSel.length === 1 ? rotuloDaEsteira(dados, esteirasSel[0]) : `${esteirasSel.length} esteiras`} (mais os cards sem esteira)` : ""}
             {meusItens ? " suas" : ""}
+            {clientesSel.length ? ` (${clientesSel.length === 1 ? `cliente ${clientesSel[0]}` : `${clientesSel.length} clientes escolhidos`})` : ""}
             {pbisSel.length ? ` (${pbisSel.length === 1 ? "1 PBI escolhido" : `${pbisSel.length} PBIs escolhidos`})` : ""}
           </span>
         )}

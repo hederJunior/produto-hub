@@ -1,7 +1,7 @@
 /**
- * Fluxo do PO — "Requisitos de segurança e privacidade de dados" da etapa 1.2 (SERVIDOR): lê o formulário já registrado na Description
+ * Fluxo do PO — "Requisitos de segurança e privacidade de dados" da etapa 2.1 (SERVIDOR): lê o formulário já registrado na Description
  * do PBI e grava o complemento ("Registrar requisitos"). Mesma disciplina das demais gravações: permissão no servidor, entrada
- * validada, card na etapa 1.2, PATCH com `test /rev` (conflito = 409) e TODA tentativa vai para o log (direção "seguranca").
+ * validada, card na etapa 2.1, PATCH com `test /rev` (conflito = 409) e TODA tentativa vai para o log (direção "seguranca").
  * A Description é regravada a partir do HTML BRUTO que está no Azure AGORA (só o bloco do formulário é trocado), nunca da versão
  * sanitizada da tela. Regras puras (HTML do bloco, leitura, validação) em lib/fluxo-po-seguranca.ts.
  */
@@ -97,7 +97,7 @@ type Params = {
 
 /**
  * Registra os requisitos: grava o bloco do formulário no fim da Description. Ordem: permissão (403) → entrada (422) → PBI do KMM5 na
- * etapa 1.2 (422) → Description lida agora → o formulário no Azure é o mesmo que a tela mostrava (409) → PATCH com `test /rev` (409 se
+ * etapa 2.1 (422) → Description lida agora → o formulário no Azure é o mesmo que a tela mostrava (409) → PATCH com `test /rev` (409 se
  * mudou no meio) → relê.
  */
 export async function registrarSeguranca(params: Params): Promise<ResultadoSeguranca> {
@@ -138,8 +138,8 @@ async function executar(params: Params, d: DependenciasSeguranca, ctx: ContextoL
 
   const pbi = await d.lerPbi(id);
   ctx.origem = derivarEtapa(pbi).etapa;
-  if (ctx.origem !== "1.2") {
-    throw new ErroFluxoPo(422, "regra", "Os requisitos de segurança só podem ser registrados enquanto o card está na etapa 1.2 (Priorizar - Backlog da esteira); nada foi gravado.");
+  if (ctx.origem !== "2.1") {
+    throw new ErroFluxoPo(422, "regra", "Os requisitos de segurança só podem ser registrados enquanto o card está na etapa 2.1 (Comitê / Proposta de solução); nada foi gravado.");
   }
 
   const atual = await d.lerDescricao(id);

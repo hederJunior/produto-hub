@@ -134,7 +134,7 @@ export function linhaDeAnalise(ctx: ContextoLog & { workItemId: number }, r: { a
   };
 }
 
-/** Requisitos de segurança e privacidade registrados na 1.2: o complemento da Description do PBI foi gravado (a alteração guarda só o resumo das respostas). */
+/** Requisitos de segurança e privacidade registrados na 2.1: o complemento da Description do PBI foi gravado (a alteração guarda só o resumo das respostas). */
 export function linhaDeSeguranca(ctx: ContextoLog & { workItemId: number }, r: { alteracoes: Alteracao[]; avisos: string[] }): LinhaLogMovimento {
   return {
     ...baseDaLinha({ ...ctx, direcao: "seguranca" }),

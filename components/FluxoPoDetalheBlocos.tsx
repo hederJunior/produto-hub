@@ -123,9 +123,10 @@ export default function FluxoPoDetalheBlocos({
         <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
           <Checklist id={id} aba={aba} pode={pode} motivoSemPermissao={motivoSemPermissao} />
           <Descricao id={id} aba={aba} versao={versaoDescricao} />
-          {aba === "1.2" && <RequisitosSeguranca id={id} pode={pode} motivoSemPermissao={motivoSemPermissao} etapaAtual={etapaAtual} aoRegistrar={() => setVersaoDescricao((n) => n + 1)} />}
           {aba === "2.1" && <Analise id={id} pode={pode} motivoSemPermissao={motivoSemPermissao} etapaAtual={etapaAtual} />}
           {(aba === "1.1" || aba === "1.2") && <Cancelamento id={id} pode={pode} motivoSemPermissao={motivoSemPermissao} etapaAtual={etapaAtual} aoCancelar={aoCancelarDemanda} />}
+          {/* Requisitos de segurança: só na aba 2.1, logo depois de Cancelamento de Demanda (que existe só nas abas 1.1 e 1.2) e antes dos Comentários. */}
+          {aba === "2.1" && <RequisitosSeguranca id={id} pode={pode} motivoSemPermissao={motivoSemPermissao} etapaAtual={etapaAtual} aoRegistrar={() => setVersaoDescricao((n) => n + 1)} />}
           <Comentarios id={id} pode={pode} motivoSemPermissao={motivoSemPermissao} aoPublicar={aoPublicarComentario} />
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
@@ -267,9 +268,9 @@ type AssesmentAnalise = {
 };
 
 /**
- * Requisitos de segurança e privacidade de dados (etapa 1.2, pedido por Heder em 2026-11-25): formulário de 7 perguntas (Sim / Não /
+ * Requisitos de segurança e privacidade de dados (etapa 2.1; pedido por Heder em 2026-11-25 para a 1.2 e movido para a 2.1 em 2026-11-26): formulário de 7 perguntas (Sim / Não /
  * Não aplicável + observação). "Registrar requisitos" grava o formulário como complemento no fim da Description do PBI (substitui o
- * anterior, se houver). Só quem movimenta o fluxo e só com o card na 1.2; o servidor confere tudo de novo e, se outra pessoa mudou o
+ * anterior, se houver). Só quem movimenta o fluxo e só com o card na 2.1; o servidor confere tudo de novo e, se outra pessoa mudou o
  * formulário no Azure enquanto a tela estava aberta, recusa (409). Todas as perguntas precisam de resposta para registrar.
  */
 function RequisitosSeguranca({ id, pode, motivoSemPermissao, etapaAtual, aoRegistrar }: { id: number; pode: boolean; motivoSemPermissao: string | null; etapaAtual: EtapaFluxo | null; aoRegistrar: () => void }) {
@@ -284,7 +285,7 @@ function RequisitosSeguranca({ id, pode, motivoSemPermissao, etapaAtual, aoRegis
     if (dados) setItens(dados.itens.map((i) => ({ ...i })));
   }, [dados]);
 
-  const liberado = pode && etapaAtual === "1.2";
+  const liberado = pode && etapaAtual === "2.1";
   const respondidas = (itens ?? []).filter((i) => i.resposta !== null).length;
   const total = PERGUNTAS_SEGURANCA.length;
   const resumo = (x: ItemSeguranca[]) => JSON.stringify(x.map((i) => [i.id, i.resposta, i.observacao.trim()]));
@@ -322,7 +323,7 @@ function RequisitosSeguranca({ id, pode, motivoSemPermissao, etapaAtual, aoRegis
     }
   }
 
-  const dica = !pode ? (motivoSemPermissao ?? "Seu perfil só permite visualizar.") : etapaAtual !== "1.2" ? "Disponível só enquanto o card está na etapa 1.2." : "";
+  const dica = !pode ? (motivoSemPermissao ?? "Seu perfil só permite visualizar.") : etapaAtual !== "2.1" ? "Disponível só enquanto o card está na etapa 2.1." : "";
 
   return (
     <Bloco

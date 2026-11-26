@@ -1,4 +1,4 @@
-// Requisitos de segurança (1.2): formulário, bloco na Description, leitura de volta e validação. Rodar: npm run test:fluxo-po
+// Requisitos de segurança (2.1): formulário, bloco na Description, leitura de volta e validação. Rodar: npm run test:fluxo-po
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -36,7 +36,7 @@ test("o bloco traz título, tabela, o rótulo das respostas e a linha de registr
   assert.match(html, />SIM<\/td>/);
   assert.match(html, />NÃO<\/td>/);
   assert.match(html, />NÃO APLICÁVEL<\/td>/);
-  assert.match(html, /Registrado por Ana em 25\/11\/2026 12:30/);
+  assert.match(html, /Registrado por Ana em 25\/11\/2026 12:30 \(Produto Hub, Fluxo do PO, etapa 2\.1\)/);
   assert.match(html, /Conforme &lt;necessidade&gt; &amp; tempo,<br>com/);
 });
 

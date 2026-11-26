@@ -1,6 +1,6 @@
 /**
- * Fluxo do PO > detalhe da etapa 1.2 > "Requisitos de segurança e privacidade de dados" (pedido por Heder em 2026-11-25): formulário
- * de 7 perguntas (Sim / Não / Não aplicável + Observação) que o PO preenche na 1.2 e que é REGISTRADO NO PBI como um complemento da
+ * Fluxo do PO > detalhe da etapa 2.1 > "Requisitos de segurança e privacidade de dados" (pedido por Heder em 2026-11-25): formulário
+ * de 7 perguntas (Sim / Não / Não aplicável + Observação) que o PO preenche na 2.1 (Comitê / Proposta de solução; até 2026-11-25 era a 1.2) e que é REGISTRADO NO PBI como um complemento da
  * Description. Só regras PURAS (sem fetch); leitura e gravação no Azure DevOps estão em lib/fluxo-po-seguranca-servidor.ts.
  *
  * O complemento é um bloco HTML delimitado (`<div id="kmm-requisitos-seguranca">`) no FIM da Description. Registrar de novo SUBSTITUI
@@ -90,7 +90,7 @@ export function montarBlocoSeguranca(itens: ItemSeguranca[], registro?: { quem: 
     const obs = escapar(item?.observacao ?? "").replace(/\n/g, "<br>");
     return `<tr><td style="${ESTILO_CELULA}">${escapar(p.texto)}</td><td style="${ESTILO_CELULA};text-align:center">${resposta}</td><td style="${ESTILO_CELULA}">${obs}</td></tr>`;
   }).join("");
-  const linhaRegistro = registro ? `<p><i>Registrado por ${escapar(registro.quem)} em ${dataHoraBrasilia(registro.quando)} (Produto Hub, Fluxo do PO, etapa 1.2).</i></p>` : "";
+  const linhaRegistro = registro ? `<p><i>Registrado por ${escapar(registro.quem)} em ${dataHoraBrasilia(registro.quando)} (Produto Hub, Fluxo do PO, etapa 2.1).</i></p>` : "";
   return (
     `<div id="${ID_BLOCO}"><h3>${escapar(TITULO_FORMULARIO)}</h3>${linhaRegistro}` +
     `<table style="border-collapse:collapse;width:100%"><thead><tr><th style="${ESTILO_CELULA}">${escapar(CABECALHO_REQUISITOS)}</th><th style="${ESTILO_CELULA}">Sim/Não/ Não aplicável</th><th style="${ESTILO_CELULA}">Observação</th></tr></thead>` +

@@ -13,7 +13,7 @@ function resposta(err: unknown, rotulo: string) {
 }
 
 /**
- * Requisitos de segurança e privacidade (etapa 1.2): o formulário já registrado na Description do PBI (em branco se ainda não há) e a
+ * Requisitos de segurança e privacidade (etapa 2.1): o formulário já registrado na Description do PBI (em branco se ainda não há) e a
  * etapa do card. Qualquer usuário logado lê. 200 { etapa, registrado, itens } · 404 · 422 · 502.
  */
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
@@ -29,7 +29,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 /**
  * "Registrar requisitos": grava o formulário como complemento no fim da Description do PBI. Corpo `{ respostas, base }` (`base` = o
  * formulário como a tela o mostrava ao abrir, ou null; se outra pessoa o mudou no Azure, 409 e nada é gravado). Só quem pode movimentar
- * o fluxo, com o card na etapa 1.2. 200 { estado, alteracoes, avisos } · 403 · 409 · 422 · 502.
+ * o fluxo, com o card na etapa 2.1. 200 { estado, alteracoes, avisos } · 403 · 409 · 422 · 502.
  */
 export async function PUT(req: Request, { params }: { params: { id: string } }) {
   const usuario = await getUsuarioAtual();

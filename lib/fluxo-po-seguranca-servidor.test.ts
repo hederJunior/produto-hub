@@ -1,4 +1,4 @@
-// Requisitos de segurança (1.2) com Azure e log simulados. Rodar: npm run test:fluxo-po
+// Requisitos de segurança (2.1) com Azure e log simulados. Rodar: npm run test:fluxo-po
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { lerSegurancaDoPbi, registrarSeguranca, type DependenciasSeguranca } from "./fluxo-po-seguranca-servidor";
@@ -12,15 +12,17 @@ const leitor = { email: "leo@nstech.com.br", nome: "Leo", tipo: "comum", papel: 
 
 const respostas = (): ItemSeguranca[] => PERGUNTAS_SEGURANCA.map((p, i) => ({ id: p.id, resposta: i % 2 ? "nao" : "sim", observacao: i === 0 ? "obs" : "" }));
 
-/** PBI na 1.2: Status Backlog, Etapa Backlog e esteira definida (Area Path filho) — o que `derivarEtapa` chama de 1.2. */
-const pbiNa12 = { id: 46766, status: "Backlog", etapa: "Backlog", areaPath: "KMM5\\TMS - Melhorias", tags: "", rev: 40 } as unknown as PbiFluxo;
+/** PBI na 2.1: Status Backlog, Etapa Comitê com Data Comitê — o que `derivarEtapa` chama de 2.1. */
+const pbiNa21 = { id: 46766, status: "Backlog", etapa: "Comitê", areaPath: "KMM5\\TMS - Melhorias", tags: "", dataComite: "2026-11-20T03:00:00Z", rev: 40 } as unknown as PbiFluxo;
+/** PBI na 1.2 (Etapa Backlog, esteira definida): fora da etapa em que os requisitos podem ser registrados. */
+const pbiNa12 = { ...pbiNa21, etapa: "Backlog", dataComite: null } as unknown as PbiFluxo;
 
 function montar(opcoes: { descricao?: string; pbi?: PbiFluxo } = {}) {
   const chamadas: { patches: { id: number; ops: { op: string; path: string; value?: unknown }[] }[]; logs: LinhaLogMovimento[] } = { patches: [], logs: [] };
   let descricao = opcoes.descricao ?? "<p>Chamado do cliente</p>";
   let rev = 40;
   const deps: DependenciasSeguranca = {
-    lerPbi: async () => opcoes.pbi ?? pbiNa12,
+    lerPbi: async () => opcoes.pbi ?? pbiNa21,
     lerDescricao: async () => ({ rev, descricaoBruta: descricao }),
     aplicarPatch: async (id, ops) => {
       chamadas.patches.push({ id, ops: ops as never });
@@ -42,9 +44,9 @@ async function recusa(promessa: Promise<unknown>, status: number, codigo: string
   await assert.rejects(promessa, (e: unknown) => e instanceof ErroFluxoPo && e.status === status && e.codigo === codigo);
 }
 
-test("a etapa de teste do PBI simulado é mesmo a 1.2", async () => {
+test("a etapa de teste do PBI simulado é mesmo a 2.1", async () => {
   const { deps } = montar();
-  assert.equal((await lerSegurancaDoPbi(46766, deps)).etapa, "1.2");
+  assert.equal((await lerSegurancaDoPbi(46766, deps)).etapa, "2.1");
 });
 
 test("registra: acrescenta o bloco ao fim da Description, com test /rev, e vai para o log", async () => {
@@ -60,7 +62,7 @@ test("registra: acrescenta o bloco ao fim da Description, com test /rev, e vai p
   assert.match(descricaoAtual(), /Registrado por Ana em 25\/11\/2026 12:30/);
   assert.equal(chamadas.logs[0].direcao, "seguranca");
   assert.equal(chamadas.logs[0].resultado, "sucesso");
-  assert.equal(chamadas.logs[0].origem, "1.2");
+  assert.equal(chamadas.logs[0].origem, "2.1");
 });
 
 test("registrar de novo (base = o que estava) substitui o bloco e deixa um só", async () => {
@@ -99,9 +101,8 @@ test("sem permissão: 403, nada gravado, vai para o log", async () => {
   assert.equal(chamadas.logs[0].resultado, "sem_permissao");
 });
 
-test("card fora da 1.2: 422 e nada gravado", async () => {
-  const pbi = { ...pbiNa12, etapa: "Comitê", dataComite: "2026-11-20T03:00:00Z" } as unknown as PbiFluxo;
-  const { deps, chamadas } = montar({ pbi });
+test("card fora da 2.1 (na 1.2): 422 e nada gravado", async () => {
+  const { deps, chamadas } = montar({ pbi: pbiNa12 });
   await recusa(registrarSeguranca({ id: 46766, respostas: respostas(), base: null, usuario: po, deps }), 422, "regra");
   assert.equal(chamadas.patches.length, 0);
 });

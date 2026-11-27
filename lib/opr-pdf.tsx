@@ -472,7 +472,6 @@ function DemandasEntregues({ e, aviso, hoje }: { e: EntregasCliente | null; avis
                         direita={
                           <>
                             {p.interno ? <Pilula texto="Interno" fg={COR.cinza} bg={COR.faixa} /> : null}
-                            <Pilula texto={t(p.state)} fg={corDoStatus(p.state)} bg={COR.faixa} />
                           </>
                         }
                       />
@@ -645,10 +644,10 @@ function OprDocument({ d }: { d: DadosOpr }) {
 
         {/* 4 e 5 — execução e testes do usuário (tabelas, sem gráficos) */}
         <Secao n={4} titulo="Demandas em execução">
-          <TabelaPorStatus itens={execucao} vazio="Nenhuma demanda em execução para os filtros atuais." pbi={pbi} obs={obs} />
+          <TabelaPorStatus itens={execucao} vazio="Nenhuma demanda em execução para os filtros atuais." pbi={pbi} />
         </Secao>
         <Secao n={5} titulo="Demandas em testes do usuário">
-          <TabelaPorStatus itens={testes} vazio="Nenhuma demanda em testes do usuário para os filtros atuais." pbi={pbi} obs={obs} />
+          <TabelaPorStatus itens={testes} vazio="Nenhuma demanda em testes do usuário para os filtros atuais." pbi={pbi} />
         </Secao>
 
         {/* 6 — demandas entregues (visão principal do documento) */}
@@ -694,12 +693,10 @@ function TabelaPorStatus({
   itens,
   vazio,
   pbi,
-  obs,
 }: {
   itens: PbiGestaoCliente[];
   vazio: string;
   pbi: (p: PbiGestaoCliente) => Cel;
-  obs: (p: PbiGestaoCliente) => string;
 }) {
   return (
     <View>
@@ -708,13 +705,12 @@ function TabelaPorStatus({
         colunas={[
           { titulo: "Chamado", peso: 8 },
           { titulo: "PBI", peso: 6 },
-          { titulo: "Título", peso: 24, linhas: 2 },
-          { titulo: "Etapa", peso: 12 },
-          { titulo: "PO", peso: 12, linhas: 2 },
-          { titulo: "Classificação", peso: 10 },
-          { titulo: "Observação", peso: 28, linhas: 3 },
+          { titulo: "Título", peso: 40, linhas: 2 },
+          { titulo: "Etapa", peso: 16 },
+          { titulo: "PO", peso: 15, linhas: 2 },
+          { titulo: "Classificação", peso: 15 },
         ]}
-        linhas={itens.map((p) => [t(p.idExterno) || "—", pbi(p), t(p.titulo), t(p.etapa) || "—", t(p.po) || "—", t(p.classificacao) || "—", obs(p)])}
+        linhas={itens.map((p) => [t(p.idExterno) || "—", pbi(p), t(p.titulo), t(p.etapa) || "—", t(p.po) || "—", t(p.classificacao) || "—"])}
         vazio={vazio}
       />
     </View>

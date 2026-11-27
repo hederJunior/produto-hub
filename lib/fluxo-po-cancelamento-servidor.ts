@@ -92,7 +92,7 @@ async function executar(params: Params, ctx: ContextoLog): Promise<ResultadoCanc
   const avisos: string[] = [];
   let comentario: ResultadoCancelamento["comentario"] = { publicado: false };
   try {
-    const html = comentarioDeCancelamento({ texto: texto.texto, usuario: params.usuario.nome?.trim() || params.usuario.email, quando: params.agora ?? new Date(), motivo: motivo.rotulo });
+    const html = comentarioDeCancelamento({ texto: texto.texto, motivo: motivo.rotulo });
     const c = await (params.publicador ?? publicarComentarioPbi)(id, html);
     comentario = { publicado: true, id: c.id };
   } catch (e) {

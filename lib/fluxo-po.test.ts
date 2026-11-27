@@ -853,9 +853,10 @@ test("avaliarCancelamento: só nas etapas 1.1 e 1.2 (mesmo sem Cliente); da 2.1 
   assert.deepEqual(avaliarCancelamento(pbi12({ status: "Execução", etapa: "Execução" })), { permitido: false, faltas: ["O PBI não está em nenhuma etapa do fluxo."] });
 });
 
-test("comentarioDeCancelamento: assinatura, motivo e texto escapado com quebras de linha", () => {
-  const html = comentarioDeCancelamento({ texto: "Linha 1\n<b>x</b> & fim", usuario: "Ana <i>", quando: new Date("2026-11-22T15:30:00Z"), motivo: "Torre de Controle" });
-  assert.match(html, /<b>Ana &lt;i&gt;<\/b> · 22\/11\/2026.*12:30 <i>\(via Produto Hub\)<\/i> — <b>\[PÚBLICO\] Cancelamento de demanda<\/b>: Torre de Controle/);
+test("comentarioDeCancelamento: título com [PÚBLICO] e motivo, linha em branco e texto escapado com quebras de linha, sem assinatura", () => {
+  const html = comentarioDeCancelamento({ texto: "Linha 1\n<b>x</b> & fim", motivo: "Torre de Controle" });
+  assert.ok(html.startsWith("<div><b>[PÚBLICO] Cancelamento de demanda</b>: Torre de Controle</div><div><br></div><div>Linha 1"));
+  assert.doesNotMatch(html, /via Produto Hub/);
   assert.match(html, /Linha 1<br>&lt;b&gt;x&lt;\/b&gt; &amp; fim/);
   assert.doesNotMatch(html, /<b>x<\/b>/);
 });

@@ -104,7 +104,7 @@ async function main() {
     const b = await cancelar("tns", editado);
     registrar("Cancelamento real: Status vira Cancelado e o comentário é publicado", b.pbi.status === "Cancelado" && b.comentario.publicado === true && b.alteracoes.length === 1 && b.alteracoes[0].para === "Cancelado", `comentário ${b.comentario.id}`);
     const t = b.comentario.id ? await textoDoComentario(b.comentario.id) : "";
-    registrar("...comentário com assinatura, motivo e o TEXTO EDITADO (não o padrão puro)", t.includes("Script de teste (cancelamento)") && t.includes("Cancelamento de demanda") && t.includes("TNS") && t.includes("ecossistema NS Tech") && t.includes("texto editado antes de publicar"), t.slice(0, 220));
+    registrar("...comentário com [PÚBLICO], motivo e o TEXTO EDITADO (não o padrão puro)", t.includes("[PÚBLICO] Cancelamento de demanda") && t.includes("TNS") && t.includes("ecossistema NS Tech") && t.includes("texto editado antes de publicar"), t.slice(0, 220));
     const quadro = await getFluxoPoUpstream();
     registrar("...o card SAIU do quadro do Fluxo do PO", !quadro.cards.some((c) => c.pbi.id === id), `${quadro.cards.length} cards no quadro`);
     await esperarErro("Segundo cancelamento do mesmo PBI → 422 (já não está no fluxo)", 422, () => cancelar("tns", texto));

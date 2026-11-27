@@ -1006,11 +1006,14 @@ export function avaliarCancelamento(pbi: Pick<PbiFluxo, "status" | "etapa" | "ar
   };
 }
 
-/** HTML do comentário de cancelamento: assinatura do usuário (como nos demais comentários), o motivo e o texto (escapado, editado ou não). */
-export function comentarioDeCancelamento(args: { texto: string; usuario: string; quando: Date; motivo: string }): string {
-  const data = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(args.quando);
+/**
+ * HTML do comentário de cancelamento (formato pedido pelo Heder em 2026-11-27): linha de título "[PÚBLICO] Cancelamento de demanda: <motivo>",
+ * uma linha em branco e o texto (escapado, editado ou não). Sem assinatura: no Azure o comentário já aparece com o autor e a hora.
+ */
+export function comentarioDeCancelamento(args: { texto: string; motivo: string }): string {
   return (
-    `<p><b>${escaparHtml(args.usuario)}</b> · ${data} <i>(via Produto Hub)</i> — <b>${MARCA_PUBLICO} Cancelamento de demanda</b>: ${escaparHtml(args.motivo)}</p>` +
+    `<div><b>${MARCA_PUBLICO} Cancelamento de demanda</b>: ${escaparHtml(args.motivo)}</div>` +
+    `<div><br></div>` +
     `<div>${escaparHtml(args.texto).replace(/\n/g, "<br>")}</div>`
   );
 }

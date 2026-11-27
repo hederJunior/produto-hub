@@ -855,7 +855,7 @@ test("avaliarCancelamento: só nas etapas 1.1 e 1.2 (mesmo sem Cliente); da 2.1 
 
 test("comentarioDeCancelamento: título com [PÚBLICO] e motivo, linha em branco e texto escapado com quebras de linha, sem assinatura", () => {
   const html = comentarioDeCancelamento({ texto: "Linha 1\n<b>x</b> & fim", motivo: "Torre de Controle" });
-  assert.ok(html.startsWith("<div><b>[PÚBLICO] Cancelamento de demanda</b>: Torre de Controle</div><div><br></div><div>Linha 1"));
+  assert.ok(html.startsWith("<div><b>[PÚBLICO]</b></div><div><b>Cancelamento de demanda</b>: Torre de Controle</div><div><br></div><div>Linha 1"));
   assert.doesNotMatch(html, /via Produto Hub/);
   assert.match(html, /Linha 1<br>&lt;b&gt;x&lt;\/b&gt; &amp; fim/);
   assert.doesNotMatch(html, /<b>x<\/b>/);

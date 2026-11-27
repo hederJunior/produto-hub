@@ -983,7 +983,7 @@ const MOTIVOS_SEM_MARCA: readonly MotivoCancelamento[] = [
   },
 ];
 
-/** Marca que abre o título do comentário de cancelamento (pedido do Heder, 2026-11-27): "— [PÚBLICO] Cancelamento de demanda: …". */
+/** Marca que abre o comentário de cancelamento, sozinha na primeira linha (pedido do Heder, 2026-11-27). */
 export const MARCA_PUBLICO = "[PÚBLICO]";
 
 export const MOTIVOS_CANCELAMENTO: readonly MotivoCancelamento[] = MOTIVOS_SEM_MARCA;
@@ -1007,12 +1007,13 @@ export function avaliarCancelamento(pbi: Pick<PbiFluxo, "status" | "etapa" | "ar
 }
 
 /**
- * HTML do comentário de cancelamento (formato pedido pelo Heder em 2026-11-27): linha de título "[PÚBLICO] Cancelamento de demanda: <motivo>",
+ * HTML do comentário de cancelamento (formato pedido pelo Heder em 2026-11-27): "[PÚBLICO]" sozinho numa linha, depois "Cancelamento de demanda: <motivo>",
  * uma linha em branco e o texto (escapado, editado ou não). Sem assinatura: no Azure o comentário já aparece com o autor e a hora.
  */
 export function comentarioDeCancelamento(args: { texto: string; motivo: string }): string {
   return (
-    `<div><b>${MARCA_PUBLICO} Cancelamento de demanda</b>: ${escaparHtml(args.motivo)}</div>` +
+    `<div><b>${MARCA_PUBLICO}</b></div>` +
+    `<div><b>Cancelamento de demanda</b>: ${escaparHtml(args.motivo)}</div>` +
     `<div><br></div>` +
     `<div>${escaparHtml(args.texto).replace(/\n/g, "<br>")}</div>`
   );

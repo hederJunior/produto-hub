@@ -767,7 +767,7 @@ function Cancelamento({ id, pode, motivoSemPermissao, etapaAtual, aoCancelar }: 
           </div>
           <textarea className="kmm-input" aria-label="Texto do comentário de cancelamento" value={texto} onChange={(e) => setTexto(e.target.value)} rows={8} disabled={enviando} style={{ width: "100%", resize: "vertical", fontFamily: "inherit", lineHeight: 1.45 }} />
           <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginTop: 4, fontSize: 11.5, color: C.faint, flexWrap: "wrap" }}>
-            <span>O comentário começa com "[PÚBLICO] Cancelamento de demanda: {motivo.rotulo}", seguido de uma linha em branco e do texto acima.</span>
+            <span>O comentário começa com "[PÚBLICO]" numa linha, depois "Cancelamento de demanda: {motivo.rotulo}", uma linha em branco e o texto acima.</span>
             <span style={{ color: longo ? C.red : C.faint }}>{texto.trim().length}/{LIMITE_COMENTARIO}</span>
           </div>
 

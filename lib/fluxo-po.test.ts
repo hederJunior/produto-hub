@@ -821,18 +821,19 @@ test("MOTIVOS_CANCELAMENTO: os 7 motivos, com o texto padrão de cada um, dentro
   for (const m of MOTIVOS_CANCELAMENTO) {
     assert.ok(m.texto.length > 40 && m.texto.length <= LIMITE_COMENTARIO, m.id);
     assert.equal(validarComentario(m.texto).erro, undefined, m.id);
+    assert.ok(m.texto.startsWith("[PUBLICO] "), `${m.id}: começa com [PUBLICO]`);
     assert.doesNotMatch(m.texto, /\bÁ partir\b|\bá partir\b|esta sendo|TMS\.Devido|;$/, `${m.id}: ortografia`);
   }
   const fora = MOTIVOS_CANCELAMENTO[0].texto.split("\n");
   assert.equal(fora.length, 5);
   assert.equal(fora.filter((l) => l.startsWith("* ")).length, 3); // as 3 justificativas
-  assert.match(fora[0], /^Após análise técnica e alinhamento com a estratégia de produto/);
+  assert.match(fora[0], /^\[PUBLICO\] Após análise técnica e alinhamento com a estratégia de produto/);
   assert.match(MOTIVOS_CANCELAMENTO[1].texto, /nova torre de controle/);
   assert.match(MOTIVOS_CANCELAMENTO[2].texto, /road map de construção a partir de 2027/);
   assert.match(MOTIVOS_CANCELAMENTO[3].texto, /ecossistema NS Tech/);
-  assert.match(MOTIVOS_CANCELAMENTO[4].texto, /^Esta demanda já faz parte de escopo de evolução obrigatório de TMS\./);
-  assert.match(MOTIVOS_CANCELAMENTO[5].texto, /^Devido à quantidade de demandas em aberto.*esta demanda está sendo cancelada e deve ser reaberta.*Key User e time de produtos\.$/);
-  assert.match(MOTIVOS_CANCELAMENTO[6].texto, /^Conforme alinhamento feito entre as equipes, esta demanda está sendo cancelada por não ter sido aberta pelo Key User da empresa\..*alinhamento prévio\.$/);
+  assert.match(MOTIVOS_CANCELAMENTO[4].texto, /^\[PUBLICO\] Esta demanda já faz parte de escopo de evolução obrigatório de TMS\./);
+  assert.match(MOTIVOS_CANCELAMENTO[5].texto, /^\[PUBLICO\] Devido à quantidade de demandas em aberto.*esta demanda está sendo cancelada e deve ser reaberta.*Key User e time de produtos\.$/);
+  assert.match(MOTIVOS_CANCELAMENTO[6].texto, /^\[PUBLICO\] Conforme alinhamento feito entre as equipes, esta demanda está sendo cancelada por não ter sido aberta pelo Key User da empresa\..*alinhamento prévio\.$/);
 });
 
 test("motivoDeCancelamento: acha pelo id, recusa o resto", () => {

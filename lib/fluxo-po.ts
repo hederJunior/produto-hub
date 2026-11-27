@@ -939,7 +939,7 @@ export type MotivoCancelamento = { id: string; rotulo: string; texto: string };
  * editá-lo antes de publicar. Ajustei só a ortografia evidente dos textos recebidos ("Á partir" → "A partir", "esta sendo" → "está sendo",
  * "á" → "à", "TMS.Devido" → "TMS. Devido") e troquei o ";" final por ".".
  */
-export const MOTIVOS_CANCELAMENTO: readonly MotivoCancelamento[] = [
+const MOTIVOS_SEM_MARCA: readonly MotivoCancelamento[] = [
   {
     id: "fora-priorizacao",
     rotulo: "Demanda fora de priorização do produto",
@@ -982,6 +982,12 @@ export const MOTIVOS_CANCELAMENTO: readonly MotivoCancelamento[] = [
     texto: "Conforme alinhamento feito entre as equipes, esta demanda está sendo cancelada por não ter sido aberta pelo Key User da empresa. Procure ser key user para priorização e abertura de demanda conforme alinhamento prévio.",
   },
 ];
+
+/** Marca no início de todo texto padrão de cancelamento (pedido do Heder, 2026-11-27); o usuário ainda pode editá-la antes de publicar. */
+export const MARCA_PUBLICO = "[PUBLICO]";
+
+/** Os motivos como a tela os oferece: cada texto padrão já começa com "[PUBLICO] ". */
+export const MOTIVOS_CANCELAMENTO: readonly MotivoCancelamento[] = MOTIVOS_SEM_MARCA.map((m) => ({ ...m, texto: `${MARCA_PUBLICO} ${m.texto}` }));
 
 export function motivoDeCancelamento(id: unknown): MotivoCancelamento | undefined {
   return MOTIVOS_CANCELAMENTO.find((m) => m.id === id);

@@ -2867,3 +2867,7 @@ Pedido do Heder, em três partes:
 ## 2026-11-26 — PDF da OPR: sem tag de status em "Próximas entregas" e sem coluna de comentário nas tabelas 4 e 5
 
 Pedido do Heder, só no PDF da OPR (Gestão de clientes): (1) na seção 6 "Demandas entregues", no cartão "Próximas entregas", saiu a tag com o status do PBI (Execução, Teste Aceite Usuário, Aguardando Deploy...); a tag "Interno" continua. (2) Nas tabelas "Demandas em execução" (4) e "Demandas em testes do usuário" (5) saiu a coluna "Observação" (último comentário); o espaço foi redistribuído entre as demais colunas. A tela de Gestão de clientes e a "Listagem de demandas" (seção 7, que mantém a coluna Observação) não mudaram. Verificado: checagem de tipos; o PDF não foi gerado/aberto nesta alteração.
+
+## 2026-11-27 — Fluxo do PO · todo texto padrão de cancelamento começa com "[PUBLICO]"
+
+Pedido do Heder: os 7 textos padrão de cancelamento de demanda passam a começar com `[PUBLICO] ` (marca + espaço, na primeira linha, antes do texto). Implementado em `lib/fluxo-po.ts` (`MARCA_PUBLICO`; `MOTIVOS_CANCELAMENTO` aplica a marca a todos, então um motivo novo também a recebe). O usuário continua podendo editar o texto antes de publicar, inclusive tirar a marca; a rota não exige a marca. Cancelamentos já publicados não mudam. Verificado: checagem de tipos e 157 testes (o teste dos motivos agora confere a marca em cada texto); a tela não foi aberta nesta alteração.

@@ -983,11 +983,10 @@ const MOTIVOS_SEM_MARCA: readonly MotivoCancelamento[] = [
   },
 ];
 
-/** Marca no início de todo texto padrão de cancelamento (pedido do Heder, 2026-11-27); o usuário ainda pode editá-la antes de publicar. */
-export const MARCA_PUBLICO = "[PUBLICO]";
+/** Marca que abre o título do comentário de cancelamento (pedido do Heder, 2026-11-27): "— [PÚBLICO] Cancelamento de demanda: …". */
+export const MARCA_PUBLICO = "[PÚBLICO]";
 
-/** Os motivos como a tela os oferece: cada texto padrão já começa com "[PUBLICO] ". */
-export const MOTIVOS_CANCELAMENTO: readonly MotivoCancelamento[] = MOTIVOS_SEM_MARCA.map((m) => ({ ...m, texto: `${MARCA_PUBLICO} ${m.texto}` }));
+export const MOTIVOS_CANCELAMENTO: readonly MotivoCancelamento[] = MOTIVOS_SEM_MARCA;
 
 export function motivoDeCancelamento(id: unknown): MotivoCancelamento | undefined {
   return MOTIVOS_CANCELAMENTO.find((m) => m.id === id);
@@ -1011,7 +1010,7 @@ export function avaliarCancelamento(pbi: Pick<PbiFluxo, "status" | "etapa" | "ar
 export function comentarioDeCancelamento(args: { texto: string; usuario: string; quando: Date; motivo: string }): string {
   const data = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(args.quando);
   return (
-    `<p><b>${escaparHtml(args.usuario)}</b> · ${data} <i>(via Produto Hub)</i> — <b>Cancelamento de demanda</b>: ${escaparHtml(args.motivo)}</p>` +
+    `<p><b>${escaparHtml(args.usuario)}</b> · ${data} <i>(via Produto Hub)</i> — <b>${MARCA_PUBLICO} Cancelamento de demanda</b>: ${escaparHtml(args.motivo)}</p>` +
     `<div>${escaparHtml(args.texto).replace(/\n/g, "<br>")}</div>`
   );
 }
